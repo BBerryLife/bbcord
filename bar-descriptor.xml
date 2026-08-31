@@ -120,6 +120,12 @@
     <permission system="true">_sys_run_headless</permission>
     <permission>access_shared</permission>
     <permission>use_camera</permission>
+    <permission>post_notification</permission>
+    <permission>run_when_backgrounded</permission>
+    <permission>access_notify_settings_control</permission>
+    <permission>record_audio</permission>
+    <permission>read_device_identifying_information</permission>
+    <permission>access_wifi_public</permission>
     <env var="LD_LIBRARY_PATH" value="app/native/lib:/usr/lib/qt4/lib"/>
     <env var="CASCADES_THEME" value="dark?primaryColor=0x7289DA&amp;primaryBase=0x7289DA"/>
 </qnx>

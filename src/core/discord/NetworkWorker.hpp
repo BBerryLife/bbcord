@@ -18,6 +18,9 @@ public:
 
 public Q_SLOTS:
   void loginWithToken(const QString &token);
+  void loginWithPassword(const QString &email, const QString &password);
+  void submitMfaCode(const QString &ticket, const QString &loginInstanceId,
+                     const QString &code);
   void fetchGuilds(const QString &token, int limit, const QString &afterId);
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
@@ -45,6 +48,7 @@ public Q_SLOTS:
 Q_SIGNALS:
   void loginSucceeded(const QVariantMap &user);
   void loginFailed(const QString &message);
+  void mfaRequired(const QString &ticket, const QString &loginInstanceId);
   void guildsLoaded(const QVariantList &guilds);
   void dmChannelsLoaded(const QVariantList &channels);
   void guildChannelsLoaded(const QString &guildId,

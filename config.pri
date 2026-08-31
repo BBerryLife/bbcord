@@ -43,12 +43,13 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/LoginPage.qml) \
         $$quote($$BASEDIR/assets/MainPage.qml) \
         $$quote($$BASEDIR/assets/MessageBubble.qml) \
+        $$quote($$BASEDIR/assets/MfaSheet.qml) \
         $$quote($$BASEDIR/assets/ServerList.qml) \
         $$quote($$BASEDIR/assets/Settings.qml) \
         $$quote($$BASEDIR/assets/UserSheet.qml) \
         $$quote($$BASEDIR/assets/audio/connected.ogg) \
-        $$quote($$BASEDIR/assets/audio/connecting.ogg) \
         $$quote($$BASEDIR/assets/audio/error.ogg) \
+        $$quote($$BASEDIR/assets/audio/ping.m4a) \
         $$quote($$BASEDIR/assets/components/SettingItem.qml) \
         $$quote($$BASEDIR/assets/icon.png) \
         $$quote($$BASEDIR/assets/images/default-avt.png) \
@@ -60,6 +61,9 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/images/icons/caret-down.png) \
         $$quote($$BASEDIR/assets/images/icons/first.png) \
         $$quote($$BASEDIR/assets/images/icons/hash.png) \
+        $$quote($$BASEDIR/assets/images/icons/hub/ic_hub.png) \
+        $$quote($$BASEDIR/assets/images/icons/hub/ic_hub_read.png) \
+        $$quote($$BASEDIR/assets/images/icons/hub/ic_hub_unread.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_chat_multiperson.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_copy.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_edit.png) \
@@ -239,6 +243,9 @@ lupdate_inclusion {
         $$quote($$BASEDIR/../assets/images/icons/accent/*.qml) \
         $$quote($$BASEDIR/../assets/images/icons/accent/*.js) \
         $$quote($$BASEDIR/../assets/images/icons/accent/*.qs) \
+        $$quote($$BASEDIR/../assets/images/icons/hub/*.qml) \
+        $$quote($$BASEDIR/../assets/images/icons/hub/*.js) \
+        $$quote($$BASEDIR/../assets/images/icons/hub/*.qs) \
         $$quote($$BASEDIR/../assets/images/icons/settings/*.qml) \
         $$quote($$BASEDIR/../assets/images/icons/settings/*.js) \
         $$quote($$BASEDIR/../assets/images/icons/settings/*.qs) \

@@ -61,6 +61,8 @@ void DiscordClient::initializeNetworkWorker() {
           SLOT(onRestLoginSucceeded(QVariantMap)), Qt::QueuedConnection);
   connect(m_networkWorker, SIGNAL(loginFailed(QString)), this,
           SLOT(onRestLoginFailed(QString)), Qt::QueuedConnection);
+  connect(m_networkWorker, SIGNAL(mfaRequired(QString, QString)), this,
+          SLOT(onRestMfaRequired(QString, QString)), Qt::QueuedConnection);
   connect(m_networkWorker, SIGNAL(guildsLoaded(QVariantList)), this,
           SLOT(onGuildsLoaded(QVariantList)), Qt::QueuedConnection);
   connect(m_networkWorker, SIGNAL(dmChannelsLoaded(QVariantList)), this,

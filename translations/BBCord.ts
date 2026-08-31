@@ -237,32 +237,53 @@
 <context>
     <name>LoginPage</name>
     <message>
-        <location filename="../assets/LoginPage.qml" line="11"/>
+        <location filename="../assets/LoginPage.qml" line="13"/>
         <source>Login failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="53"/>
+        <location filename="../assets/LoginPage.qml" line="64"/>
         <source>Welcome to BBCord</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="59"/>
+        <location filename="../assets/LoginPage.qml" line="70"/>
         <source>Enter your Discord token...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="70"/>
+        <location filename="../assets/LoginPage.qml" line="81"/>
+        <location filename="../assets/LoginPage.qml" line="116"/>
         <source>Login</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="83"/>
+        <location filename="../assets/LoginPage.qml" line="93"/>
+        <source>Email or phone number</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/LoginPage.qml" line="104"/>
+        <source>Password</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/LoginPage.qml" line="130"/>
+        <source>Login with token instead</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/LoginPage.qml" line="130"/>
+        <source>Login with email/phone &amp; password</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/LoginPage.qml" line="143"/>
         <source>Continue</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="118"/>
+        <location filename="../assets/LoginPage.qml" line="178"/>
         <source>How to get token</source>
         <translation type="unfinished"></translation>
     </message>
@@ -337,6 +358,34 @@
         <location filename="../assets/MessageBubble.qml" line="399"/>
         <location filename="../assets/MessageBubble.qml" line="843"/>
         <source>Open image: </source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>MfaSheet</name>
+    <message>
+        <location filename="../assets/MfaSheet.qml" line="21"/>
+        <source>Verification failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/MfaSheet.qml" line="37"/>
+        <source>Two-factor authentication</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/MfaSheet.qml" line="58"/>
+        <source>Enter the 6-digit code from your authenticator app</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/MfaSheet.qml" line="66"/>
+        <source>6-digit code</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/MfaSheet.qml" line="95"/>
+        <source>Verify</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -68,12 +68,30 @@ QString dataErrorMessage(const QString &name, int status) {
   return QString("Discord %1 error %2").arg(name).arg(status);
 }
 
+QString authErrorMessage(int status, const QVariantMap &parsedBody,
+                         const QString &fallback) {
+  QString message = parsedBody.value("message").toString().trimmed();
+  if (!message.isEmpty()) {
+    return message;
+  }
+
+  if (status == 429) {
+    return "Discord REST rate limited";
+  }
+
+  if (!fallback.isEmpty()) {
+    return fallback;
+  }
+
+  return restErrorMessage(status);
+}
+
 } // namespace
 
 DiscordRestClient::DiscordRestClient(QObject *parent)
     : QObject(parent), m_connection(NULL), m_timerId(0), m_pollTicks(0),
-      m_idleTicks(0), m_requestType(NoRequest), m_isProcessing(false),
-      m_requestSent(false), m_finished(true) {
+      m_idleTicks(0), m_requestType(NoRequest), m_awaitingFingerprint(false),
+      m_isProcessing(false), m_requestSent(false), m_finished(true) {
   m_mgr = new mg_mgr;
   mg_mgr_init(m_mgr);
   mg_log_set(MG_LL_NONE);
@@ -112,6 +130,13 @@ void DiscordRestClient::cancel() {
   m_iconGuildId.clear();
   m_iconHash.clear();
   m_outputPath.clear();
+  m_loginEmail.clear();
+  m_loginPassword.clear();
+  m_mfaTicket.clear();
+  m_mfaLoginInstanceId.clear();
+  m_mfaCode.clear();
+  m_fingerprint.clear();
+  m_awaitingFingerprint = false;
   m_isProcessing = false;
   m_connectionUrl.clear();
   stopTimerIfIdle();
@@ -275,6 +300,11 @@ void DiscordRestClient::processNextRequest() {
   m_iconGuildId = restRequest.iconGuildId;
   m_iconHash = restRequest.iconHash;
   m_outputPath = restRequest.outputPath;
+  m_loginEmail = restRequest.loginEmail;
+  m_loginPassword = restRequest.loginPassword;
+  m_mfaTicket = restRequest.mfaTicket;
+  m_mfaLoginInstanceId = restRequest.mfaLoginInstanceId;
+  m_mfaCode = restRequest.mfaCode;
   m_requestSent = false;
   m_finished = false;
   m_pollTicks = 0;
@@ -297,6 +327,9 @@ void DiscordRestClient::processNextRequest() {
     QString message;
     if (m_requestType == LoginRequest) {
       message = "Could not create Discord REST connection";
+    } else if (m_requestType == PasswordLoginRequest ||
+               m_requestType == MfaTotpRequest) {
+      message = "Could not create Discord login connection";
     } else if (m_requestType == GuildsRequest) {
       message = "Could not create Discord guilds connection";
     } else if (m_requestType == DmChannelsRequest) {
@@ -320,7 +353,8 @@ void DiscordRestClient::processNextRequest() {
       message = "Could not create Discord REST connection";
     }
 
-    if (m_requestType == LoginRequest) {
+    if (m_requestType == LoginRequest || m_requestType == PasswordLoginRequest ||
+        m_requestType == MfaTotpRequest) {
       failWithMessage(message);
     } else if (m_requestType == ChannelMessagesRequest ||
                m_requestType == SendMessageRequest ||
@@ -354,6 +388,14 @@ void DiscordRestClient::sendCurrentRequest(struct mg_connection *connection) {
     sendGuildIconRequest(connection);
   } else if (m_requestType == LoginRequest) {
     sendGetMeRequest(connection);
+  } else if (m_requestType == PasswordLoginRequest) {
+    if (m_fingerprint.isEmpty() && !m_awaitingFingerprint) {
+      sendFingerprintRequest(connection);
+    } else {
+      sendPasswordLoginRequest(connection);
+    }
+  } else if (m_requestType == MfaTotpRequest) {
+    sendMfaTotpRequest(connection);
   } else {
     sendApiRequest(connection);
   }
@@ -552,6 +594,91 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
       break;
     }
 
+    if (m_requestType == PasswordLoginRequest && m_awaitingFingerprint) {
+      qDebug() << "[discord-rest] fingerprint status" << status;
+      m_awaitingFingerprint = false;
+
+      if (status == 200) {
+        QString parseError;
+        QVariantMap response = DiscordJsonParser::parseObject(body, &parseError);
+        if (parseError.isEmpty()) {
+          QString fingerprint = response.value("fingerprint").toString();
+          if (!fingerprint.isEmpty()) {
+            m_fingerprint = fingerprint;
+          }
+        }
+      }
+
+      // Proceed to the real login request either way; the fingerprint is
+      // only used to make a CAPTCHA challenge less likely, it is not
+      // required for the login itself.
+      m_requestSent = false;
+      sendPasswordLoginRequest(connection);
+      break;
+    }
+
+    if (m_requestType == PasswordLoginRequest) {
+      qDebug() << "[discord-rest] password login status" << status;
+      QString parseError;
+      QVariantMap response = DiscordJsonParser::parseObject(body, &parseError);
+
+      if (status == 200 && parseError.isEmpty()) {
+        QString token = response.value("token").toString();
+        if (!token.isEmpty()) {
+          // We already have a token; reuse the existing token-login flow to
+          // fetch the current user on this same (keep-alive) connection.
+          m_token = token;
+          m_requestType = LoginRequest;
+          m_requestSent = false;
+          sendGetMeRequest(connection);
+          break;
+        }
+
+        if (response.value("mfa").toBool()) {
+          QString ticket = response.value("ticket").toString();
+          QString loginInstanceId =
+              response.value("login_instance_id").toString();
+          if (!ticket.isEmpty()) {
+            finishRequest(keepConnectionAlive);
+            emit mfaRequired(ticket, loginInstanceId);
+            processNextRequest();
+            break;
+          }
+        }
+
+        failWithMessage("Unexpected Discord login response");
+        break;
+      }
+
+      failWithMessage(authErrorMessage(
+          status, response, "Invalid email/phone number or password"));
+      break;
+    }
+
+    if (m_requestType == MfaTotpRequest) {
+      qDebug() << "[discord-rest] mfa totp status" << status;
+      QString parseError;
+      QVariantMap response = DiscordJsonParser::parseObject(body, &parseError);
+
+      if (status == 200 && parseError.isEmpty()) {
+        QString token = response.value("token").toString();
+        if (!token.isEmpty()) {
+          m_token = token;
+          m_requestType = LoginRequest;
+          m_requestSent = false;
+          sendGetMeRequest(connection);
+          break;
+        }
+
+        failWithMessage("Unexpected Discord verification response");
+        break;
+      }
+
+      failWithMessage(
+          authErrorMessage(status, response, "Invalid verification code"));
+      break;
+    }
+
     qDebug() << "[discord-rest] /users/@me status" << status;
 
     if (status == 200) {
@@ -634,6 +761,11 @@ void DiscordRestClient::finishRequest(bool keepConnectionAlive) {
   m_iconGuildId.clear();
   m_iconHash.clear();
   m_outputPath.clear();
+  m_loginEmail.clear();
+  m_loginPassword.clear();
+  m_mfaTicket.clear();
+  m_mfaLoginInstanceId.clear();
+  m_mfaCode.clear();
   if (keepConnectionAlive && m_connection != NULL) {
     startTimerIfNeeded();
   }

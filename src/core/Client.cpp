@@ -166,6 +166,57 @@ void DiscordClient::login(const QString &token) {
   }
 }
 
+void DiscordClient::loginWithPassword(const QString &email,
+                                      const QString &password) {
+  QString trimmedEmail = email.trimmed();
+  if (trimmedEmail.isEmpty() || password.isEmpty()) {
+    setStatusText("Email/phone number and password are required");
+    emit loginFailed(m_statusText);
+    return;
+  }
+
+  setLoggedIn(false);
+  setBusy(true);
+  setStatusText("Logging in...");
+
+  if (m_networkWorker == 0 || m_networkThread == 0) {
+    initializeNetworkWorker();
+  }
+  if (m_gatewayWorker == 0 || m_gatewayThread == 0) {
+    initializeGatewayWorker();
+  }
+  if (m_networkWorker != 0) {
+    QMetaObject::invokeMethod(m_networkWorker, "loginWithPassword",
+                              Qt::QueuedConnection, Q_ARG(QString, trimmedEmail),
+                              Q_ARG(QString, password));
+  }
+}
+
+void DiscordClient::submitMfaCode(const QString &ticket,
+                                  const QString &loginInstanceId,
+                                  const QString &code) {
+  QString trimmedTicket = ticket.trimmed();
+  QString trimmedCode = code.trimmed();
+  if (trimmedTicket.isEmpty() || trimmedCode.isEmpty()) {
+    setStatusText("Verification code is required");
+    emit loginFailed(m_statusText);
+    return;
+  }
+
+  setBusy(true);
+  setStatusText("Verifying code...");
+
+  if (m_networkWorker == 0 || m_networkThread == 0) {
+    initializeNetworkWorker();
+  }
+  if (m_networkWorker != 0) {
+    QMetaObject::invokeMethod(
+        m_networkWorker, "submitMfaCode", Qt::QueuedConnection,
+        Q_ARG(QString, trimmedTicket), Q_ARG(QString, loginInstanceId.trimmed()),
+        Q_ARG(QString, trimmedCode));
+  }
+}
+
 void DiscordClient::autoLogin() {
   if (m_loggedIn || m_busy || m_token.trimmed().isEmpty()) {
     return;
@@ -306,6 +357,14 @@ void DiscordClient::onRestLoginFailed(const QString &message) {
   }
   setStatusText(message);
   emit loginFailed(message);
+}
+
+void DiscordClient::onRestMfaRequired(const QString &ticket,
+                                      const QString &loginInstanceId) {
+  qDebug() << "[discord-client] MFA required";
+  setBusy(false);
+  setStatusText("Enter your authenticator code");
+  emit mfaRequired(ticket, loginInstanceId);
 }
 
 void DiscordClient::onDataRequestFailed(const QString &message) {

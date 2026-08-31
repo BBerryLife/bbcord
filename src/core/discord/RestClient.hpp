@@ -15,6 +15,8 @@ struct mg_connection;
 enum RequestType {
   NoRequest,
   LoginRequest,
+  PasswordLoginRequest,
+  MfaTotpRequest,
   GuildsRequest,
   DmChannelsRequest,
   GuildChannelsRequest,
@@ -46,6 +48,11 @@ struct RestRequest {
   QString iconGuildId;
   QString iconHash;
   QString outputPath;
+  QString loginEmail;
+  QString loginPassword;
+  QString mfaTicket;
+  QString mfaLoginInstanceId;
+  QString mfaCode;
 };
 
 class DiscordRestClient : public QObject {
@@ -56,6 +63,9 @@ public:
   virtual ~DiscordRestClient();
 
   void loginWithToken(const QString &token);
+  void loginWithPassword(const QString &email, const QString &password);
+  void submitMfaCode(const QString &ticket, const QString &loginInstanceId,
+                     const QString &code);
   void fetchGuilds(const QString &token, int limit, const QString &afterId);
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
@@ -80,6 +90,7 @@ public:
 Q_SIGNALS:
   void loginSucceeded(const QVariantMap &user);
   void loginFailed(const QString &message);
+  void mfaRequired(const QString &ticket, const QString &loginInstanceId);
   void guildsLoaded(const QVariantList &guilds);
   void dmChannelsLoaded(const QVariantList &channels);
   void guildChannelsLoaded(const QString &guildId,
@@ -120,6 +131,9 @@ private:
   void failChatRequest(const QString &message);
   void succeedWithUser(const QVariantMap &user);
   void sendGetMeRequest(struct mg_connection *connection);
+  void sendFingerprintRequest(struct mg_connection *connection);
+  void sendPasswordLoginRequest(struct mg_connection *connection);
+  void sendMfaTotpRequest(struct mg_connection *connection);
   void sendApiRequest(struct mg_connection *connection);
   void sendAvatarRequest(struct mg_connection *connection);
   void sendGuildIconRequest(struct mg_connection *connection);
@@ -156,6 +170,13 @@ private:
   QString m_outputPath;
   QString m_contentType;
   QString m_connectionUrl;
+  QString m_loginEmail;
+  QString m_loginPassword;
+  QString m_mfaTicket;
+  QString m_mfaLoginInstanceId;
+  QString m_mfaCode;
+  QString m_fingerprint;
+  bool m_awaitingFingerprint;
   QList<RestRequest> m_requestQueue;
   bool m_isProcessing;
   bool m_requestSent;

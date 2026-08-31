@@ -6,10 +6,21 @@ Page {
     signal loginSucceeded()
     property double loginProgress: 0.0
     property int loginProgressTicks: 0
+    property bool passwordMode: false
+    property variant mfaSheet: null
 
     function showLoginFailed(message) {
         loginFailToast.body = message.length > 0 ? message : qsTr("Login failed")
         loginFailToast.show()
+    }
+
+    function showMfaSheet(ticket, loginInstanceId) {
+        if (!mfaSheet) {
+            return
+        }
+        mfaSheet.ticket = ticket
+        mfaSheet.loginInstanceId = loginInstanceId
+        mfaSheet.open()
     }
 
     function updateLoginProgress() {
@@ -61,7 +72,7 @@ Page {
                 textFormat: TextFormat.Plain
                 inputMode: TextFieldInputMode.Text
                 text: ""
-                visible: !appStore.busy
+                visible: !appStore.busy && !passwordMode
             }
 
             Button {
@@ -70,10 +81,59 @@ Page {
                 text: qsTr("Login")
                 horizontalAlignment: HorizontalAlignment.Fill
                 enabled: !appStore.busy
-                visible: !appStore.busy
+                visible: !appStore.busy && !passwordMode
 
                 onClicked: {
                     discordClient.login(tokenField.text)
+                }
+            }
+
+            TextField {
+                id: emailField
+                hintText: qsTr("Email or phone number")
+                horizontalAlignment: HorizontalAlignment.Fill
+                textFormat: TextFormat.Plain
+                inputMode: TextFieldInputMode.EmailAddress
+                text: ""
+                topMargin: ui.du(1.0)
+                visible: !appStore.busy && passwordMode
+            }
+
+            TextField {
+                id: passwordField
+                hintText: qsTr("Password")
+                horizontalAlignment: HorizontalAlignment.Fill
+                textFormat: TextFormat.Plain
+                inputMode: TextFieldInputMode.Password
+                text: ""
+                topMargin: ui.du(1.0)
+                visible: !appStore.busy && passwordMode
+            }
+
+            Button {
+                id: btnPasswordLogin
+
+                text: qsTr("Login")
+                horizontalAlignment: HorizontalAlignment.Fill
+                enabled: !appStore.busy && emailField.text.length > 0 && passwordField.text.length > 0
+                visible: !appStore.busy && passwordMode
+                topMargin: ui.du(1.0)
+
+                onClicked: {
+                    discordClient.loginWithPassword(emailField.text, passwordField.text)
+                }
+            }
+
+            Button {
+                id: btnToggleMode
+
+                text: passwordMode ? qsTr("Login with token instead") : qsTr("Login with email/phone & password")
+                horizontalAlignment: HorizontalAlignment.Fill
+                visible: !appStore.busy
+                topMargin: ui.du(1.0)
+
+                onClicked: {
+                    passwordMode = !passwordMode
                 }
             }
 
@@ -144,10 +204,16 @@ Page {
             onTriggered: {
                 updateLoginProgress()
             }
+        },
+        ComponentDefinition {
+            id: mfaSheetDefinition
+            source: "asset:///MfaSheet.qml"
         }
     ]
 
     onCreationCompleted: {
         discordClient.loginFailed.connect(showLoginFailed)
+        discordClient.mfaRequired.connect(showMfaSheet)
+        mfaSheet = mfaSheetDefinition.createObject()
     }
 }

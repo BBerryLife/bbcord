@@ -17,6 +17,8 @@ DiscordNetworkWorker::DiscordNetworkWorker(QObject *parent)
           SIGNAL(loginSucceeded(QVariantMap)));
   connect(&m_loginClient, SIGNAL(loginFailed(QString)), this,
           SIGNAL(loginFailed(QString)));
+  connect(&m_loginClient, SIGNAL(mfaRequired(QString, QString)), this,
+          SIGNAL(mfaRequired(QString, QString)));
 
   connect(&m_dataClient, SIGNAL(guildsLoaded(QVariantList)), this,
           SIGNAL(guildsLoaded(QVariantList)));
@@ -76,6 +78,31 @@ void DiscordNetworkWorker::loginWithToken(const QString &token) {
   }
 
   m_loginClient.loginWithToken(token);
+}
+
+void DiscordNetworkWorker::loginWithPassword(const QString &email,
+                                             const QString &password) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "loginWithPassword", Qt::QueuedConnection,
+                              Q_ARG(QString, email), Q_ARG(QString, password));
+    return;
+  }
+
+  m_loginClient.loginWithPassword(email, password);
+}
+
+void DiscordNetworkWorker::submitMfaCode(const QString &ticket,
+                                         const QString &loginInstanceId,
+                                         const QString &code) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "submitMfaCode", Qt::QueuedConnection,
+                              Q_ARG(QString, ticket),
+                              Q_ARG(QString, loginInstanceId),
+                              Q_ARG(QString, code));
+    return;
+  }
+
+  m_loginClient.submitMfaCode(ticket, loginInstanceId, code);
 }
 
 void DiscordNetworkWorker::fetchGuilds(const QString &token, int limit,

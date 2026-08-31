@@ -37,6 +37,11 @@ public:
   virtual ~DiscordClient();
 
   Q_INVOKABLE void login(const QString &token);
+  Q_INVOKABLE void loginWithPassword(const QString &email,
+                                     const QString &password);
+  Q_INVOKABLE void submitMfaCode(const QString &ticket,
+                                 const QString &loginInstanceId,
+                                 const QString &code);
   Q_INVOKABLE void autoLogin();
   Q_INVOKABLE void logout();
   Q_INVOKABLE void loadMainData();
@@ -56,6 +61,7 @@ public:
 Q_SIGNALS:
   void loginSucceeded();
   void loginFailed(const QString &message);
+  void mfaRequired(const QString &ticket, const QString &loginInstanceId);
   void loggedInChanged(bool loggedIn);
   void busyChanged(bool busy);
   void statusTextChanged(const QString &statusText);
@@ -84,6 +90,7 @@ public Q_SLOTS:
 private Q_SLOTS:
   void onRestLoginSucceeded(const QVariantMap &user);
   void onRestLoginFailed(const QString &message);
+  void onRestMfaRequired(const QString &ticket, const QString &loginInstanceId);
   void onGuildsLoaded(const QVariantList &guilds);
   void onDmChannelsLoaded(const QVariantList &channels);
   void onGuildChannelsLoaded(const QString &guildId,
