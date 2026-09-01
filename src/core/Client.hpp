@@ -42,6 +42,7 @@ public:
   Q_INVOKABLE void submitMfaCode(const QString &ticket,
                                  const QString &loginInstanceId,
                                  const QString &code);
+  Q_INVOKABLE void submitCaptchaKey(const QString &captchaKey);
   Q_INVOKABLE void autoLogin();
   Q_INVOKABLE void logout();
   Q_INVOKABLE void loadMainData();
@@ -62,6 +63,8 @@ Q_SIGNALS:
   void loginSucceeded();
   void loginFailed(const QString &message);
   void mfaRequired(const QString &ticket, const QString &loginInstanceId);
+  void captchaRequired(const QString &requestKind, const QString &sitekey,
+                       const QString &rqdata, const QString &rqtoken);
   void loggedInChanged(bool loggedIn);
   void busyChanged(bool busy);
   void statusTextChanged(const QString &statusText);
@@ -91,6 +94,8 @@ private Q_SLOTS:
   void onRestLoginSucceeded(const QVariantMap &user);
   void onRestLoginFailed(const QString &message);
   void onRestMfaRequired(const QString &ticket, const QString &loginInstanceId);
+  void onRestCaptchaRequired(const QString &requestKind, const QString &sitekey,
+                             const QString &rqdata, const QString &rqtoken);
   void onGuildsLoaded(const QVariantList &guilds);
   void onDmChannelsLoaded(const QVariantList &channels);
   void onGuildChannelsLoaded(const QString &guildId,

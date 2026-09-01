@@ -8,6 +8,7 @@ Page {
     property int loginProgressTicks: 0
     property bool passwordMode: false
     property variant mfaSheet: null
+    property variant captchaSheet: null
 
     function showLoginFailed(message) {
         loginFailToast.body = message.length > 0 ? message : qsTr("Login failed")
@@ -21,6 +22,17 @@ Page {
         mfaSheet.ticket = ticket
         mfaSheet.loginInstanceId = loginInstanceId
         mfaSheet.open()
+    }
+
+    function showCaptchaSheet(requestKind, sitekey, rqdata, rqtoken) {
+        if (!captchaSheet) {
+            return
+        }
+        captchaSheet.requestKind = requestKind
+        captchaSheet.sitekey = sitekey
+        captchaSheet.rqdata = rqdata
+        captchaSheet.rqtoken = rqtoken
+        captchaSheet.open()
     }
 
     function updateLoginProgress() {
@@ -208,12 +220,18 @@ Page {
         ComponentDefinition {
             id: mfaSheetDefinition
             source: "asset:///MfaSheet.qml"
+        },
+        ComponentDefinition {
+            id: captchaSheetDefinition
+            source: "asset:///CaptchaSheet.qml"
         }
     ]
 
     onCreationCompleted: {
         discordClient.loginFailed.connect(showLoginFailed)
         discordClient.mfaRequired.connect(showMfaSheet)
+        discordClient.captchaRequired.connect(showCaptchaSheet)
         mfaSheet = mfaSheetDefinition.createObject()
+        captchaSheet = captchaSheetDefinition.createObject()
     }
 }

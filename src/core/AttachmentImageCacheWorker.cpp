@@ -18,6 +18,11 @@ namespace {
 const int kPollIntervalMs = 50;
 const int kRequestTimeoutTicks = 300;
 
+// See RestClient.cpp for why mongoose's 3-second default DNS timeout is
+// raised here too. Attachment hosts vary (CDN, arbitrary embeds), so slow
+// resolution is at least as likely here as on the main API connection.
+const int kDnsTimeoutMs = 10000;
+
 void sendImageRequest(struct mg_connection *connection,
                       ImageDownloadContext *context) {
   if (context->requestSent) {
@@ -41,6 +46,7 @@ AttachmentImageCacheWorker::AttachmentImageCacheWorker(QObject *parent)
     : QObject(parent), m_timerId(0) {
   m_mgr = new mg_mgr;
   mg_mgr_init(m_mgr);
+  m_mgr->dnstimeout = kDnsTimeoutMs;
   mg_log_set(MG_LL_NONE);
 }
 

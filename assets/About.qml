@@ -206,6 +206,21 @@ Sheet {
                 }
                 
                 Header {
+                    title: qsTr("Updated by")
+                }
+                
+                StandardListItem {
+                    title: "BBerryLife"
+                    description: "still fixing bugs and his life"
+                    
+                    gestureHandlers: [
+                        TapHandler {
+                            onTapped: aboutSheet.openLink("https://github.com/BBerryLife")
+                        }
+                    ]
+                }
+                
+                Header {
                     title: qsTr("Thanks")
                 }
                 

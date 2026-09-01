@@ -37,6 +37,7 @@ simulator {
 config_pri_assets {
     OTHER_FILES += \
         $$quote($$BASEDIR/assets/About.qml) \
+        $$quote($$BASEDIR/assets/CaptchaSheet.qml) \
         $$quote($$BASEDIR/assets/ChannelMemberList.qml) \
         $$quote($$BASEDIR/assets/ChatCard.qml) \
         $$quote($$BASEDIR/assets/DmList.qml) \

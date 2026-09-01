@@ -217,6 +217,27 @@ void DiscordClient::submitMfaCode(const QString &ticket,
   }
 }
 
+void DiscordClient::submitCaptchaKey(const QString &captchaKey) {
+  QString trimmedKey = captchaKey.trimmed();
+  if (trimmedKey.isEmpty()) {
+    setStatusText("CAPTCHA was not completed");
+    emit loginFailed(m_statusText);
+    return;
+  }
+
+  setBusy(true);
+  setStatusText("Verifying CAPTCHA...");
+
+  if (m_networkWorker == 0 || m_networkThread == 0) {
+    initializeNetworkWorker();
+  }
+  if (m_networkWorker != 0) {
+    QMetaObject::invokeMethod(m_networkWorker, "submitCaptchaKey",
+                              Qt::QueuedConnection,
+                              Q_ARG(QString, trimmedKey));
+  }
+}
+
 void DiscordClient::autoLogin() {
   if (m_loggedIn || m_busy || m_token.trimmed().isEmpty()) {
     return;
@@ -365,6 +386,16 @@ void DiscordClient::onRestMfaRequired(const QString &ticket,
   setBusy(false);
   setStatusText("Enter your authenticator code");
   emit mfaRequired(ticket, loginInstanceId);
+}
+
+void DiscordClient::onRestCaptchaRequired(const QString &requestKind,
+                                          const QString &sitekey,
+                                          const QString &rqdata,
+                                          const QString &rqtoken) {
+  qDebug() << "[discord-client] CAPTCHA required for" << requestKind;
+  setBusy(false);
+  setStatusText("Please complete the CAPTCHA");
+  emit captchaRequired(requestKind, sitekey, rqdata, rqtoken);
 }
 
 void DiscordClient::onDataRequestFailed(const QString &message) {

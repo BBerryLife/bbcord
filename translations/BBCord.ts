@@ -35,31 +35,36 @@
     </message>
     <message>
         <location filename="../assets/About.qml" line="209"/>
+        <source>Updated by</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/About.qml" line="224"/>
         <source>Thanks</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/About.qml" line="213"/>
+        <location filename="../assets/About.qml" line="228"/>
         <source>BlackBerry (RIM)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/About.qml" line="214"/>
+        <location filename="../assets/About.qml" line="229"/>
         <source>For QNX and BlackBerry 10</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/About.qml" line="269"/>
+        <location filename="../assets/About.qml" line="284"/>
         <source>Contributors</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/About.qml" line="273"/>
+        <location filename="../assets/About.qml" line="288"/>
         <source>You</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/About.qml" line="274"/>
+        <location filename="../assets/About.qml" line="289"/>
         <source>Still love and using BB10 right now :3</source>
         <translation type="unfinished"></translation>
     </message>
@@ -113,6 +118,25 @@
     <message>
         <location filename="../src/ui/AboutController.cpp" line="276"/>
         <source>Unknown update parse error</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>CaptchaSheet</name>
+    <message>
+        <location filename="../assets/CaptchaSheet.qml" line="31"/>
+        <location filename="../assets/CaptchaSheet.qml" line="92"/>
+        <source>Complete the CAPTCHA below to continue.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/CaptchaSheet.qml" line="73"/>
+        <source>Verifying...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/CaptchaSheet.qml" line="114"/>
+        <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -237,53 +261,53 @@
 <context>
     <name>LoginPage</name>
     <message>
-        <location filename="../assets/LoginPage.qml" line="13"/>
+        <location filename="../assets/LoginPage.qml" line="14"/>
         <source>Login failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="64"/>
+        <location filename="../assets/LoginPage.qml" line="76"/>
         <source>Welcome to BBCord</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="70"/>
+        <location filename="../assets/LoginPage.qml" line="82"/>
         <source>Enter your Discord token...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="81"/>
-        <location filename="../assets/LoginPage.qml" line="116"/>
+        <location filename="../assets/LoginPage.qml" line="93"/>
+        <location filename="../assets/LoginPage.qml" line="128"/>
         <source>Login</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="93"/>
+        <location filename="../assets/LoginPage.qml" line="105"/>
         <source>Email or phone number</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="104"/>
+        <location filename="../assets/LoginPage.qml" line="116"/>
         <source>Password</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="130"/>
+        <location filename="../assets/LoginPage.qml" line="142"/>
         <source>Login with token instead</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="130"/>
+        <location filename="../assets/LoginPage.qml" line="142"/>
         <source>Login with email/phone &amp; password</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="143"/>
+        <location filename="../assets/LoginPage.qml" line="155"/>
         <source>Continue</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="178"/>
+        <location filename="../assets/LoginPage.qml" line="190"/>
         <source>How to get token</source>
         <translation type="unfinished"></translation>
     </message>
@@ -364,27 +388,27 @@
 <context>
     <name>MfaSheet</name>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="21"/>
+        <location filename="../assets/MfaSheet.qml" line="43"/>
         <source>Verification failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="37"/>
+        <location filename="../assets/MfaSheet.qml" line="64"/>
         <source>Two-factor authentication</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="58"/>
+        <location filename="../assets/MfaSheet.qml" line="85"/>
         <source>Enter the 6-digit code from your authenticator app</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="66"/>
+        <location filename="../assets/MfaSheet.qml" line="93"/>
         <source>6-digit code</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="95"/>
+        <location filename="../assets/MfaSheet.qml" line="120"/>
         <source>Verify</source>
         <translation type="unfinished"></translation>
     </message>

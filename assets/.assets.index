@@ -1,9 +1,10 @@
 1
-49
+54
 About.qml
 audio/connected.ogg
-audio/connecting.ogg
 audio/error.ogg
+audio/ping.m4a
+CaptchaSheet.qml
 ChannelMemberList.qml
 ChatCard.qml
 components/SettingItem.qml
@@ -18,6 +19,9 @@ images/icons/action_delete.png
 images/icons/caret-down.png
 images/icons/first.png
 images/icons/hash.png
+images/icons/hub/ic_hub.png
+images/icons/hub/ic_hub_read.png
+images/icons/hub/ic_hub_unread.png
 images/icons/ic_chat_multiperson.png
 images/icons/ic_copy.png
 images/icons/ic_edit.png
@@ -46,6 +50,7 @@ main.qml
 MainPage.qml
 media/ImagePreview.qml
 MessageBubble.qml
+MfaSheet.qml
 ServerList.qml
 Settings.qml
 UserSheet.qml

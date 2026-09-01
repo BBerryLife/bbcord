@@ -24,6 +24,15 @@ const int kPollIntervalMs = 10;
 const int kRequestTimeoutTicks = 600;
 const int kKeepAliveIdleTimeoutTicks = 300;
 
+// Mongoose defaults to a 3-second DNS resolve timeout, which is too short on
+// mobile/carrier networks and BB10 Wi-Fi, where a lookup to its built-in
+// 8.8.8.8 resolver can legitimately take longer (or momentarily stall)
+// under load. A short timeout here doesn't fail fast so much as it fails
+// *early*, right in the middle of normal usage (e.g. immediately after the
+// password step, while the user is still typing their MFA code). Raise it
+// to give slower networks a fair chance before giving up.
+const int kDnsTimeoutMs = 10000;
+
 QByteArray httpBodyToBytes(const struct mg_http_message *message) {
   return QByteArray(message->body.buf, static_cast<int>(message->body.len));
 }
@@ -75,6 +84,20 @@ QString authErrorMessage(int status, const QVariantMap &parsedBody,
     return message;
   }
 
+  // Discord's captcha-required response has no top-level "message" field
+  // (it uses "captcha_key"/"captcha_sitekey"/etc. instead), so without this
+  // check we'd fall through to the generic fallback below - e.g. reporting
+  // "Invalid verification code" on every retry even though the real
+  // problem is a captcha challenge blocking the request before Discord
+  // ever checks the code. Surface that distinction explicitly instead.
+  if (parsedBody.contains("captcha_key") ||
+      parsedBody.contains("captcha_sitekey")) {
+    return "Discord is requiring a CAPTCHA before this request can "
+           "succeed. This can't currently be solved from this app; try "
+           "logging in from the official Discord app/website first, then "
+           "retry here, or use a token obtained that way.";
+  }
+
   if (status == 429) {
     return "Discord REST rate limited";
   }
@@ -91,9 +114,11 @@ QString authErrorMessage(int status, const QVariantMap &parsedBody,
 DiscordRestClient::DiscordRestClient(QObject *parent)
     : QObject(parent), m_connection(NULL), m_timerId(0), m_pollTicks(0),
       m_idleTicks(0), m_requestType(NoRequest), m_awaitingFingerprint(false),
-      m_isProcessing(false), m_requestSent(false), m_finished(true) {
+      m_hasPendingCaptchaRequest(false), m_isProcessing(false),
+      m_requestSent(false), m_finished(true) {
   m_mgr = new mg_mgr;
   mg_mgr_init(m_mgr);
+  m_mgr->dnstimeout = kDnsTimeoutMs;
   mg_log_set(MG_LL_NONE);
 }
 
@@ -131,12 +156,19 @@ void DiscordRestClient::cancel() {
   m_iconHash.clear();
   m_outputPath.clear();
   m_loginEmail.clear();
+  // Secure-wipe: the password can now live until finishRequest()/cancel()
+  // (see sendPasswordLoginRequest()), so clear its backing memory here
+  // rather than just dropping the QString's reference to it.
+  m_loginPassword.fill(QLatin1Char('0'));
   m_loginPassword.clear();
   m_mfaTicket.clear();
   m_mfaLoginInstanceId.clear();
   m_mfaCode.clear();
   m_fingerprint.clear();
   m_awaitingFingerprint = false;
+  m_captchaKey.clear();
+  m_pendingCaptchaRequest = RestRequest();
+  m_hasPendingCaptchaRequest = false;
   m_isProcessing = false;
   m_connectionUrl.clear();
   stopTimerIfIdle();
@@ -305,6 +337,7 @@ void DiscordRestClient::processNextRequest() {
   m_mfaTicket = restRequest.mfaTicket;
   m_mfaLoginInstanceId = restRequest.mfaLoginInstanceId;
   m_mfaCode = restRequest.mfaCode;
+  m_captchaKey = restRequest.captchaKey;
   m_requestSent = false;
   m_finished = false;
   m_pollTicks = 0;
@@ -650,6 +683,10 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
         break;
       }
 
+      if (tryHandleCaptcha(keepConnectionAlive, response)) {
+        break;
+      }
+
       failWithMessage(authErrorMessage(
           status, response, "Invalid email/phone number or password"));
       break;
@@ -671,6 +708,18 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
         }
 
         failWithMessage("Unexpected Discord verification response");
+        break;
+      }
+
+      // Log the raw response body on failure. Discord's error payloads
+      // carry a numeric "code" (e.g. 50035 = invalid form body, 60005 =
+      // invalid TOTP code, 60003 = MFA required) and per-field validation
+      // "errors" that the generic "message" string doesn't convey - without
+      // this we can't tell a real "wrong code" from e.g. a malformed
+      // request being rejected before Discord ever looks at the code.
+      qDebug() << "[discord-rest] mfa totp failure body" << body;
+
+      if (tryHandleCaptcha(keepConnectionAlive, response)) {
         break;
       }
 
@@ -730,6 +779,56 @@ void DiscordRestClient::stopTimerIfIdle() {
   }
 }
 
+bool DiscordRestClient::tryHandleCaptcha(bool keepConnectionAlive,
+                                         const QVariantMap &parsedBody) {
+  if (!parsedBody.contains("captcha_key") &&
+      !parsedBody.contains("captcha_sitekey")) {
+    return false;
+  }
+
+  QString sitekey = parsedBody.value("captcha_sitekey").toString();
+  QString rqdata = parsedBody.value("captcha_rqdata").toString();
+  QString rqtoken = parsedBody.value("captcha_rqtoken").toString();
+  if (sitekey.isEmpty()) {
+    // No sitekey means there is nothing a WebView challenge can solve
+    // (Discord sometimes sends captcha_key alone as a plain rejection, e.g.
+    // "You need to update your app..." for very old/unsupported clients).
+    // Let the caller fall back to its normal error handling instead of
+    // emitting a captchaRequired() the UI could never satisfy.
+    return false;
+  }
+
+  QString requestKind;
+  if (m_requestType == PasswordLoginRequest) {
+    requestKind = "password";
+  } else if (m_requestType == MfaTotpRequest) {
+    requestKind = "mfa";
+  } else {
+    return false;
+  }
+
+  // Snapshot the exact request currently in flight - using the live
+  // m_loginEmail/m_loginPassword/m_mfaTicket/etc. members, which are still
+  // populated at this point and only cleared by finishRequest() below - so
+  // submitCaptchaKey() can replay it unchanged once the user solves the
+  // challenge, without the UI having to re-collect the password or TOTP
+  // code.
+  RestRequest pending;
+  pending.type = m_requestType;
+  pending.loginEmail = m_loginEmail;
+  pending.loginPassword = m_loginPassword;
+  pending.mfaTicket = m_mfaTicket;
+  pending.mfaLoginInstanceId = m_mfaLoginInstanceId;
+  pending.mfaCode = m_mfaCode;
+  m_pendingCaptchaRequest = pending;
+  m_hasPendingCaptchaRequest = true;
+
+  finishRequest(keepConnectionAlive);
+  emit captchaRequired(requestKind, sitekey, rqdata, rqtoken);
+  processNextRequest();
+  return true;
+}
+
 void DiscordRestClient::finishRequest(bool keepConnectionAlive) {
   if (m_connection != NULL) {
     if (keepConnectionAlive && !m_connection->is_closing) {
@@ -762,10 +861,15 @@ void DiscordRestClient::finishRequest(bool keepConnectionAlive) {
   m_iconHash.clear();
   m_outputPath.clear();
   m_loginEmail.clear();
+  // Secure-wipe: the password can live until here now (see
+  // sendPasswordLoginRequest()), so clear its backing memory rather than
+  // just dropping the QString's reference to it.
+  m_loginPassword.fill(QLatin1Char('0'));
   m_loginPassword.clear();
   m_mfaTicket.clear();
   m_mfaLoginInstanceId.clear();
   m_mfaCode.clear();
+  m_captchaKey.clear();
   if (keepConnectionAlive && m_connection != NULL) {
     startTimerIfNeeded();
   }

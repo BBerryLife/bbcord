@@ -53,6 +53,7 @@ struct RestRequest {
   QString mfaTicket;
   QString mfaLoginInstanceId;
   QString mfaCode;
+  QString captchaKey;
 };
 
 class DiscordRestClient : public QObject {
@@ -66,6 +67,11 @@ public:
   void loginWithPassword(const QString &email, const QString &password);
   void submitMfaCode(const QString &ticket, const QString &loginInstanceId,
                      const QString &code);
+  // Retries the login step that most recently failed with a CAPTCHA
+  // challenge (password login or MFA), attaching the token obtained from
+  // solving the hCaptcha widget shown in a WebView. captchaRequired()
+  // reports which step needs it via requestKind ("password" or "mfa").
+  void submitCaptchaKey(const QString &captchaKey);
   void fetchGuilds(const QString &token, int limit, const QString &afterId);
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
@@ -91,6 +97,13 @@ Q_SIGNALS:
   void loginSucceeded(const QVariantMap &user);
   void loginFailed(const QString &message);
   void mfaRequired(const QString &ticket, const QString &loginInstanceId);
+  // Emitted when Discord rejects a password-login or MFA request with a
+  // CAPTCHA challenge. sitekey/rqdata/rqtoken come straight from Discord's
+  // response and are exactly what the hCaptcha JS widget needs; requestKind
+  // is "password" or "mfa" so the UI (and submitCaptchaKey()) know which
+  // request to retry once the challenge is solved.
+  void captchaRequired(const QString &requestKind, const QString &sitekey,
+                       const QString &rqdata, const QString &rqtoken);
   void guildsLoaded(const QVariantList &guilds);
   void dmChannelsLoaded(const QVariantList &channels);
   void guildChannelsLoaded(const QString &guildId,
@@ -129,6 +142,14 @@ private:
   void failWithMessage(const QString &message);
   void failDataRequest(const QString &message);
   void failChatRequest(const QString &message);
+  // If parsedBody is a CAPTCHA-required response, saves a replayable copy
+  // of the currently in-flight password-login/MFA request, emits
+  // captchaRequired() with the sitekey/rqdata/rqtoken the WebView needs,
+  // finishes the current request as a non-error, and returns true (the
+  // caller must not also call failWithMessage()/etc.). Returns false for
+  // any other response so the caller proceeds with its normal handling.
+  bool tryHandleCaptcha(bool keepConnectionAlive,
+                        const QVariantMap &parsedBody);
   void succeedWithUser(const QVariantMap &user);
   void sendGetMeRequest(struct mg_connection *connection);
   void sendFingerprintRequest(struct mg_connection *connection);
@@ -177,6 +198,17 @@ private:
   QString m_mfaCode;
   QString m_fingerprint;
   bool m_awaitingFingerprint;
+  // The most recent hCaptcha token obtained from the WebView challenge
+  // (see captchaRequired()/submitCaptchaKey()). Sent as X-Captcha-Key on
+  // the password-login and MFA requests once set; cleared after each
+  // attempt since a token is single-use.
+  QString m_captchaKey;
+  // The exact request that was in flight when Discord demanded a CAPTCHA,
+  // so submitCaptchaKey() can replay it unchanged (same ticket/email/etc.)
+  // with the solved token attached, instead of the UI having to re-collect
+  // the password or TOTP code from the user.
+  RestRequest m_pendingCaptchaRequest;
+  bool m_hasPendingCaptchaRequest;
   QList<RestRequest> m_requestQueue;
   bool m_isProcessing;
   bool m_requestSent;

@@ -62,6 +62,25 @@ void DiscordRestClient::submitMfaCode(const QString &ticket,
   enqueueRequest(request);
 }
 
+void DiscordRestClient::submitCaptchaKey(const QString &captchaKey) {
+  QString trimmedKey = captchaKey.trimmed();
+  if (trimmedKey.isEmpty()) {
+    emit loginFailed("CAPTCHA was not completed");
+    return;
+  }
+
+  if (!m_hasPendingCaptchaRequest) {
+    emit loginFailed("No login attempt is waiting for a CAPTCHA");
+    return;
+  }
+
+  RestRequest request = m_pendingCaptchaRequest;
+  request.captchaKey = trimmedKey;
+  m_pendingCaptchaRequest = RestRequest();
+  m_hasPendingCaptchaRequest = false;
+  enqueueRequest(request);
+}
+
 void DiscordRestClient::sendGetMeRequest(struct mg_connection *connection) {
   if (m_requestType != LoginRequest || connection == NULL || m_requestSent) {
     return;
@@ -129,10 +148,13 @@ void DiscordRestClient::sendPasswordLoginRequest(
   payload["undelete"] = false;
   QByteArray bodyBytes = buildAuthJsonBody(payload);
 
-  // The plaintext password only needs to live long enough to be serialized
-  // above; drop it from memory as soon as the request body is built.
-  m_loginPassword.fill(QLatin1Char('0'));
-  m_loginPassword.clear();
+  // Note: unlike before, the plaintext password is *not* wiped here
+  // anymore. If Discord responds with a CAPTCHA challenge, retrying this
+  // exact login after the user solves it needs the same password again;
+  // see tryHandleCaptcha(), which copies it into m_pendingCaptchaRequest.
+  // It is still wiped from memory in finishRequest(), which always runs
+  // once this request is truly done (success, non-CAPTCHA failure, or
+  // after being copied into the pending CAPTCHA retry).
 
   QByteArray pathBytes = apiRequestPath("/api/v9/auth/login").toUtf8();
   QByteArray hostBytes = hostHeader(apiBaseUrl()).toUtf8();
@@ -141,11 +163,20 @@ void DiscordRestClient::sendPasswordLoginRequest(
       m_fingerprint.isEmpty()
           ? QByteArray()
           : ("X-Fingerprint: " + m_fingerprint.toUtf8() + "\r\n");
+  // Attached only when this request is a retry after the user solved a
+  // CAPTCHA challenge in the WebView (see captchaRequired()/
+  // submitCaptchaKey()). Cleared after every attempt (processNextRequest()/
+  // cancel()), so a stale key is never resent.
+  QByteArray captchaHeader =
+      m_captchaKey.isEmpty()
+          ? QByteArray()
+          : ("X-Captcha-Key: " + m_captchaKey.toUtf8() + "\r\n");
 
   mg_printf(connection,
             "POST %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "User-Agent: %s\r\n"
+            "%s"
             "%s"
             "Accept: application/json\r\n"
             "Content-Type: application/json\r\n"
@@ -153,6 +184,7 @@ void DiscordRestClient::sendPasswordLoginRequest(
             "Connection: keep-alive\r\n\r\n",
             pathBytes.constData(), hostBytes.constData(),
             userAgent.constData(), fingerprintHeader.constData(),
+            captchaHeader.constData(),
             static_cast<int>(bodyBytes.size()));
   mg_send(connection, bodyBytes.constData(),
           static_cast<size_t>(bodyBytes.size()));
@@ -181,11 +213,16 @@ void DiscordRestClient::sendMfaTotpRequest(struct mg_connection *connection) {
       m_fingerprint.isEmpty()
           ? QByteArray()
           : ("X-Fingerprint: " + m_fingerprint.toUtf8() + "\r\n");
+  QByteArray captchaHeader =
+      m_captchaKey.isEmpty()
+          ? QByteArray()
+          : ("X-Captcha-Key: " + m_captchaKey.toUtf8() + "\r\n");
 
   mg_printf(connection,
             "POST %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "User-Agent: %s\r\n"
+            "%s"
             "%s"
             "Accept: application/json\r\n"
             "Content-Type: application/json\r\n"
@@ -193,6 +230,7 @@ void DiscordRestClient::sendMfaTotpRequest(struct mg_connection *connection) {
             "Connection: keep-alive\r\n\r\n",
             pathBytes.constData(), hostBytes.constData(),
             userAgent.constData(), fingerprintHeader.constData(),
+            captchaHeader.constData(),
             static_cast<int>(bodyBytes.size()));
   mg_send(connection, bodyBytes.constData(),
           static_cast<size_t>(bodyBytes.size()));

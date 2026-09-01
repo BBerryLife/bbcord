@@ -63,6 +63,10 @@ void DiscordClient::initializeNetworkWorker() {
           SLOT(onRestLoginFailed(QString)), Qt::QueuedConnection);
   connect(m_networkWorker, SIGNAL(mfaRequired(QString, QString)), this,
           SLOT(onRestMfaRequired(QString, QString)), Qt::QueuedConnection);
+  connect(m_networkWorker,
+          SIGNAL(captchaRequired(QString, QString, QString, QString)), this,
+          SLOT(onRestCaptchaRequired(QString, QString, QString, QString)),
+          Qt::QueuedConnection);
   connect(m_networkWorker, SIGNAL(guildsLoaded(QVariantList)), this,
           SLOT(onGuildsLoaded(QVariantList)), Qt::QueuedConnection);
   connect(m_networkWorker, SIGNAL(dmChannelsLoaded(QVariantList)), this,

@@ -6,9 +6,30 @@ Sheet {
 
     property string ticket: ""
     property string loginInstanceId: ""
+    // Guards against submitting the same one-time ticket twice. Discord's
+    // /auth/mfa/totp ticket is single-use: if the TextField's onSubmitted
+    // (Enter/keyboard submit) and the Verify button's onClicked both fire
+    // for the same tap - which can happen on BB10's virtual keyboard, since
+    // the button becomes enabled the instant the 6th digit is typed and a
+    // "submit" keypress can trigger both handlers before appStore.busy has
+    // had a chance to propagate back and disable anything - the second
+    // request reuses an already-consumed ticket and Discord rejects it with
+    // "Invalid two-factor code" even though the code that was typed was
+    // correct. Track submission locally, synchronously, instead of relying
+    // solely on the round-tripped busy flag.
+    property bool submitting: false
 
     function reset() {
         codeField.text = ""
+        submitting = false
+    }
+
+    function submitCode() {
+        if (submitting || codeField.text.length !== 6) {
+            return
+        }
+        submitting = true
+        discordClient.submitMfaCode(mfaSheet.ticket, mfaSheet.loginInstanceId, codeField.text)
     }
 
     function showMfaFailed(message) {
@@ -18,6 +39,7 @@ Sheet {
         if (!mfaSheet.opened) {
             return
         }
+        submitting = false
         mfaFailToast.body = message.length > 0 ? message : qsTr("Verification failed")
         mfaFailToast.show()
     }
@@ -30,6 +52,11 @@ Sheet {
     onCreationCompleted: {
         discordClient.loginFailed.connect(showMfaFailed)
         discordClient.loginSucceeded.connect(mfaSheet.close)
+        // If Discord demands a CAPTCHA on the MFA step, C++ emits
+        // captchaRequired() instead of loginFailed() (see
+        // tryHandleCaptcha() in RestClient.cpp) - close this sheet so
+        // LoginPage's CaptchaSheet isn't stacked underneath it.
+        discordClient.captchaRequired.connect(mfaSheet.close)
     }
 
     Page {
@@ -83,9 +110,7 @@ Sheet {
 
                     input {
                         onSubmitted: {
-                            if (codeField.text.length === 6) {
-                                discordClient.submitMfaCode(mfaSheet.ticket, mfaSheet.loginInstanceId, codeField.text)
-                            }
+                            mfaSheet.submitCode()
                         }
                     }
                 }
@@ -94,11 +119,11 @@ Sheet {
                     id: btnVerify
                     text: qsTr("Verify")
                     horizontalAlignment: HorizontalAlignment.Fill
-                    enabled: !appStore.busy && codeField.text.length === 6
+                    enabled: !appStore.busy && !mfaSheet.submitting && codeField.text.length === 6
                     visible: !appStore.busy
 
                     onClicked: {
-                        discordClient.submitMfaCode(mfaSheet.ticket, mfaSheet.loginInstanceId, codeField.text)
+                        mfaSheet.submitCode()
                     }
                 }
 

@@ -17,6 +17,12 @@ const char *kGatewayUrl =
     "wss://gateway.discord.gg/?v=10&encoding=json&compress=zlib-stream";
 const char *kGatewayHost = "gateway.discord.gg";
 const int kGatewayPollIntervalMs = 10;
+
+// See RestClient.cpp for why mongoose's 3-second default DNS timeout is
+// raised here too: the gateway connection resolves the same
+// gateway.discord.gg host and is just as prone to spurious "DNS timeout"
+// failures on slower/mobile networks.
+const int kGatewayDnsTimeoutMs = 10000;
 } // namespace
 
 DiscordGateway::DiscordGateway(QObject *parent)
@@ -25,6 +31,7 @@ DiscordGateway::DiscordGateway(QObject *parent)
       m_state(Disconnected) {
   m_mgr = new mg_mgr;
   mg_mgr_init(m_mgr);
+  m_mgr->dnstimeout = kGatewayDnsTimeoutMs;
   mg_log_set(MG_LL_NONE);
   memset(&m_zstream, 0, sizeof(m_zstream));
   m_zstreamReady = inflateInit(&m_zstream) == Z_OK;

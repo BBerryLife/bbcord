@@ -19,6 +19,9 @@ DiscordNetworkWorker::DiscordNetworkWorker(QObject *parent)
           SIGNAL(loginFailed(QString)));
   connect(&m_loginClient, SIGNAL(mfaRequired(QString, QString)), this,
           SIGNAL(mfaRequired(QString, QString)));
+  connect(&m_loginClient,
+          SIGNAL(captchaRequired(QString, QString, QString, QString)), this,
+          SIGNAL(captchaRequired(QString, QString, QString, QString)));
 
   connect(&m_dataClient, SIGNAL(guildsLoaded(QVariantList)), this,
           SIGNAL(guildsLoaded(QVariantList)));
@@ -103,6 +106,16 @@ void DiscordNetworkWorker::submitMfaCode(const QString &ticket,
   }
 
   m_loginClient.submitMfaCode(ticket, loginInstanceId, code);
+}
+
+void DiscordNetworkWorker::submitCaptchaKey(const QString &captchaKey) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "submitCaptchaKey", Qt::QueuedConnection,
+                              Q_ARG(QString, captchaKey));
+    return;
+  }
+
+  m_loginClient.submitCaptchaKey(captchaKey);
 }
 
 void DiscordNetworkWorker::fetchGuilds(const QString &token, int limit,
