@@ -197,6 +197,24 @@ void DiscordRestClient::timerEvent(QTimerEvent *event) {
   } else if (m_connection != NULL && !m_finished) {
     ++m_pollTicks;
     if (m_pollTicks > kRequestTimeoutTicks) {
+      // The connection genuinely hung (no response within
+      // kRequestTimeoutTicks), most likely because the far end (Discord's
+      // server, or a proxy/load balancer in between) silently closed the
+      // keep-alive TCP connection while we were idle waiting for user
+      // input (e.g. typing an MFA code) - mongoose/the OS has no way to
+      // know that until it actually tries to use the connection. Mark it
+      // closing and forget it here so the *next* request is forced to open
+      // a brand new connection in processNextRequest() instead of
+      // reusing this same dead one and hanging for another
+      // kRequestTimeoutTicks - without this, back-to-back "Discord REST
+      // timeout" failures can repeat several times before a fresh
+      // connection finally gets through.
+      if (!m_connection->is_closing) {
+        m_connection->is_closing = 1;
+      }
+      m_connection->fn_data = NULL;
+      m_connection = NULL;
+      m_connectionUrl.clear();
       failWithMessage("Discord REST timeout");
     }
   } else {

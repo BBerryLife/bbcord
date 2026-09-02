@@ -327,9 +327,21 @@ bool DiscordClient::busy() const { return m_busy; }
 
 QString DiscordClient::statusText() const { return m_statusText; }
 
-void DiscordClient::onRestLoginSucceeded(const QVariantMap &user) {
+void DiscordClient::onRestLoginSucceeded(const QVariantMap &user,
+                                         const QString &token) {
   qDebug() << "[discord-client] REST login succeeded"
            << user.value("id").toString();
+
+  // Client::m_token was previously only ever assigned in login(token) (the
+  // "paste a token directly" path) - a password+MFA login never set it,
+  // leaving it empty here and making the connectGateway() call below fail
+  // with "Discord token is empty" despite the REST login having just
+  // succeeded. token now comes from RestClient::m_token via the
+  // loginSucceeded signal chain (see succeedWithUser() in Login.cpp).
+  QString trimmedToken = token.trimmed();
+  if (!trimmedToken.isEmpty()) {
+    m_token = trimmedToken;
+  }
 
   if (m_store) {
     DiscordUser currentUser;

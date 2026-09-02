@@ -94,7 +94,7 @@ public:
   void cancel();
 
 Q_SIGNALS:
-  void loginSucceeded(const QVariantMap &user);
+  void loginSucceeded(const QVariantMap &user, const QString &token);
   void loginFailed(const QString &message);
   void mfaRequired(const QString &ticket, const QString &loginInstanceId);
   // Emitted when Discord rejects a password-login or MFA request with a

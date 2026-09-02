@@ -125,7 +125,7 @@
     <name>CaptchaSheet</name>
     <message>
         <location filename="../assets/CaptchaSheet.qml" line="31"/>
-        <location filename="../assets/CaptchaSheet.qml" line="92"/>
+        <location filename="../assets/CaptchaSheet.qml" line="101"/>
         <source>Complete the CAPTCHA below to continue.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -135,7 +135,12 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/CaptchaSheet.qml" line="114"/>
+        <location filename="../assets/CaptchaSheet.qml" line="85"/>
+        <source>CAPTCHA verification</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/CaptchaSheet.qml" line="123"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>

@@ -92,15 +92,18 @@ void DiscordRestClient::sendGetMeRequest(struct mg_connection *connection) {
   QByteArray pathBytes = apiRequestPath("/api/v9/users/@me").toUtf8();
   QByteArray hostBytes = hostHeader(apiBaseUrl()).toUtf8();
   QByteArray userAgent = DiscordUtils::desktopUserAgent();
+  QByteArray superProperties = DiscordUtils::superPropertiesHeader();
   mg_printf(connection,
             "GET %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "Authorization: %s\r\n"
             "User-Agent: %s\r\n"
+            "%s"
             "Accept: application/json\r\n"
             "Connection: keep-alive\r\n\r\n",
             pathBytes.constData(), hostBytes.constData(),
-            tokenBytes.constData(), userAgent.constData());
+            tokenBytes.constData(), userAgent.constData(),
+            superProperties.constData());
 }
 
 void DiscordRestClient::sendFingerprintRequest(
@@ -123,14 +126,16 @@ void DiscordRestClient::sendFingerprintRequest(
           .toUtf8();
   QByteArray hostBytes = hostHeader(apiBaseUrl()).toUtf8();
   QByteArray userAgent = DiscordUtils::desktopUserAgent();
+  QByteArray superProperties = DiscordUtils::superPropertiesHeader();
   mg_printf(connection,
             "GET %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "User-Agent: %s\r\n"
+            "%s"
             "Accept: application/json\r\n"
             "Connection: keep-alive\r\n\r\n",
             pathBytes.constData(), hostBytes.constData(),
-            userAgent.constData());
+            userAgent.constData(), superProperties.constData());
 }
 
 void DiscordRestClient::sendPasswordLoginRequest(
@@ -159,6 +164,14 @@ void DiscordRestClient::sendPasswordLoginRequest(
   QByteArray pathBytes = apiRequestPath("/api/v9/auth/login").toUtf8();
   QByteArray hostBytes = hostHeader(apiBaseUrl()).toUtf8();
   QByteArray userAgent = DiscordUtils::desktopUserAgent();
+  QByteArray superProperties = DiscordUtils::superPropertiesHeader();
+
+  // Temporary: log the decoded X-Super-Properties JSON so a 400/"Invalid
+  // Form Body" here can be confirmed (or ruled out) as coming from a
+  // malformed super-properties payload rather than the login body itself.
+  // Remove once password login is confirmed reliable again.
+  qDebug() << "[discord-rest] super properties header"
+           << superProperties.trimmed();
   QByteArray fingerprintHeader =
       m_fingerprint.isEmpty()
           ? QByteArray()
@@ -178,13 +191,14 @@ void DiscordRestClient::sendPasswordLoginRequest(
             "User-Agent: %s\r\n"
             "%s"
             "%s"
+            "%s"
             "Accept: application/json\r\n"
             "Content-Type: application/json\r\n"
             "Content-Length: %d\r\n"
             "Connection: keep-alive\r\n\r\n",
             pathBytes.constData(), hostBytes.constData(),
-            userAgent.constData(), fingerprintHeader.constData(),
-            captchaHeader.constData(),
+            userAgent.constData(), superProperties.constData(),
+            fingerprintHeader.constData(), captchaHeader.constData(),
             static_cast<int>(bodyBytes.size()));
   mg_send(connection, bodyBytes.constData(),
           static_cast<size_t>(bodyBytes.size()));
@@ -209,6 +223,7 @@ void DiscordRestClient::sendMfaTotpRequest(struct mg_connection *connection) {
   QByteArray pathBytes = apiRequestPath("/api/v9/auth/mfa/totp").toUtf8();
   QByteArray hostBytes = hostHeader(apiBaseUrl()).toUtf8();
   QByteArray userAgent = DiscordUtils::desktopUserAgent();
+  QByteArray superProperties = DiscordUtils::superPropertiesHeader();
   QByteArray fingerprintHeader =
       m_fingerprint.isEmpty()
           ? QByteArray()
@@ -224,13 +239,14 @@ void DiscordRestClient::sendMfaTotpRequest(struct mg_connection *connection) {
             "User-Agent: %s\r\n"
             "%s"
             "%s"
+            "%s"
             "Accept: application/json\r\n"
             "Content-Type: application/json\r\n"
             "Content-Length: %d\r\n"
             "Connection: keep-alive\r\n\r\n",
             pathBytes.constData(), hostBytes.constData(),
-            userAgent.constData(), fingerprintHeader.constData(),
-            captchaHeader.constData(),
+            userAgent.constData(), superProperties.constData(),
+            fingerprintHeader.constData(), captchaHeader.constData(),
             static_cast<int>(bodyBytes.size()));
   mg_send(connection, bodyBytes.constData(),
           static_cast<size_t>(bodyBytes.size()));
@@ -242,6 +258,15 @@ void DiscordRestClient::succeedWithUser(const QVariantMap &user) {
   }
 
   finishRequest();
-  emit loginSucceeded(user);
+  // m_token is populated by this point (set when the /auth/mfa/totp or
+  // /auth/login response carried a token, or directly by loginWithToken())
+  // and finishRequest() above does not clear it - only the ephemeral
+  // login-attempt fields (email/password/mfa ticket/etc.) get cleared.
+  // Passed explicitly here because Client::m_token (a separate member one
+  // layer up) was previously never assigned after a password+MFA login,
+  // only after loginWithToken() - leaving it empty and causing
+  // connectGateway() to fail with "Discord token is empty" right after a
+  // successful REST login.
+  emit loginSucceeded(user, m_token);
   processNextRequest();
 }

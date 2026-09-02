@@ -13,8 +13,8 @@ DiscordNetworkWorker::DiscordNetworkWorker(QObject *parent)
     : QObject(parent), m_loginClient(this), m_dataClient(this),
       m_chatReadClient(this), m_chatWriteClient(this), m_avatarClient(this),
       m_avatarClient2(this), m_guildIconClient(this), m_guildIconClient2(this) {
-  connect(&m_loginClient, SIGNAL(loginSucceeded(QVariantMap)), this,
-          SIGNAL(loginSucceeded(QVariantMap)));
+  connect(&m_loginClient, SIGNAL(loginSucceeded(QVariantMap, QString)), this,
+          SIGNAL(loginSucceeded(QVariantMap, QString)));
   connect(&m_loginClient, SIGNAL(loginFailed(QString)), this,
           SIGNAL(loginFailed(QString)));
   connect(&m_loginClient, SIGNAL(mfaRequired(QString, QString)), this,

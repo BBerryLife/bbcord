@@ -91,7 +91,7 @@ public Q_SLOTS:
                                      const QString &messageId);
 
 private Q_SLOTS:
-  void onRestLoginSucceeded(const QVariantMap &user);
+  void onRestLoginSucceeded(const QVariantMap &user, const QString &token);
   void onRestLoginFailed(const QString &message);
   void onRestMfaRequired(const QString &ticket, const QString &loginInstanceId);
   void onRestCaptchaRequired(const QString &requestKind, const QString &sitekey,

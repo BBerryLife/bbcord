@@ -80,44 +80,54 @@ Sheet {
         captchaWebView.html = buildHtml()
     }
 
-    Container {
-        topPadding: ui.du(2.0)
-        bottomPadding: ui.du(2.0)
-        leftPadding: ui.du(2.0)
-        rightPadding: ui.du(2.0)
-        layout: StackLayout {}
-
-        Label {
-            id: statusLabel
-            text: qsTr("Complete the CAPTCHA below to continue.")
-            multiline: true
-            horizontalAlignment: HorizontalAlignment.Center
-            bottomMargin: ui.du(1.0)
-        }
-
-        WebView {
-            id: captchaWebView
-            preferredWidth: captchaSheet.width - ui.du(4.0)
-            preferredHeight: ui.du(60.0)
-            settings.javaScriptEnabled: true
-
-            onNavigationRequested: {
-                if (request.url.toString().indexOf("bbcord://captcha-result") === 0) {
-                    request.action = WebNavigationRequestAction.Ignore
-                    var token = captchaSheet.extractToken(request.url.toString())
-                    captchaSheet.submitToken(token)
-                }
+    Page {
+        titleBar: TitleBar {
+            title: qsTr("CAPTCHA verification")
+            dismissAction: ActionItem {
+                imageSource: "asset:///images/icons/accent/caret-left.png"
+                onTriggered: captchaSheet.close()
             }
         }
 
-        Button {
-            text: qsTr("Cancel")
-            horizontalAlignment: HorizontalAlignment.Fill
-            topMargin: ui.du(1.0)
-            enabled: !captchaSheet.submitting
+        Container {
+            topPadding: ui.du(2.0)
+            bottomPadding: ui.du(2.0)
+            leftPadding: ui.du(2.0)
+            rightPadding: ui.du(2.0)
+            layout: StackLayout {}
 
-            onClicked: {
-                captchaSheet.close()
+            Label {
+                id: statusLabel
+                text: qsTr("Complete the CAPTCHA below to continue.")
+                multiline: true
+                horizontalAlignment: HorizontalAlignment.Center
+                bottomMargin: ui.du(1.0)
+            }
+
+            WebView {
+                id: captchaWebView
+                preferredWidth: captchaSheet.width - ui.du(4.0)
+                preferredHeight: ui.du(60.0)
+                settings.javaScriptEnabled: true
+
+                onNavigationRequested: {
+                    if (request.url.toString().indexOf("bbcord://captcha-result") === 0) {
+                        request.action = WebNavigationRequestAction.Ignore
+                        var token = captchaSheet.extractToken(request.url.toString())
+                        captchaSheet.submitToken(token)
+                    }
+                }
+            }
+
+            Button {
+                text: qsTr("Cancel")
+                horizontalAlignment: HorizontalAlignment.Fill
+                topMargin: ui.du(1.0)
+                enabled: !captchaSheet.submitting
+
+                onClicked: {
+                    captchaSheet.close()
+                }
             }
         }
     }

@@ -1,5 +1,7 @@
 #include "DiscordUtils.hpp"
 
+#include <bb/data/JsonDataAccess>
+
 namespace {
 const int kProtoFieldGuildFolders = 14;
 const int kProtoFieldGuildFolderItems = 1;
@@ -245,6 +247,50 @@ QByteArray DiscordUtils::desktopUserAgent() {
 
 QByteArray DiscordUtils::desktopUserAgentHeader() {
   return QByteArray("User-Agent: ") + desktopUserAgent() + QByteArray("\r\n");
+}
+
+QByteArray DiscordUtils::superPropertiesHeader() {
+  // Mirrors the User-Agent string above (Chrome 149 on Windows 10/11) so
+  // the two headers agree - a mismatched pair (e.g. claiming Chrome in one
+  // header and a different browser/version in the other) is itself a
+  // signal Discord's risk scoring can key on. Values are otherwise not
+  // required to be exact/current; see the header comment in
+  // DiscordUtils.hpp.
+  //
+  // Deliberately omits client_event_source (and any other optional field
+  // whose "empty" value isn't a plain string/number/bool) - it was
+  // previously set via QVariant() (null), and this old bb::data JSON
+  // serializer's handling of a null QVariant is undocumented/untested here.
+  // If it produced anything other than a literal JSON "null" (e.g. an
+  // empty object, or dropping the key with a trailing comma), the embedded
+  // JSON inside this base64 header would be malformed, and Discord
+  // rejecting an unparseable X-Super-Properties value as a blanket "Invalid
+  // Form Body" on the whole request - not specifically about this field -
+  // would look exactly like the regression seen after adding this header.
+  // Every field below is a plain string/int, which this serializer is
+  // already known to handle correctly (it's the same pattern used
+  // elsewhere in this file for years).
+  QVariantMap properties;
+  properties["os"] = QString("Windows");
+  properties["browser"] = QString("Chrome");
+  properties["device"] = QString("");
+  properties["system_locale"] = QString("en-US");
+  properties["browser_user_agent"] = QString::fromUtf8(desktopUserAgent());
+  properties["browser_version"] = QString("149.0.0.0");
+  properties["os_version"] = QString("10");
+  properties["referrer"] = QString("");
+  properties["referring_domain"] = QString("");
+  properties["referrer_current"] = QString("");
+  properties["referring_domain_current"] = QString("");
+  properties["release_channel"] = QString("stable");
+  properties["client_build_number"] = 400000;
+
+  bb::data::JsonDataAccess json;
+  QByteArray propertiesJson;
+  json.saveToBuffer(properties, &propertiesJson);
+
+  QByteArray encoded = propertiesJson.toBase64();
+  return QByteArray("X-Super-Properties: ") + encoded + QByteArray("\r\n");
 }
 
 QString DiscordUtils::firstLetter(const QString &text) {
