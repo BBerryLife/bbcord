@@ -23,6 +23,10 @@ namespace bb {
 namespace cascades {
 class LocaleHandler;
 }
+namespace system {
+class InvokeManager;
+class InvokeRequest;
+}
 } // namespace bb
 
 class QTranslator;
@@ -50,10 +54,17 @@ public:
   Q_INVOKABLE void openLink(const QString &url);
 private slots:
   void onSystemLanguageChanged();
+  // Được gọi khi app được mở qua invoke — bao gồm cả trường hợp
+  // BlackBerry Hub tự soạn InvokeRequest lúc user tap/long-press 1 item
+  // trong tab BBCord của Hub (xem HubIntegration.cpp,
+  // uds_register_item_context_action). Parse channelId từ payload và
+  // điều hướng thẳng tới guild/channel hoặc DM tương ứng.
+  void onInvoked(const bb::system::InvokeRequest &request);
 
 private:
   QTranslator *m_pTranslator;
   bb::cascades::LocaleHandler *m_pLocaleHandler;
+  bb::system::InvokeManager *m_pInvokeManager;
   AppStore *m_appStore;
   DiscordClient *m_discordClient;
   ChatController *m_chatController;

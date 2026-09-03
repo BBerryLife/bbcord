@@ -11,6 +11,15 @@ LIBS += -lbbsystem
 LIBS += -lsocket
 LIBS += -lm
 LIBS += -lz
+# -lunifieddatasourcec: thư viện thật của UDS API
+# (bb/pim/unified/unified_data_source.h), dùng bởi HubIntegration.cpp để
+# đăng ký BBCord thành 1 tab riêng trong BlackBerry Hub. Tên thư viện thật
+# theo header/doc chính thức của BlackBerry là "unifieddatasourcec", KHÔNG
+# phải "uds" — đã xác nhận qua thực tế build bên Zalo10 (cùng tác giả,
+# cùng kiến trúc UDS, xem Zalo10.pro).
+LIBS += -lunifieddatasourcec
+# -lbbpim: namespace bb::pim, cần cho unified_data_source.h ở trên.
+LIBS += -lbbpim
 
 SOURCES += third_party/mongoose/mongoose.c
 HEADERS += third_party/mongoose/mongoose.h

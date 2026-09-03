@@ -98,6 +98,45 @@
 
     <asset path="assets">assets</asset>
 
+    <!-- Public asset folder for BlackBerry Hub (UDS) integration. Must be
+         a SEPARATE top-level folder from "assets" above (not nested inside
+         it) and declared public="true", or the Hub process cannot read the
+         icon files at runtime (see HubIntegration.cpp for the underlying
+         UDS calls). Folder name must not start with the string "assets" -
+         Momentics (NDK 10.3.1) appears to reject public asset folder names
+         that share that prefix with the already-declared "assets" rule. -->
+    <asset path="hub-icons" public="true">hub-icons</asset>
+
+    <!-- Invoke target cho BlackBerry Hub "Open in BBCord" (long-press item
+         action đăng ký bằng uds_register_item_context_action trong
+         HubIntegration.cpp, target="ch.michioxd.bbcord.invoke",
+         type="service"). 4 filter action/mime-type kết hợp — kế thừa
+         nguyên bộ filter đã dùng bên Zalo10's HubIntegration (cùng tác
+         giả, cùng kiến trúc UDS) vì action Hub thực tế gửi khi tap/
+         long-press 1 item chưa được xác nhận chắc chắn là OPEN hay VIEW,
+         và mime type item vs mime type action-registration cũng khác
+         nhau (plain/message cho item, text/plain cho action) — giữ cả 4
+         tổ hợp để không bỏ sót trường hợp nào. -->
+    <invoke-target id="ch.michioxd.bbcord.invoke">
+        <invoke-target-type>application</invoke-target-type>
+        <filter>
+            <action>bb.action.OPEN</action>
+            <mime-type>text/plain</mime-type>
+        </filter>
+        <filter>
+            <action>bb.action.VIEW</action>
+            <mime-type>text/plain</mime-type>
+        </filter>
+        <filter>
+            <action>bb.action.OPEN</action>
+            <mime-type>plain/message</mime-type>
+        </filter>
+        <filter>
+            <action>bb.action.VIEW</action>
+            <mime-type>plain/message</mime-type>
+        </filter>
+    </invoke-target>
+
     <!-- Locale support -->
     <asset path="translations" dest="qm">
         <include name="*.qm"/>
@@ -126,6 +165,13 @@
     <permission>record_audio</permission>
     <permission>read_device_identifying_information</permission>
     <permission>access_wifi_public</permission>
+    <!-- Required for HubIntegration.cpp (bb::pim::unified / UDS API) to
+         connect to the BlackBerry Hub - the Hub is part of the PIM domain
+         on BB10, and uds_init() fails with UDS_ERROR_FAILED (501) without
+         this permission. Confirmed against Zalo10's bar-descriptor.xml,
+         which declares this same permission for its own working Hub
+         integration (see HubIntegration.cpp there). -->
+    <permission>access_pimdomain_messages</permission>
     <env var="LD_LIBRARY_PATH" value="app/native/lib:/usr/lib/qt4/lib"/>
     <env var="CASCADES_THEME" value="dark?primaryColor=0x7289DA&amp;primaryBase=0x7289DA"/>
 </qnx>

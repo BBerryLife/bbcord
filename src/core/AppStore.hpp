@@ -1,6 +1,7 @@
 #ifndef AppStore_HPP_
 #define AppStore_HPP_
 
+#include <QMap>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -87,6 +88,14 @@ public:
   Q_INVOKABLE QString newestChatMessageId(const QString &channelId) const;
   Q_INVOKABLE void clearSession();
 
+  // Role IDs của user hiện tại trong 1 guild cụ thể — nạp từ field
+  // "member" (self member object) của payload GUILD_CREATE, xem
+  // DiscordClient::onGatewayGuildCreate() (Guilds.cpp). Dùng để xác định
+  // 1 tin nhắn có role-mention (mention_roles) tới mình hay không, cho
+  // tính năng thông báo Hub. Trả về danh sách rỗng nếu chưa có dữ liệu
+  // cho guild đó (chưa nhận GUILD_CREATE, hoặc chưa đăng nhập).
+  Q_INVOKABLE QStringList currentUserRoleIdsForGuild(const QString &guildId) const;
+
 public Q_SLOTS:
   void clearMediaCacheState();
 
@@ -127,6 +136,8 @@ public Q_SLOTS:
   void markPendingChatMessageFailed(const QString &channelId,
                                     const QString &messageId);
   void clearChatCache();
+  void setCurrentUserRoleIdsForGuild(const QString &guildId,
+                                     const QStringList &roleIds);
 
 Q_SIGNALS:
   void loggedInChanged(bool loggedIn);
@@ -174,6 +185,7 @@ private:
   QString m_selectedGuildId;
   QString m_selectedChannelId;
   MessageCache m_messageCache;
+  QMap<QString, QStringList> m_currentUserRoleIdsByGuildId;
 };
 
 #endif /* AppStore_HPP_ */

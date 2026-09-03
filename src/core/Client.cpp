@@ -1,6 +1,7 @@
 #include "Client.hpp"
 
 #include "AppStore.hpp"
+#include "HubIntegration.hpp"
 #include "discord/DiscordUtils.hpp"
 #include "discord/GatewayWorker.hpp"
 #include "discord/NetworkWorker.hpp"
@@ -19,6 +20,7 @@ DiscordClient::DiscordClient(QObject *parent)
       m_gatewayThread(0), m_gatewayWorker(0), m_avatarCacheThread(0),
       m_avatarCacheWorker(0), m_cacheManager(0), m_avatarManager(0),
       m_gatewayHandler(0), m_itemMapper(0), m_sortUtils(0),
+      m_hubIntegration(0),
       m_pendingAvatars(m_avatarState.pendingAvatars),
       m_pendingGuildIcons(m_avatarState.pendingGuildIcons),
       m_avatarCacheRequests(m_avatarState.avatarCacheRequests),
@@ -79,6 +81,7 @@ DiscordClient::DiscordClient(AppStore *store, QObject *parent)
       m_gatewayThread(0), m_gatewayWorker(0), m_avatarCacheThread(0),
       m_avatarCacheWorker(0), m_cacheManager(0), m_avatarManager(0),
       m_gatewayHandler(0), m_itemMapper(0), m_sortUtils(0),
+      m_hubIntegration(0),
       m_pendingAvatars(m_avatarState.pendingAvatars),
       m_pendingGuildIcons(m_avatarState.pendingGuildIcons),
       m_avatarCacheRequests(m_avatarState.avatarCacheRequests),
@@ -682,6 +685,37 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
     }
   }
 
+  if (eventName == "GUILD_CREATE") {
+    QString guildId = payload.value("id").toString().trimmed();
+    QString currentUserId = m_store ? m_store->currentUserId() : QString();
+    if (!guildId.isEmpty() && !currentUserId.isEmpty()) {
+      // GUILD_CREATE mang theo "members": mảng đầy đủ guild member object
+      // (không phải 1 field "member" số ít riêng cho self — đó là hành vi
+      // của bot gateway với intent hạn chế, KHÔNG áp dụng cho user-account
+      // gateway mà BBCord dùng). Tìm phần tử có user.id khớp chính mình để
+      // lấy roles, dùng cho tính năng thông báo Hub khi bị ping qua role.
+      QVariantList members = payload.value("members").toList();
+      for (int i = 0; i < members.size(); ++i) {
+        QVariantMap member = members.at(i).toMap();
+        if (member.value("user").toMap().value("id").toString() ==
+            currentUserId) {
+          QVariantList roleVariants = member.value("roles").toList();
+          QStringList roleIds;
+          for (int j = 0; j < roleVariants.size(); ++j) {
+            QString roleId = roleVariants.at(j).toString().trimmed();
+            if (!roleId.isEmpty()) {
+              roleIds.append(roleId);
+            }
+          }
+          if (m_store) {
+            m_store->setCurrentUserRoleIdsForGuild(guildId, roleIds);
+          }
+          break;
+        }
+      }
+    }
+  }
+
   if (eventName == "MESSAGE_CREATE" || eventName == "MESSAGE_UPDATE" ||
       eventName == "MESSAGE_DELETE") {
     QString channelId = payload.value("channel_id").toString().trimmed();
@@ -694,6 +728,22 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
                << "message" << payload.value("id").toString();
     }
   }
+
+  if (eventName == "MESSAGE_CREATE" && m_gatewayHandler != 0 &&
+      m_hubIntegration != 0) {
+    // Đẩy vào BlackBerry Hub bất kể kênh đó đang mở hay không — user có
+    // thể đang xem 1 channel khác, hoặc app ở background/đã tắt màn hình,
+    // Hub là kênh thông báo độc lập với UI trong app. Không giới hạn theo
+    // selectedOrLoaded như block log phía trên.
+    MentionNotification notification =
+        m_gatewayHandler->buildMentionNotification(payload);
+    if (notification.shouldNotify) {
+      m_hubIntegration->upsertThreadItem(
+          notification.sourceId, notification.title, notification.preview,
+          notification.timestampMs);
+    }
+  }
+
   m_gatewayHandler->applyGatewayOrderingEvent(
       eventName, payload, m_pendingUnreadGuildIds,
       m_pendingMentionCountsByGuildId, m_pendingMentionCountsByChannelId,

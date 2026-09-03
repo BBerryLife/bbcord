@@ -2,6 +2,7 @@
 
 #include "../AppStore.hpp"
 #include "../Client.hpp"
+#include "../HubIntegration.hpp"
 #include "../client/ItemMapper.hpp"
 #include "../client/SortUtils.hpp"
 #include "../discord/GatewayWorker.hpp"
@@ -48,6 +49,10 @@ void DiscordClient::loadMoreGuildChannels() {
   appendVisibleGuildChannels();
 }
 
+QString DiscordClient::guildIdForChannel(const QString &channelId) const {
+  return m_chatGuildByChannelId.value(channelId.trimmed());
+}
+
 void DiscordClient::selectChannel(const QString &channelId) {
   QString safeChannelId = channelId.trimmed();
   if (safeChannelId.isEmpty()) {
@@ -76,6 +81,10 @@ void DiscordClient::selectChannel(const QString &channelId) {
                                 Qt::QueuedConnection, Q_ARG(QString, guildId),
                                 Q_ARG(QString, safeChannelId));
     }
+  }
+
+  if (m_hubIntegration != 0) {
+    m_hubIntegration->markThreadRead(safeChannelId);
   }
 
   scheduleGuildsCacheSave();

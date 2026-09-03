@@ -705,6 +705,15 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
         break;
       }
 
+      // Log the raw response body on failure, matching the MFA branch
+      // below. Discord's 50035 "Invalid Form Body" errors carry a
+      // per-field "errors" object identifying exactly which field it
+      // rejected - authErrorMessage() only surfaces the generic top-level
+      // "message" string ("Invalid Form Body"), which is not enough to
+      // diagnose a malformed request body/header vs. genuinely wrong
+      // credentials.
+      qDebug() << "[discord-rest] password login failure body" << body;
+
       failWithMessage(authErrorMessage(
           status, response, "Invalid email/phone number or password"));
       break;

@@ -125,6 +125,11 @@ QString AppStore::newestChatMessageId(const QString &channelId) const {
   return m_messageCache.newestMessageId(channelId.trimmed());
 }
 
+QStringList
+AppStore::currentUserRoleIdsForGuild(const QString &guildId) const {
+  return m_currentUserRoleIdsByGuildId.value(guildId.trimmed());
+}
+
 void AppStore::selectHome() {
   if (m_selectedGuildId.isEmpty() && m_selectedChannelId.isEmpty()) {
     return;
@@ -716,4 +721,13 @@ void AppStore::clearChatCache() {
   m_messageCache.clear();
   emit currentChannelMessagesChanged();
   emit currentChatStateChanged();
+}
+
+void AppStore::setCurrentUserRoleIdsForGuild(const QString &guildId,
+                                             const QStringList &roleIds) {
+  QString safeGuildId = guildId.trimmed();
+  if (safeGuildId.isEmpty()) {
+    return;
+  }
+  m_currentUserRoleIdsByGuildId.insert(safeGuildId, roleIds);
 }

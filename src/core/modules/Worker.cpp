@@ -3,6 +3,7 @@
 #include "../AppStore.hpp"
 #include "../AvatarCacheWorker.hpp"
 #include "../Client.hpp"
+#include "../HubIntegration.hpp"
 #include "../client/AvatarManager.hpp"
 #include "../client/CacheManager.hpp"
 #include "../client/GatewayHandler.hpp"
@@ -33,6 +34,13 @@ void DiscordClient::initializeManagers() {
   }
   if (m_sortUtils == 0) {
     m_sortUtils = new SortUtils(this);
+  }
+  if (m_hubIntegration == 0) {
+    // Không gọi init() ngay tại đây — HubIntegration::init() tự lazy-init
+    // ở lần upsertThreadItem() đầu tiên (xem HubIntegration.cpp), tránh
+    // tốn IPC UDS lúc khởi động app khi user còn chưa đăng nhập/chưa có
+    // tin nhắn nào cần thông báo.
+    m_hubIntegration = new HubIntegration(this);
   }
 }
 

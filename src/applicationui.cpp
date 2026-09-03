@@ -18,6 +18,7 @@
 
 #include "core/AppStore.hpp"
 #include "core/Client.hpp"
+#include "core/discord/JsonParser.hpp"
 #include "ui/AboutController.hpp"
 #include "ui/ChatController.hpp"
 #include "ui/DmListController.hpp"
@@ -37,7 +38,7 @@
 using namespace bb::cascades;
 
 ApplicationUI::ApplicationUI()
-    : QObject(), m_appStore(new AppStore(this)),
+    : QObject(), m_pInvokeManager(0), m_appStore(new AppStore(this)),
       m_discordClient(new DiscordClient(m_appStore, this)),
       m_chatController(new ChatController(m_discordClient, m_appStore, this)),
       m_imagePreview(new ImagePreview(this)),
@@ -63,6 +64,15 @@ ApplicationUI::ApplicationUI()
 
   // initial load
   onSystemLanguageChanged();
+
+  // Nhận InvokeRequest từ BlackBerry Hub khi user tap/long-press item
+  // trong tab BBCord (xem HubIntegration.cpp + bar-descriptor.xml
+  // <invoke-target id="ch.michioxd.bbcord.invoke">).
+  m_pInvokeManager = new bb::system::InvokeManager(this);
+  QObject::connect(
+      m_pInvokeManager,
+      SIGNAL(invoked(const bb::system::InvokeRequest &)), this,
+      SLOT(onInvoked(const bb::system::InvokeRequest &)));
 
   // Create scene document from main.qml asset, the parent is set
   // to ensure the document gets destroyed properly at shut down.
@@ -112,4 +122,40 @@ void ApplicationUI::onSystemLanguageChanged() {
   if (m_pTranslator->load(file_name, "app/native/qm")) {
     QCoreApplication::instance()->installTranslator(m_pTranslator);
   }
+}
+
+void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {
+  // BlackBerry Hub tự soạn InvokeRequest khi user tap/long-press 1 item
+  // trong tab BBCord. sourceId (chính là channelId, xem
+  // HubIntegration::upsertThreadItem) nằm trong data() dưới dạng JSON:
+  //   { "attributes": { "sourceId": "<channelId>", ... } }
+  // KHÔNG nằm trong uri() (Hub luôn để uri() rỗng khi tự soạn invoke).
+  QByteArray rawData = request.data();
+  if (rawData.isEmpty()) {
+    return;
+  }
+
+  QVariantMap root = DiscordJsonParser::parseObject(rawData);
+  QString channelId =
+      root.value("attributes").toMap().value("sourceId").toString().trimmed();
+  if (channelId.isEmpty()) {
+    return;
+  }
+
+  if (m_discordClient == 0 || m_appStore == 0) {
+    return;
+  }
+
+  // channelId rỗng ở m_chatGuildByChannelId nghĩa là DM (guild channel
+  // luôn được insert vào map này ngay khi select — xem
+  // GuildChannels.cpp::selectChannel()), hoặc app đang cold-start và
+  // channel đó chưa từng được mở trong phiên hiện tại. Với guild channel
+  // chưa từng mở, selectGuild() rỗng sẽ bị AppStore::selectChannel() bỏ
+  // qua phần điều hướng guild — chấp nhận được vì đây là trường hợp hiếm
+  // (channel có ping nhưng app chưa từng load nó trong phiên này).
+  QString guildId = m_discordClient->guildIdForChannel(channelId);
+  if (!guildId.isEmpty()) {
+    m_discordClient->selectGuild(guildId);
+  }
+  m_discordClient->selectChannel(channelId);
 }

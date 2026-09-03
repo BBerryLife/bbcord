@@ -24,6 +24,7 @@ class AvatarManager;
 class GatewayHandler;
 class ItemMapper;
 class SortUtils;
+class HubIntegration;
 
 class DiscordClient : public QObject {
   Q_OBJECT
@@ -54,6 +55,14 @@ public:
   Q_INVOKABLE void selectHome();
   Q_INVOKABLE void selectGuild(const QString &guildId);
   Q_INVOKABLE void selectChannel(const QString &channelId);
+  // guildId đã cache cho 1 channelId cụ thể, nếu channel đó từng được
+  // select/load trong phiên hiện tại (m_chatGuildByChannelId, xem
+  // GuildChannels.cpp::selectChannel()). Trả về rỗng nếu không tìm thấy
+  // — nghĩa là channelId đó là DM (guild channel luôn được insert vào map
+  // này ngay khi select), hoặc guild channel chưa từng mở trong phiên
+  // này (trường hợp mở app từ Hub khi app đang cold-start — xem
+  // ApplicationUI::onInvoked()).
+  Q_INVOKABLE QString guildIdForChannel(const QString &channelId) const;
 
   bool loggedIn() const;
   bool busy() const;
@@ -189,6 +198,7 @@ private:
   GatewayHandler *m_gatewayHandler;
   ItemMapper *m_itemMapper;
   SortUtils *m_sortUtils;
+  HubIntegration *m_hubIntegration;
 
   ClientState m_state;
   AvatarState m_avatarState;
