@@ -7,6 +7,8 @@
 #include <QSet>
 #include <QUrl>
 
+namespace bb { namespace multimedia { class MediaPlayer; } }
+
 // Forward declare thay vì include <bb/pim/unified/unified_data_source.h> ở
 // đây — header đó là C API thuần (không phải Cascades/QObject), kéo vào
 // header này sẽ leak ra mọi file include HubIntegration.hpp. uds_context_t
@@ -74,6 +76,18 @@ public:
     // Hiện chưa có call site bắt buộc — public để dùng khi cần.
     void removeThreadItem(const QString &sourceId);
 
+    // Phát âm thanh assets/audio/ping.m4a cho MỌI tin nhắn đáng thông báo
+    // (cùng điều kiện shouldNotify với upsertThreadItem() — do
+    // GatewayHandler quyết định, class này chỉ thực thi). Tách riêng khỏi
+    // phần UDS/Hub bên trên: gọi được và không phụ thuộc init() hay
+    // m_ready, để nếu Hub (UDS) lỗi/thiếu quyền như đã từng gặp trên thiết
+    // bị thật, âm thanh vẫn phát bình thường — không có lý do 2 tính năng
+    // phải chung 1 điểm hỏng. Xem HubIntegration.cpp về lựa chọn
+    // bb::multimedia::MediaPlayer (chơi được file asset tự chọn) thay vì
+    // bb::multimedia::SystemSound (chỉ chơi được các âm hệ thống định
+    // sẵn, không nhận file custom như ping.m4a của app).
+    void playPingSound();
+
     // Đường dẫn tuyệt đối tới thư mục asset PUBLIC đã cài đặt của app trên
     // máy ("/apps/<app-id>/public/hub-icons/"), dùng làm pAssetPath cho
     // uds_register_client() bên trong class này. Public static để dùng
@@ -99,7 +113,17 @@ private:
 
     void *m_udsHandle;      // uds_context_t thật, xem HubIntegration.cpp
     bool  m_ready;          // true nếu init() + account_added() thành công
-    bool  m_initAttempted;  // tránh log spam / retry init() lặp lại mỗi tin nhắn
+
+    // Retry có giới hạn thay vì chỉ thử 1 lần duy nhất cho cả phiên chạy
+    // app. uds_init()/uds_register_client() có thể fail thoáng qua lúc
+    // app mới khởi động (ví dụ service Hub của OS chưa sẵn sàng) — nếu
+    // chỉ thử 1 lần và latch vĩnh viễn như trước, cả phiên app còn lại
+    // mất Hub dù service có thể đã sẵn sàng vài giây sau đó. Xem
+    // init() trong HubIntegration.cpp.
+    int   m_initAttemptCount;    // số lần đã thử init(), kể cả lần fail
+    qint64 m_lastInitAttemptMs;  // mốc thời gian lần thử gần nhất (0 = chưa thử lần nào)
+    static const int   MAX_INIT_ATTEMPTS;        // sau ngần này lần fail, dừng thử hẳn cho phiên này
+    static const qint64 INIT_RETRY_INTERVAL_MS;  // khoảng cách tối thiểu giữa 2 lần thử
 
     // sourceId -> unread_count hiện tại đang hiển thị trên item đó, để
     // upsertThreadItem() cộng dồn thay vì Hub luôn nhảy về 1.
@@ -114,6 +138,13 @@ private:
     // đổi nếu gặp lại đúng các bug đã ghi lại ở đó (account dính state cũ
     // của Hub, độc lập với app, gỡ cài lại không xoá được).
     static const long long ACCOUNT_ID = 5313230001LL;
+
+    // Tạo lazy trong playPingSound() (không tạo sẵn ở constructor — nếu
+    // HubIntegration bị tạo ra nhưng không phiên nào có tin nhắn đáng
+    // thông báo, không có lý do chiếm tài nguyên audio của OS sớm hơn cần
+    // thiết). Parent = this nên tự huỷ theo QObject, không cần dọn tay ở
+    // destructor.
+    bb::multimedia::MediaPlayer *m_pingPlayer;
 };
 
 #endif // HUBINTEGRATION_HPP

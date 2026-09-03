@@ -741,6 +741,10 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       m_hubIntegration->upsertThreadItem(
           notification.sourceId, notification.title, notification.preview,
           notification.timestampMs);
+      // Âm thanh ping.m4a cho mọi tin nhắn đáng thông báo (giống Zalo10) —
+      // cùng điều kiện shouldNotify với dòng Hub ở trên, nhưng gọi độc lập
+      // vì playPingSound() không phụ thuộc UDS/init() (xem HubIntegration.cpp).
+      m_hubIntegration->playPingSound();
     }
   }
 

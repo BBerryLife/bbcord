@@ -5,6 +5,7 @@
 #include "../models/Models.hpp"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QMetaObject>
 #include <QTimer>
 
@@ -83,6 +84,67 @@ qint64 messageTimestampMsFromPayload(const QVariantMap &payload) {
   DiscordMessage message = DiscordMessage::fromVariantMap(payload);
   qint64 ms = message.timestampMs();
   return ms > 0 ? ms : static_cast<qint64>(QDateTime::currentMSecsSinceEpoch());
+}
+
+// Empty "content" isn't automatically a bug — Discord allows sending a
+// message that's only an attachment/embed/sticker with no text at all
+// (a photo, a file, a pasted link that auto-embeds, a sticker...). The
+// old code just concatenated the empty content straight into the preview,
+// producing a dangling "Replied: " with nothing after the colon — that
+// was the original bug report. This falls back to a short, natural-language
+// label when content is empty, so the preview is never blank.
+QString previewContentFromPayload(const QString &content,
+                                  const QVariantMap &payload) {
+  if (!content.trimmed().isEmpty()) {
+    return content;
+  }
+
+  QVariantList attachments = payload.value("attachments").toList();
+  if (!attachments.isEmpty()) {
+    QString contentType =
+        attachments.first().toMap().value("content_type").toString();
+    // Discord's own "voice message" attachments are flagged via the
+    // message's `flags` bit 1<<13 (IS_VOICE_MESSAGE) rather than a
+    // distinct content_type, so check that first.
+    int flags = payload.value("flags").toInt();
+    if (flags & (1 << 13)) {
+      return QLatin1String("Voice message");
+    }
+    if (contentType.startsWith(QLatin1String("image/"))) {
+      return QLatin1String("Photo");
+    }
+    if (contentType.startsWith(QLatin1String("video/"))) {
+      return QLatin1String("Video");
+    }
+    if (contentType.startsWith(QLatin1String("audio/"))) {
+      return QLatin1String("Audio");
+    }
+    return QLatin1String("Attachment");
+  }
+
+  QVariantList stickers = payload.value("sticker_items").toList();
+  if (!stickers.isEmpty()) {
+    return QLatin1String("Sticker");
+  }
+
+  QVariantList embeds = payload.value("embeds").toList();
+  if (!embeds.isEmpty()) {
+    return QLatin1String("Link");
+  }
+
+  if (payload.contains(QLatin1String("poll"))) {
+    return QLatin1String("Poll");
+  }
+
+  // No content, no attachment/sticker/embed/poll — none of the known
+  // "text-less message" shapes matched. Log which top-level keys the
+  // payload actually has (never the values — message text/media are
+  // user data and shouldn't hit the log) so a repeat of this can be
+  // diagnosed without needing to capture private message content.
+  qDebug() << "[Hub] previewContentFromPayload: empty content with no "
+              "matching fallback, payload keys="
+           << payload.keys();
+  return QLatin1String("New message");
 }
 } // namespace
 
@@ -287,7 +349,8 @@ MentionNotification GatewayHandler::buildMentionNotification(
     result.shouldNotify = true;
     result.sourceId = channelId;
     result.title = serverName;
-    result.preview = QString("%1: %2").arg(authorName, content);
+    result.preview =
+        QString("%1: %2").arg(authorName, previewContentFromPayload(content, payload));
     result.timestampMs = timestampMs;
     return result;
   }
@@ -319,7 +382,8 @@ MentionNotification GatewayHandler::buildMentionNotification(
     result.shouldNotify = true;
     result.sourceId = channelId;
     result.title = title;
-    result.preview = QString("Replied: %1").arg(content);
+    result.preview =
+        QString("Replied: %1").arg(previewContentFromPayload(content, payload));
     result.timestampMs = timestampMs;
     return result;
   }
@@ -334,7 +398,8 @@ MentionNotification GatewayHandler::buildMentionNotification(
   result.shouldNotify = true;
   result.sourceId = channelId;
   result.title = title;
-  result.preview = QString("Replied: %1").arg(content);
+  result.preview =
+      QString("Replied: %1").arg(previewContentFromPayload(content, payload));
   result.timestampMs = timestampMs;
   return result;
 }

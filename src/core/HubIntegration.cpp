@@ -1,10 +1,12 @@
 #include "HubIntegration.hpp"
 
 #include <bb/pim/unified/unified_data_source.h>
+#include <bb/multimedia/MediaPlayer>
 
 #include <QDebug>
 #include <QByteArray>
 #include <QLatin1String>
+#include <QDateTime>
 #include <QDir>
 #include <QStringList>
 
@@ -49,8 +51,37 @@ static const unsigned int HUB_CONTEXT_STATE_UNREAD = 0x02;
 // item có thể "actionable" (xem uds_category_added() trong init()).
 static const long long HUB_CATEGORY_ID = 1;
 
+// Giới hạn số lần thử init() cho cả phiên app, cách nhau tối thiểu
+// INIT_RETRY_INTERVAL_MS mỗi lần, thay vì chỉ thử đúng 1 lần rồi latch
+// vĩnh viễn. uds_init()/uds_register_client() từng ghi nhận fail thoáng
+// qua lúc app mới khởi động trên thiết bị thật (service Hub của OS có
+// thể chưa kịp sẵn sàng) — 5 lần / cách nhau 3s cho app khoảng 15s để
+// service kịp lên trước khi bỏ cuộc hẳn cho phiên đó.
+const int HubIntegration::MAX_INIT_ATTEMPTS = 5;
+const qint64 HubIntegration::INIT_RETRY_INTERVAL_MS = 3000;
+
+// Map mã lỗi uds_error_code_t (unified_data_source.h) sang tên dễ đọc
+// trong log — rc số không đủ để biết ngay là lỗi gì khi đọc log trên
+// thiết bị mà không có header bên cạnh.
+static QString udsErrorName(int rc)
+{
+    switch (rc) {
+    case 0:   return QLatin1String("UDS_SUCCESS");
+    case 501: return QLatin1String("UDS_ERROR_FAILED");
+    case 502: return QLatin1String("UDS_ERROR_DISCONNECTED");
+    case 503: return QLatin1String("UDS_ERROR_INVALID_ITEM");
+    case 504: return QLatin1String("UDS_ERROR_NOT_SUPPORTED");
+    case 505: return QLatin1String("UDS_ERROR_TIMEOUT");
+    case 601: return QLatin1String("UDS_DUPLICATE_CONFIG");
+    case 602: return QLatin1String("UDS_INVALID_SERVICE_ID");
+    case 603: return QLatin1String("UDS_INVALID_ACCOUNT_ID");
+    default:  return QLatin1String("UDS_UNKNOWN");
+    }
+}
+
 HubIntegration::HubIntegration(QObject *parent)
-    : QObject(parent), m_udsHandle(0), m_ready(false), m_initAttempted(false)
+    : QObject(parent), m_udsHandle(0), m_ready(false),
+      m_initAttemptCount(0), m_lastInitAttemptMs(0), m_pingPlayer(0)
 {
 }
 
@@ -101,15 +132,40 @@ QString HubIntegration::publicAssetPath()
 bool HubIntegration::init()
 {
     if (m_ready) return true;
-    if (m_initAttempted) return false; // đã thử và lỗi, không retry mỗi lần gửi tin
-    m_initAttempted = true;
+
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    if (m_initAttemptCount >= MAX_INIT_ATTEMPTS) {
+        // Đã hết lượt thử cho phiên này. Chỉ log đúng 1 lần ngay tại thời
+        // điểm vượt ngưỡng (xem chỗ tăng m_initAttemptCount bên dưới) để
+        // không spam log này lại mỗi tin nhắn tới sau đó — ở đây chỉ
+        // no-op êm.
+        return false;
+    }
+
+    if (m_initAttemptCount > 0 &&
+        (now - m_lastInitAttemptMs) < INIT_RETRY_INTERVAL_MS) {
+        // Chưa tới hạn thử lại — no-op êm, không log, tránh spam log mỗi
+        // khi có tin nhắn mới dồn dập trong lúc đang chờ cooldown.
+        return false;
+    }
+
+    m_initAttemptCount++;
+    m_lastInitAttemptMs = now;
+    qDebug() << "[Hub] init() attempt" << m_initAttemptCount << "/" << MAX_INIT_ATTEMPTS;
 
     uds_context_t handle = 0;
     int rc = uds_init(&handle, false /* synchronous */);
     if (rc != UDS_SUCCESS || !handle) {
-        qDebug() << "[Hub] uds_init failed, rc=" << rc
+        qDebug() << "[Hub] uds_init failed, rc=" << rc << "(" << udsErrorName(rc) << ")"
+                  << "attempt" << m_initAttemptCount << "/" << MAX_INIT_ATTEMPTS
                   << "- app se tiep tuc hoat dong binh thuong, chi khong co "
-                     "tab rieng trong Hub.";
+                     "tab rieng trong Hub (cho toi khi thu lai thanh cong).";
+        if (m_initAttemptCount >= MAX_INIT_ATTEMPTS) {
+            qDebug() << "[Hub] Da het" << MAX_INIT_ATTEMPTS
+                      << "lan thu init() - Hub integration TAT HAN cho phien app nay."
+                      << "Khoi dong lai app de thu lai tu dau.";
+        }
         return false;
     }
     m_udsHandle = handle;
@@ -119,10 +175,17 @@ bool HubIntegration::init()
     rc = uds_register_client(m_udsHandle, HUB_SERVICE_URL, "" /* libPath, không dùng */,
                               assetPath.toUtf8().constData());
     if (rc != UDS_SUCCESS) {
-        qDebug() << "[Hub] uds_register_client failed, rc=" << rc << "assetPath=" << assetPath;
+        qDebug() << "[Hub] uds_register_client failed, rc=" << rc << "(" << udsErrorName(rc) << ")"
+                  << "attempt" << m_initAttemptCount << "/" << MAX_INIT_ATTEMPTS
+                  << "assetPath=" << assetPath;
         uds_context_t h = static_cast<uds_context_t>(m_udsHandle);
         uds_close(&h);
         m_udsHandle = 0;
+        if (m_initAttemptCount >= MAX_INIT_ATTEMPTS) {
+            qDebug() << "[Hub] Da het" << MAX_INIT_ATTEMPTS
+                      << "lan thu init() - Hub integration TAT HAN cho phien app nay."
+                      << "Khoi dong lai app de thu lai tu dau.";
+        }
         return false;
     }
 
@@ -158,11 +221,21 @@ bool HubIntegration::init()
     uds_account_data_destroy(account);
 
     if (rc != UDS_SUCCESS) {
-        qDebug() << "[Hub] account add failed, rc=" << rc;
+        qDebug() << "[Hub] account add failed, rc=" << rc << "(" << udsErrorName(rc) << ")"
+                  << "attempt" << m_initAttemptCount << "/" << MAX_INIT_ATTEMPTS;
+        uds_context_t h = static_cast<uds_context_t>(m_udsHandle);
+        uds_close(&h);
+        m_udsHandle = 0;
+        if (m_initAttemptCount >= MAX_INIT_ATTEMPTS) {
+            qDebug() << "[Hub] Da het" << MAX_INIT_ATTEMPTS
+                      << "lan thu init() - Hub integration TAT HAN cho phien app nay."
+                      << "Khoi dong lai app de thu lai tu dau.";
+        }
         return false;
     }
 
-    qDebug() << "[Hub] BBCord account registered in BlackBerry Hub, id=" << ACCOUNT_ID;
+    qDebug() << "[Hub] BBCord account registered in BlackBerry Hub, id=" << ACCOUNT_ID
+              << "(thanh cong sau" << m_initAttemptCount << "lan thu)";
     m_ready = true;
 
     // category_added() PHẢI chạy trước item_added() nào dùng category_id
@@ -231,10 +304,21 @@ void HubIntegration::upsertThreadItem(const QString &sourceId, const QString &ti
     uds_inbox_item_data_set_unread_count(item, unread);
     uds_inbox_item_data_set_total_count(item, unread);
     uds_inbox_item_data_set_context_state(item, HUB_CONTEXT_STATE_UNREAD);
-    // true: item này là nguồn duy nhất chịu trách nhiệm cả dòng hiển thị
-    // trong Hub lẫn hiệu ứng cảnh báo (banner/sound/lock-screen instant
-    // preview).
-    uds_inbox_item_data_set_notification_state(item, true);
+    // false (đổi từ true): tắt hẳn bundle "hiệu ứng cảnh báo" của Hub cho
+    // item này — theo doc chính thức
+    // (uds_inbox_item_data_set_notification_state trong
+    // unified_data_source.h), true/false là công tắc CHUNG cho cả
+    // banner + âm thanh hệ thống + lock-screen instant preview, không
+    // tách riêng được sound khỏi banner qua API này. Đổi thành false vì
+    // app tự phát ping.m4a qua playPingSound() (xem Client.cpp) rồi — để
+    // true sẽ ra 2 tiếng chồng nhau (đúng bug đã báo: "2 thông báo bị
+    // chơi cùng lúc"). Đánh đổi: dòng item vẫn lên Hub/badge bình thường
+    // (uds_item_added/updated không phụ thuộc cờ này), nhưng banner popup
+    // + lock-screen instant preview của riêng Hub cũng tắt theo, không chỉ
+    // mỗi âm thanh — API không cho tắt 1 phần. Nếu sau này cần lại banner,
+    // cách duy nhất là bật true lại và tắt playPingSound() thay vào đó
+    // (không thể có cả 2 nguồn cùng lúc mà không đụng độ).
+    uds_inbox_item_data_set_notification_state(item, false);
 
     // Thử update trước (trường hợp phổ biến hơn — nhiều ping cùng 1
     // channel/thread), fail thì add — Hub không có query API để hỏi
@@ -255,7 +339,7 @@ void HubIntegration::upsertThreadItem(const QString &sourceId, const QString &ti
 
     if (rc != UDS_SUCCESS) {
         qDebug() << "[Hub] upsertThreadItem failed for source" << sourceId
-                  << "rc=" << rc;
+                  << "rc=" << rc << "(" << udsErrorName(rc) << ")";
     }
 }
 
@@ -319,3 +403,27 @@ void HubIntegration::removeThreadItem(const QString &sourceId)
     m_unreadCounts.remove(sourceId);
     m_threadItemState.remove(sourceId);
 }
+
+void HubIntegration::playPingSound()
+{
+    // Không phụ thuộc m_ready/init() — cố ý, xem giải thích ở khai báo
+    // trong HubIntegration.hpp. Hub (UDS) và âm thanh là 2 con đường độc
+    // lập, không có lý do UDS lỗi (như đã từng gặp: thiếu quyền
+    // _sys_access_pim_unified, rc=501) lại kéo theo mất luôn âm thanh.
+    if (!m_pingPlayer) {
+        m_pingPlayer = new bb::multimedia::MediaPlayer(this);
+        // "audio/ping.m4a" (không phải "assets/audio/ping.m4a"): thư mục
+        // "assets" khai trong bar-descriptor.xml
+        // (<asset path="assets">assets</asset>) là gốc của scheme
+        // asset:///, tự bị lược khỏi URL — đúng convention đã dùng xuyên
+        // suốt code hiện có (vd "asset:///images/icons/first.png" cho file
+        // thật nằm ở assets/images/icons/first.png, xem
+        // MainPageController.cpp/ItemMapper.cpp).
+        m_pingPlayer->setSourceUrl(QUrl("asset:///audio/ping.m4a"));
+    }
+    bb::multimedia::MediaError::Type err = m_pingPlayer->play();
+    if (err != bb::multimedia::MediaError::None) {
+        qDebug() << "[Hub] playPingSound failed, mediaError=" << err;
+    }
+}
+

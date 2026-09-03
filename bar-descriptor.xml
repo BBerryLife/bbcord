@@ -171,6 +171,17 @@
          this permission. Confirmed against Zalo10's bar-descriptor.xml,
          which declares this same permission for its own working Hub
          integration (see HubIntegration.cpp there). -->
+    <!-- Bắt buộc cho UDS (Unified Data Source / Hub integration, xem
+         src/core/HubIntegration.cpp): PPS object "/pps/services/pim/unified"
+         mà uds_init()/uds_register_client() nói chuyện tới được BlackBerry
+         bảo vệ bởi quyền hệ thống này. Đây là quyền hạn chế ("_sys_"
+         prefix) — thiếu dòng này khiến uds_init() fail ngay từ bước đầu
+         tiên với mã lỗi generic UDS_ERROR_FAILED (501), như đã xác nhận
+         qua log thực tế trên thiết bị. Theo tài liệu BlackBerry, quyền
+         restricted này có thể cần được BlackBerry cấp riêng để chạy chặt
+         trên production/BlackBerry World, nhưng vẫn phải khai báo ở đây dù
+         build bằng self-signed/debug token. -->
+    <permission system="true">_sys_access_pim_unified</permission>
     <permission>access_pimdomain_messages</permission>
     <env var="LD_LIBRARY_PATH" value="app/native/lib:/usr/lib/qt4/lib"/>
     <env var="CASCADES_THEME" value="dark?primaryColor=0x7289DA&amp;primaryBase=0x7289DA"/>
