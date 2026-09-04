@@ -714,6 +714,174 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
         }
       }
     }
+
+    if (!guildId.isEmpty() && m_store) {
+      // "roles": mảng role object đầy đủ của guild (id/name/color/
+      // position/hoist/...), tách biệt hoàn toàn với "members" ở trên.
+      // color == 0 nghĩa là role không có màu riêng — Discord client
+      // thật không hiển thị màu đen cho trường hợp này mà dùng màu chữ
+      // mặc định, nên ta để color rỗng thay vì "#000000".
+      QVariantList roleVariants = payload.value("roles").toList();
+      QVariantList parsedRoles;
+      for (int i = 0; i < roleVariants.size(); ++i) {
+        QVariantMap roleRaw = roleVariants.at(i).toMap();
+        QString roleId = roleRaw.value("id").toString().trimmed();
+        if (roleId.isEmpty()) {
+          continue;
+        }
+
+        DiscordRole role;
+        role.id = roleId;
+        role.guildId = guildId;
+        role.name = roleRaw.value("name").toString();
+        role.position = roleRaw.value("position").toInt();
+        role.hoisted = roleRaw.value("hoist").toBool();
+
+        bool colorOk = false;
+        qint64 colorValue = roleRaw.value("color").toLongLong(&colorOk);
+        if (colorOk && colorValue > 0) {
+          role.color =
+              "#" + QString("%1")
+                        .arg(colorValue, 6, 16, QLatin1Char('0'))
+                        .toUpper();
+        }
+
+        QVariantMap roleMap;
+        roleMap["id"] = role.id;
+        roleMap["guildId"] = role.guildId;
+        roleMap["name"] = role.name;
+        roleMap["color"] = role.color;
+        roleMap["position"] = role.position;
+        roleMap["hoisted"] = role.hoisted;
+        parsedRoles.append(roleMap);
+      }
+      m_store->setGuildRoles(guildId, parsedRoles);
+    }
+  }
+
+  if (eventName == "GUILD_MEMBER_LIST_UPDATE") {
+    // Payload chuẩn Discord (không phải bot-gateway restricted intent):
+    //   guild_id: string
+    //   id: string (list id, thường "everyone" cho list mặc định)
+    //   ops: [ { op: "SYNC"|"INSERT"|"UPDATE"|"DELETE"|"INVALIDATE",
+    //            range: [start,end] (chỉ có ở SYNC),
+    //            items: [ {group:{id,count}} | {member:{...}} ] } ]
+    // Chỉ xử lý op "SYNC" (snapshot đầy đủ, luôn là response đầu tiên
+    // sau khi gửi guild_subscribe với 1 channel range — xem
+    // sendLazyRequest()/buildGuildSubscribePayload() trong Gateway.cpp).
+    // INSERT/UPDATE/DELETE (thay đổi tức thời khi sheet Members đang mở)
+    // CHƯA được xử lý — xem comment ở AppStore::setMemberListForChannel().
+    QString guildId = payload.value("guild_id").toString().trimmed();
+    QString channelId = payload.value("channel_id").toString().trimmed();
+    qDebug() << "[discord-gateway] GUILD_MEMBER_LIST_UPDATE received guild"
+             << guildId << "channel" << channelId << "ops"
+             << payload.value("ops").toList().size();
+
+    if (!guildId.isEmpty() && m_store) {
+      QVariantList roles = m_store->guildRolesForGuild(guildId);
+      // Map roleId -> position, chỉ giữ role hoisted (chỉ role hoisted
+      // mới tạo nhóm/heading trong sheet Members). Role có position cao
+      // nhất trong số role member sở hữu quyết định nhóm/màu tên hiển
+      // thị, đúng hành vi Discord client thật.
+      QMap<QString, int> hoistedRolePosition;
+      for (int i = 0; i < roles.size(); ++i) {
+        QVariantMap role = roles.at(i).toMap();
+        if (role.value("hoisted").toBool()) {
+          hoistedRolePosition.insert(role.value("id").toString(),
+                                     role.value("position").toInt());
+        }
+      }
+
+      QVariantList ops = payload.value("ops").toList();
+      for (int opIndex = 0; opIndex < ops.size(); ++opIndex) {
+        QVariantMap op = ops.at(opIndex).toMap();
+        if (op.value("op").toString() != "SYNC") {
+          continue;
+        }
+
+        QVariantList items = op.value("items").toList();
+        QVariantList parsedMembers;
+        for (int i = 0; i < items.size(); ++i) {
+          QVariantMap item = items.at(i).toMap();
+          if (!item.contains("member")) {
+            // Phần tử "group" (heading role) — sheet Members tự tính
+            // heading từ primaryRoleId của từng member ở tầng QML, không
+            // cần lưu riêng "group" item ở đây để tránh trùng lặp logic
+            // giữa C++ và QML.
+            continue;
+          }
+
+          QVariantMap memberRaw = item.value("member").toMap();
+          QVariantMap user = memberRaw.value("user").toMap();
+          QString userId = user.value("id").toString().trimmed();
+          if (userId.isEmpty()) {
+            continue;
+          }
+
+          DiscordMember member;
+          member.userId = userId;
+          member.displayName = memberRaw.value("nick").toString();
+          if (member.displayName.isEmpty()) {
+            member.displayName = user.value("global_name").toString();
+          }
+          if (member.displayName.isEmpty()) {
+            member.displayName = user.value("username").toString();
+          }
+
+          QString avatarHash = memberRaw.value("avatar").toString();
+          QString userAvatarHash = user.value("avatar").toString();
+          QString effectiveAvatarHash =
+              !avatarHash.isEmpty() ? avatarHash : userAvatarHash;
+          if (!effectiveAvatarHash.isEmpty()) {
+            // Hardcode cdn.discordapp.com thay vì dùng
+            // DiscordRestClient::cdnBaseUrl() — không có instance
+            // RestClient tiện dụng ở scope này, và cdn.discordapp.com là
+            // hostname ổn định của Discord CDN (khác biệt với tùy chỉnh
+            // API URL trong Settings, vốn nhắm tới API proxy chứ không
+            // phải CDN). Cùng format "%1/%2.png?size=128" với
+            // RestClientRequests.cpp::sendAvatarRequest() để nhất quán.
+            member.avatarUrl = QString("https://cdn.discordapp.com/avatars/"
+                                       "%1/%2.png?size=128")
+                                    .arg(userId)
+                                    .arg(effectiveAvatarHash);
+          }
+
+          QVariantMap presence = item.value("presence").toMap();
+          member.status = presence.value("status").toString();
+          if (member.status.isEmpty()) {
+            member.status = "offline";
+          }
+
+          QVariantList memberRoleIds = memberRaw.value("roles").toList();
+          int bestPosition = -1;
+          for (int j = 0; j < memberRoleIds.size(); ++j) {
+            QString roleId = memberRoleIds.at(j).toString();
+            if (hoistedRolePosition.contains(roleId)) {
+              int position = hoistedRolePosition.value(roleId);
+              if (position > bestPosition) {
+                bestPosition = position;
+                member.primaryRoleId = roleId;
+              }
+            }
+          }
+
+          QVariantMap memberMap;
+          memberMap["userId"] = member.userId;
+          memberMap["displayName"] = member.displayName;
+          memberMap["avatarUrl"] = member.avatarUrl;
+          memberMap["status"] = member.status;
+          memberMap["primaryRoleId"] = member.primaryRoleId;
+          parsedMembers.append(memberMap);
+        }
+
+        if (!channelId.isEmpty()) {
+          m_store->setMemberListForChannel(channelId, parsedMembers);
+          qDebug() << "[discord-gateway] GUILD_MEMBER_LIST_UPDATE SYNC parsed"
+                   << parsedMembers.size() << "members for channel"
+                   << channelId;
+        }
+      }
+    }
   }
 
   if (eventName == "MESSAGE_CREATE" || eventName == "MESSAGE_UPDATE" ||

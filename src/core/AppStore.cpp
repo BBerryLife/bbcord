@@ -130,6 +130,14 @@ AppStore::currentUserRoleIdsForGuild(const QString &guildId) const {
   return m_currentUserRoleIdsByGuildId.value(guildId.trimmed());
 }
 
+QVariantList AppStore::guildRolesForGuild(const QString &guildId) const {
+  return m_guildRolesByGuildId.value(guildId.trimmed());
+}
+
+QVariantList AppStore::memberListForChannel(const QString &channelId) const {
+  return m_memberListByChannelId.value(channelId.trimmed());
+}
+
 void AppStore::selectHome() {
   if (m_selectedGuildId.isEmpty() && m_selectedChannelId.isEmpty()) {
     return;
@@ -730,4 +738,24 @@ void AppStore::setCurrentUserRoleIdsForGuild(const QString &guildId,
     return;
   }
   m_currentUserRoleIdsByGuildId.insert(safeGuildId, roleIds);
+}
+
+void AppStore::setGuildRoles(const QString &guildId,
+                             const QVariantList &roles) {
+  QString safeGuildId = guildId.trimmed();
+  if (safeGuildId.isEmpty()) {
+    return;
+  }
+  m_guildRolesByGuildId.insert(safeGuildId, roles);
+  emit guildRolesChanged(safeGuildId);
+}
+
+void AppStore::setMemberListForChannel(const QString &channelId,
+                                       const QVariantList &members) {
+  QString safeChannelId = channelId.trimmed();
+  if (safeChannelId.isEmpty()) {
+    return;
+  }
+  m_memberListByChannelId.insert(safeChannelId, members);
+  emit memberListChanged(safeChannelId);
 }

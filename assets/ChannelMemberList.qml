@@ -3,6 +3,8 @@ import bb.cascades 1.4
 Page {
 	id: memberPage
 
+	property string channelId: ""
+	property string guildId: ""
 	property string channelName: "general"
 	property alias title: titleBar.title
 
@@ -32,7 +34,7 @@ Page {
 
 		ListView {
 			id: memberList
-			dataModel: memberModel
+			dataModel: memberListController.memberDataModel
 			horizontalAlignment: HorizontalAlignment.Fill
 			verticalAlignment: VerticalAlignment.Fill
 
@@ -61,14 +63,38 @@ Page {
 					type: "member"
 
 					Container {
+						id: memberRow
 						horizontalAlignment: HorizontalAlignment.Fill
 						leftPadding: ui.du(2.0)
 						rightPadding: ui.du(2.0)
 						topPadding: ui.du(0.8)
 						bottomPadding: ui.du(0.8)
 
+						property string avatarSource: ""
+
 						layout: StackLayout {
 							orientation: LayoutOrientation.LeftToRight
+						}
+
+						function tryLoadAvatar() {
+							if (ListItemData.avatarUrl === "") {
+								return
+							}
+							var cached = memberListController.cachedAvatarSource(ListItemData.avatarUrl)
+							if (cached !== "") {
+								memberRow.avatarSource = cached
+							}
+						}
+
+						function onAvatarCached(url, imageSource) {
+							if (url === ListItemData.avatarUrl) {
+								memberRow.avatarSource = imageSource
+							}
+						}
+
+						onCreationCompleted: {
+							tryLoadAvatar()
+							memberListController.avatarCached.connect(memberRow.onAvatarCached)
 						}
 
 						Container {
@@ -84,8 +110,8 @@ Page {
 							layout: DockLayout {}
 
 							ImageView {
-								imageSource: ListItemData.avatar
-								visible: ListItemData.avatar !== ""
+								imageSource: memberRow.avatarSource
+								visible: memberRow.avatarSource !== ""
 								horizontalAlignment: HorizontalAlignment.Fill
 								verticalAlignment: VerticalAlignment.Fill
 								scalingMethod: ScalingMethod.AspectFill
@@ -93,7 +119,7 @@ Page {
 
 							Label {
 								text: ListItemData.initials
-								visible: ListItemData.avatar === ""
+								visible: memberRow.avatarSource === ""
 								horizontalAlignment: HorizontalAlignment.Center
 								verticalAlignment: VerticalAlignment.Center
 								textStyle.fontSize: FontSize.Small
@@ -132,39 +158,23 @@ Page {
 		}
 	}
 
-	attachedObjects: [
-		ArrayDataModel {
-			id: memberModel
-		}
-	]
-
-	function addRole(name, count) {
-		memberModel.append({
-				"type": "role",
-				"name": name,
-				"count": count
-			})
+	// Lazy-load: chỉ gửi request/subscribe member list khi sheet này thực
+	// sự được mở (tương ứng lúc người dùng mở tab Members), không phải
+	// ngay khi mở channel — đúng yêu cầu tối ưu ban đầu. Xem
+	// MemberListController::requestMemberList() (MemberListController.cpp)
+	// để biết chi tiết cơ chế subscribe qua Gateway.
+	//
+	// KHÔNG gọi trong onCreationCompleted: createObject() ở MainPage.qml
+	// kích hoạt onCreationCompleted() NGAY LẬP TỨC, đồng bộ, TRƯỚC khi
+	// channelId/guildId kịp được gán (property vẫn là "" mặc định lúc
+	// đó) — nên request sẽ luôn nhận tham số rỗng và bị bỏ qua. Thay vào
+	// đó, MainPage.qml gọi hàm này TƯỜNG MINH ngay sau khi đã gán xong
+	// channelId/guildId, đảm bảo dữ liệu đúng được dùng.
+	function requestMemberListNow() {
+		memberListController.requestMemberList(memberPage.channelId, memberPage.guildId)
 	}
 
-	function addMember(name, initials, avatarColor, avatar, nameColor, status) {
-		memberModel.append({
-				"type": "member",
-				"name": name,
-				"initials": initials,
-				"avatarColor": avatarColor,
-				"avatar": avatar,
-				"nameColor": nameColor,
-				"status": status
-			})
-	}
-
-	onCreationCompleted: {
-		addRole("Owner", 1)
-		addMember("michioxd", "M", "#5865F2", "", "#F2F3F5", "Online")
-
-		addRole("Bots", 1)
-		addMember("check", "C", "#43B581", "", "#43B581", "please check back soon :3")
-		addMember("back", "B", "#43B581", "", "#43B581", "please check back soon :3")
-		addMember("later", "L", "#43B581", "", "#43B581", "please check back soon :3")
+	onBackRequested: {
+		memberListController.releaseMemberList()
 	}
 }

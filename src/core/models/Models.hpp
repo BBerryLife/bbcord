@@ -45,6 +45,44 @@ struct DiscordGuild {
   DiscordGuild() : unavailable(false) {}
 };
 
+struct DiscordRole {
+  QString id;
+  QString guildId;
+  QString name;
+  // Màu hex "#RRGGBB", rỗng nếu role không có màu riêng (color == 0 trong
+  // payload Discord — client thật fallback về màu chữ mặc định khi đó,
+  // không phải màu đen).
+  QString color;
+  // Vị trí role trong hierarchy — số càng lớn càng "cao". Dùng để: (1)
+  // chọn role có màu cao nhất cho tên hiển thị của member (2) sắp xếp
+  // nhóm member theo role trong sheet Members, giống Discord client thật.
+  int position;
+  // true nếu role được Discord tách nhóm riêng trong danh sách member
+  // ("hoist" trong payload gốc) — chỉ những role này mới tạo thành 1
+  // heading riêng trong sheet Members; role không hoist gộp chung vào
+  // nhóm "Online"/"Offline".
+  bool hoisted;
+
+  DiscordRole() : position(0), hoisted(false) {}
+};
+
+// 1 dòng "member" đã được làm phẳng trong sheet Members, ghép từ guild
+// member object + user object trong payload GUILD_MEMBER_LIST_UPDATE.
+// Không map 1-1 với payload gốc — chỉ giữ field thực sự cần cho UI, để
+// tránh vác nguyên object lồng nhau (presence/activities/...) qua QML.
+struct DiscordMember {
+  QString userId;
+  QString displayName; // nick nếu có, fallback về username/global_name
+  QString avatarUrl;   // rỗng nếu dùng avatar mặc định (chữ cái viết tắt)
+  QString status;      // "online" | "idle" | "dnd" | "offline"
+  // roleId của role hoisted có position cao nhất mà member sở hữu — dùng
+  // để nhóm member vào đúng heading và tô màu tên theo role đó. Rỗng nếu
+  // member không có role hoisted nào (rơi vào nhóm "Online"/"Offline").
+  QString primaryRoleId;
+
+  DiscordMember() {}
+};
+
 struct DiscordChannel {
   enum ChannelType {
     GuildText = 0,

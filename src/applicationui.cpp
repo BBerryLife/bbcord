@@ -24,6 +24,7 @@
 #include "ui/DmListController.hpp"
 #include "ui/ImagePreview.hpp"
 #include "ui/MainPageController.hpp"
+#include "ui/MemberListController.hpp"
 #include "ui/ServerListController.hpp"
 #include "ui/SettingsController.hpp"
 
@@ -47,6 +48,8 @@ ApplicationUI::ApplicationUI()
       m_settingsController(new SettingsController(this)),
       m_mainPageController(new MainPageController(m_discordClient, m_appStore,
                                                   m_settingsController, this)),
+      m_memberListController(
+          new MemberListController(m_discordClient, m_appStore, this)),
       m_serverListController(
           new ServerListController(m_discordClient, m_appStore, this)),
       m_aboutController(new AboutController(this)) {
@@ -83,6 +86,7 @@ ApplicationUI::ApplicationUI()
   qml->setContextProperty("imagePreview", m_imagePreview);
   qml->setContextProperty("dmListController", m_dmListController);
   qml->setContextProperty("mainPageController", m_mainPageController);
+  qml->setContextProperty("memberListController", m_memberListController);
   qml->setContextProperty("serverListController", m_serverListController);
   qml->setContextProperty("settingsController", m_settingsController);
   qml->setContextProperty("aboutController", m_aboutController);

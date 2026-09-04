@@ -148,7 +148,7 @@
 <context>
     <name>ChannelMemberList</name>
     <message>
-        <location filename="../assets/ChannelMemberList.qml" line="15"/>
+        <location filename="../assets/ChannelMemberList.qml" line="17"/>
         <source>Members #</source>
         <translation type="unfinished"></translation>
     </message>
@@ -156,37 +156,37 @@
 <context>
     <name>ChatCard</name>
     <message>
-        <location filename="../assets/ChatCard.qml" line="215"/>
+        <location filename="../assets/ChatCard.qml" line="216"/>
         <source>Loading more messages...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="270"/>
+        <location filename="../assets/ChatCard.qml" line="271"/>
         <source>Replying to </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="302"/>
+        <location filename="../assets/ChatCard.qml" line="303"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="369"/>
+        <location filename="../assets/ChatCard.qml" line="370"/>
         <source>File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="444"/>
+        <location filename="../assets/ChatCard.qml" line="445"/>
         <source>Message </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="471"/>
+        <location filename="../assets/ChatCard.qml" line="498"/>
         <source>Editing message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="497"/>
+        <location filename="../assets/ChatCard.qml" line="524"/>
         <source>Attach files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -314,6 +314,20 @@
     <message>
         <location filename="../assets/LoginPage.qml" line="190"/>
         <source>How to get token</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>MemberListController</name>
+    <message>
+        <location filename="../src/ui/MemberListController.cpp" line="295"/>
+        <source>Online</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/MemberListController.cpp" line="299"/>
+        <location filename="../src/ui/MemberListController.cpp" line="367"/>
+        <source>Offline</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -465,7 +479,7 @@
     </message>
     <message>
         <location filename="../assets/Settings.qml" line="67"/>
-        <location filename="../assets/Settings.qml" line="163"/>
+        <location filename="../assets/Settings.qml" line="182"/>
         <source>Clear cache</source>
         <translation type="unfinished"></translation>
     </message>
@@ -475,72 +489,97 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../assets/Settings.qml" line="159"/>
+        <source>Debug</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../assets/Settings.qml" line="164"/>
-        <source>Clear cached media? This cannot be undone.</source>
+        <source>Export log</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../assets/Settings.qml" line="165"/>
+        <source>Save the app log file, e.g. for bug reports.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/Settings.qml" line="171"/>
+        <source>Log saved to </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/Settings.qml" line="183"/>
+        <source>Clear cached media? This cannot be undone.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/Settings.qml" line="184"/>
         <source>Clear</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="166"/>
-        <location filename="../assets/Settings.qml" line="180"/>
-        <location filename="../assets/Settings.qml" line="195"/>
-        <location filename="../assets/Settings.qml" line="208"/>
-        <location filename="../assets/Settings.qml" line="222"/>
+        <location filename="../assets/Settings.qml" line="185"/>
+        <location filename="../assets/Settings.qml" line="199"/>
+        <location filename="../assets/Settings.qml" line="214"/>
+        <location filename="../assets/Settings.qml" line="227"/>
+        <location filename="../assets/Settings.qml" line="249"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="177"/>
+        <location filename="../assets/Settings.qml" line="196"/>
         <source>Enter Discord API URL</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="179"/>
-        <location filename="../assets/Settings.qml" line="194"/>
+        <location filename="../assets/Settings.qml" line="198"/>
+        <location filename="../assets/Settings.qml" line="213"/>
         <source>Save</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="192"/>
+        <location filename="../assets/Settings.qml" line="211"/>
         <source>Enter Discord CDN URL</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="205"/>
+        <location filename="../assets/Settings.qml" line="224"/>
         <source>Update API URL</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="206"/>
+        <location filename="../assets/Settings.qml" line="225"/>
         <source>Updating the Discord API URL will log you out and clear your saved token for security. Continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="207"/>
+        <location filename="../assets/Settings.qml" line="226"/>
         <source>Update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="219"/>
+        <location filename="../assets/Settings.qml" line="238"/>
+        <source>No log file found to export yet.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/Settings.qml" line="246"/>
         <source>Reset Discord backend</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="220"/>
+        <location filename="../assets/Settings.qml" line="247"/>
         <source>Reset API and CDN URLs to the official Discord backend?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="220"/>
+        <location filename="../assets/Settings.qml" line="247"/>
         <source>Reset API and CDN URLs to the official Discord backend? Because the API URL is different from the official backend, you will be logged out.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/Settings.qml" line="221"/>
+        <location filename="../assets/Settings.qml" line="248"/>
         <source>Reset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -551,13 +590,13 @@
     </message>
     <message>
         <location filename="../assets/Settings.qml" line="78"/>
-        <location filename="../assets/Settings.qml" line="176"/>
+        <location filename="../assets/Settings.qml" line="195"/>
         <source>API URL</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../assets/Settings.qml" line="88"/>
-        <location filename="../assets/Settings.qml" line="191"/>
+        <location filename="../assets/Settings.qml" line="210"/>
         <source>CDN URL</source>
         <translation type="unfinished"></translation>
     </message>
@@ -585,7 +624,7 @@
 <context>
     <name>SettingsController</name>
     <message>
-        <location filename="../src/ui/SettingsController.cpp" line="226"/>
+        <location filename="../src/ui/SettingsController.cpp" line="261"/>
         <source>%1 B</source>
         <translation type="unfinished"></translation>
     </message>

@@ -60,7 +60,8 @@ bool shouldParseDispatch(const QString &eventName) {
          eventName == "MESSAGE_DELETE" || eventName == "READY" ||
          eventName == "GUILD_CREATE" || eventName == "GUILD_DELETE" ||
          eventName == "USER_SETTINGS_PROTO_UPDATE" ||
-         eventName == "PRESENCE_UPDATE";
+         eventName == "PRESENCE_UPDATE" ||
+         eventName == "GUILD_MEMBER_LIST_UPDATE";
 }
 
 QByteArray extractArrayBytes(const QByteArray &bytes, const char *fieldName) {

@@ -143,6 +143,44 @@ void DiscordGateway::sendLazyRequest(const QString &guildId,
            << "guild" << safeGuildId << "channel" << safeChannelId;
 }
 
+void DiscordGateway::sendMemberListSync(const QString &guildId,
+                                        const QString &channelId) {
+  QString safeGuildId = guildId.trimmed();
+  QString safeChannelId = channelId.trimmed();
+  if (safeGuildId.isEmpty()) {
+    return;
+  }
+
+  // KHÔNG kiểm tra m_sentLazyRequests — đây là điểm khác biệt duy nhất so
+  // với sendLazyRequest(), theo đúng thiết kế: sheet Members cần 1 SYNC
+  // mới mỗi lần mở, bất kể channel đã được subscribe trước đó cho mục
+  // đích lazy-load tin nhắn hay chưa.
+  if (m_state != Ready || m_connection == NULL || !m_connection->is_websocket ||
+      m_connection->is_closing) {
+    qDebug() << "[discord-gateway] member-list sync request dropped; "
+                "gateway not ready"
+             << "state" << m_state << "guild" << safeGuildId << "channel"
+             << safeChannelId;
+    return;
+  }
+
+  QString errorMessage;
+  QByteArray payload = DiscordJsonParser::buildMemberListSyncPayload(
+      safeGuildId, safeChannelId, &errorMessage);
+  if (!errorMessage.isEmpty()) {
+    emit error(QString("Gateway member-list sync JSON error: %1")
+                   .arg(errorMessage));
+    return;
+  }
+
+  qDebug() << "[discord-gateway] member-list sync payload"
+           << QString::fromUtf8(payload.constData(), payload.size());
+
+  sendJsonText(QString::fromUtf8(payload.constData(), payload.size()));
+  qDebug() << "[discord-gateway] member-list sync request sent"
+           << "guild" << safeGuildId << "channel" << safeChannelId;
+}
+
 void DiscordGateway::updateMessageFilterState(
     const QString &selectedChannelId, const QStringList &loadedChannelIds,
     const QString &currentUserId) {

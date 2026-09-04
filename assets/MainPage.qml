@@ -351,6 +351,8 @@ Page {
                 var memberPage = channelMemberListDefinition.createObject();
 
                 if (memberPage) {
+                    memberPage.channelId = channelId;
+                    memberPage.guildId = guildId;
                     memberPage.channelName = channelName;
                     memberPage.title = "Members #" + channelName;
                     memberPage.backRequested.connect(function () {
@@ -361,6 +363,21 @@ Page {
                     if (mainPage.navigationPane) {
                         mainPage.navigationPane.push(memberPage);
                     }
+                    // QUAN TRỌNG: createObject() kích hoạt
+                    // onCreationCompleted() của ChannelMemberList.qml
+                    // NGAY LẬP TỨC, đồng bộ, TRƯỚC các dòng gán property ở
+                    // trên (channelId/guildId lúc đó vẫn là giá trị mặc
+                    // định rỗng "") — nên requestMemberList() gọi từ bên
+                    // trong onCreationCompleted() luôn nhận 2 tham số
+                    // rỗng và bị early-return, sheet Members hiện trống
+                    // vĩnh viễn dù channelId/guildId đã được gán đúng
+                    // ngay sau đó (bug đã xác nhận qua log thực tế —
+                    // không có bất kỳ dòng qDebug nào của
+                    // MemberListController::requestMemberList() xuất
+                    // hiện). Gọi lại TƯỜNG MINH ở đây, sau khi property
+                    // đã có giá trị thật, để đảm bảo đúng dữ liệu được
+                    // dùng.
+                    memberPage.requestMemberListNow();
                 } else {
                     console.log("Could not create ChannelMemberList.qml");
                 }

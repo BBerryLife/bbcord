@@ -8,6 +8,7 @@
 #include <QLatin1String>
 #include <QDateTime>
 #include <QDir>
+#include <QSettings>
 #include <QStringList>
 
 // icon account (tab BBCord trong Hub) — icon "thương hiệu" chung, không đổi
@@ -129,6 +130,39 @@ QString HubIntegration::publicAssetPath()
     return QString("/apps/%1/public/hub-icons/").arg(appIdFromHomePath());
 }
 
+// Mỗi lần cài lại (kể cả cùng version), BB10 có thể sinh ra 1 app-id mới
+// (hậu tố hash đổi — xem log thực tế: "...testDev_ioxd_bbcordd4b95190"),
+// nên publicAssetPath() ở trên trỏ tới 1 thư mục vật lý khác. Nếu Hub vẫn
+// còn giữ service registration (uds_register_client) trỏ tới assetPath
+// của lần cài TRƯỚC, icon account/item sẽ hiển thị vỡ hoặc rỗng cho tới
+// khi có 1 lệnh account_removed + đăng ký lại từ đầu với assetPath mới.
+// uds_account_removed() remove-before-add hiện tại (xem init() bên dưới)
+// chỉ chạy MỖI LẦN APP KHỞI ĐỘNG, không phân biệt "vừa cài lại" hay "chạy
+// bình thường lần thứ N" — vẫn đúng, nhưng không đủ để dọn 1 service
+// registration cũ đã trỏ sai assetPath nếu Hub cache lại registration đó
+// trước khi account_removed kịp chạy. Hàm này lưu app-id đã dùng ở lần
+// init() thành công gần nhất vào QSettings; nếu app-id hiện tại khác (hoặc
+// chưa từng lưu), coi là "vừa cài lại" và trả về true để init() biết cần
+// đóng bất kỳ handle UDS cũ nào trước khi đăng ký lại từ đầu, đảm bảo
+// asset path luôn khớp bản cài hiện tại.
+static bool detectFreshInstallAndRememberAppId(const QString &currentAppId)
+{
+    QSettings settings;
+    const char *kLastAppIdKey = "hub/lastAppId";
+    QString lastAppId = settings.value(kLastAppIdKey).toString();
+
+    bool isFreshInstall = (lastAppId != currentAppId);
+    if (isFreshInstall) {
+        qDebug() << "[Hub] app-id doi tu lan chay truoc (" << lastAppId
+                  << "->" << currentAppId
+                  << ") - coi la vua cai lai, se dong handle UDS cu (neu co) "
+                     "truoc khi dang ky lai.";
+        settings.setValue(kLastAppIdKey, currentAppId);
+        settings.sync();
+    }
+    return isFreshInstall;
+}
+
 bool HubIntegration::init()
 {
     if (m_ready) return true;
@@ -171,6 +205,8 @@ bool HubIntegration::init()
     m_udsHandle = handle;
 
     QString assetPath = publicAssetPath();
+    QString currentAppId = appIdFromHomePath();
+    bool isFreshInstall = detectFreshInstallAndRememberAppId(currentAppId);
 
     rc = uds_register_client(m_udsHandle, HUB_SERVICE_URL, "" /* libPath, không dùng */,
                               assetPath.toUtf8().constData());
@@ -202,8 +238,14 @@ bool HubIntegration::init()
     // của build đang chạy, bất kể sandbox path đổi giữa các build). Xem
     // giải thích đầy đủ trong Zalo10's HubIntegration.cpp.
     int removeRc = uds_account_removed(m_udsHandle, ACCOUNT_ID);
-    qDebug() << "[Hub] uds_account_removed (pre-add cleanup) rc=" << removeRc
-              << "(bo qua neu account chua tung ton tai / lan cai dat dau tien)";
+    if (isFreshInstall) {
+        qDebug() << "[Hub] uds_account_removed (fresh-install cleanup, app-id "
+                     "vua doi) rc=" << removeRc
+                  << "(bo qua neu account chua tung ton tai / lan cai dat dau tien)";
+    } else {
+        qDebug() << "[Hub] uds_account_removed (pre-add cleanup) rc=" << removeRc
+                  << "(bo qua neu account chua tung ton tai / lan cai dat dau tien)";
+    }
 
     uds_account_data_t *account = uds_account_data_create();
     uds_account_data_set_id(account, ACCOUNT_ID);

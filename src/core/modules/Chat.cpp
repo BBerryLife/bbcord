@@ -45,6 +45,25 @@ void DiscordClient::subscribeToGuildChannel(const QString &channelId,
   }
 }
 
+void DiscordClient::requestMemberListSync(const QString &channelId,
+                                          const QString &guildId) {
+  QString safeChannelId = channelId.trimmed();
+  QString safeGuildId = guildId.trimmed();
+  if (safeChannelId.isEmpty() || safeGuildId.isEmpty()) {
+    qDebug() << "[discord-chat] member-list sync skipped"
+             << "guild" << safeGuildId << "channel" << safeChannelId;
+    return;
+  }
+
+  qDebug() << "[discord-chat] member-list sync requested"
+           << "guild" << safeGuildId << "channel" << safeChannelId;
+  if (m_gatewayWorker != 0) {
+    QMetaObject::invokeMethod(m_gatewayWorker, "sendMemberListSync",
+                              Qt::QueuedConnection, Q_ARG(QString, safeGuildId),
+                              Q_ARG(QString, safeChannelId));
+  }
+}
+
 void DiscordClient::loadInitialChatMessages(const QString &channelId,
                                             const QString &guildId) {
   QString safeChannelId = channelId.trimmed();

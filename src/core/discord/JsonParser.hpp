@@ -30,6 +30,16 @@ public:
   static QByteArray buildGuildSubscribePayload(const QString &guildId,
                                                const QString &channelId,
                                                QString *errorMessage = 0);
+  // Payload op:14 tối giản, CHỈ dành cho member-list sync (sheet
+  // Members). Khác buildGuildSubscribePayload() ở chỗ KHÔNG gửi field
+  // "guild_subscriptions" — field này không cần thiết cho việc lấy
+  // member list theo channel, và bị nghi là nguyên nhân Discord trả
+  // closeCode 4002 (decode error) khi gọi song song với 1 subscribe
+  // request khác đã gửi trước đó cho cùng guild (xem
+  // DiscordGateway::sendMemberListSync()).
+  static QByteArray buildMemberListSyncPayload(const QString &guildId,
+                                               const QString &channelId,
+                                               QString *errorMessage = 0);
   static int valueToInt(const QVariant &value, int fallback);
   static bool hasJsonToken(const QByteArray &bytes, const char *compactToken,
                            const char *spacedToken);

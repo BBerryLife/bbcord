@@ -36,6 +36,7 @@ class DiscordClient;
 class DmListController;
 class ImagePreview;
 class MainPageController;
+class MemberListController;
 class ServerListController;
 class SettingsController;
 class AboutController;
@@ -72,6 +73,7 @@ private:
   DmListController *m_dmListController;
   SettingsController *m_settingsController;
   MainPageController *m_mainPageController;
+  MemberListController *m_memberListController;
   ServerListController *m_serverListController;
   AboutController *m_aboutController;
 };

@@ -16,6 +16,7 @@ Page {
     property bool olderLoadRequested: false
     property bool olderScrollReady: false
     property bool compactMessageEnabled: false
+    property bool hasComposedText: false
 
     signal backRequested
     signal memberListRequested
@@ -455,6 +456,32 @@ Page {
                             chatPage.sendCurrentMessage();
                         }
                     }
+
+                    // Cascades không luôn re-evaluate property binding
+                    // của sendButton.enabled ngay khi gõ (chỉ refresh khi
+                    // trang được tạo/kích hoạt lại). Cập nhật tường minh
+                    // qua signal để nút Send bật/tắt đúng theo từng ký tự.
+                    onTextChanging: {
+                        chatPage.hasComposedText = text.length > 0;
+                    }
+                }
+
+                ImageButton {
+                    id: sendButton
+                    verticalAlignment: VerticalAlignment.Center
+                    preferredWidth: ui.du(7.0)
+                    preferredHeight: ui.du(7.0)
+
+                    enabled: chatPage.hasComposedText || chatController.hasPendingAttachment
+                    opacity: enabled ? 1.0 : 0.4
+
+                    defaultImageSource: "asset:///images/icons/send.png"
+                    pressedImageSource: "asset:///images/icons/send.png"
+                    disabledImageSource: "asset:///images/icons/send.png"
+
+                    onClicked: {
+                        chatPage.sendCurrentMessage();
+                    }
                 }
             }
 
@@ -525,6 +552,7 @@ Page {
     function startEdit(messageId, message) {
         editingMessageId = messageId;
         inputMessage.text = message;
+        chatPage.hasComposedText = inputMessage.text.length > 0;
         clearReply();
         inputMessage.requestFocus();
     }
@@ -552,6 +580,7 @@ Page {
         }
 
         inputMessage.text = "";
+        chatPage.hasComposedText = false;
     }
 
     function requestOlderFromScroll() {

@@ -15,6 +15,7 @@
  */
 
 #include "applicationui.hpp"
+#include "utils/Logger.hpp"
 
 #include <bb/cascades/Application>
 
@@ -26,6 +27,12 @@
 using namespace bb::cascades;
 
 Q_DECL_EXPORT int main(int argc, char **argv) {
+  // Cài message handler ghi log ra file sớm nhất có thể, trước khi
+  // bất kỳ qDebug/qWarning nào khác được gọi, để không bỏ sót log nào
+  // trong quá trình khởi động app.
+  Logger::install();
+  Logger::write("Application starting");
+
   Application app(argc, argv);
 
   // Create the Application UI object, this is where the main.qml file

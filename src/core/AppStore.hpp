@@ -96,6 +96,25 @@ public:
   // cho guild đó (chưa nhận GUILD_CREATE, hoặc chưa đăng nhập).
   Q_INVOKABLE QStringList currentUserRoleIdsForGuild(const QString &guildId) const;
 
+  // Danh sách role đầy đủ (id/name/color/position/hoisted) của 1 guild,
+  // nạp từ field "roles" của payload GUILD_CREATE — xem
+  // DiscordClient::onGatewayGuildCreate() (Guilds.cpp). Mỗi phần tử là
+  // QVariantMap với các key: id, name, color ("#RRGGBB" hoặc rỗng),
+  // position, hoisted. Dùng cho ChannelMemberList.qml để hiển thị tên
+  // role/màu member. Trả về danh sách rỗng nếu chưa có dữ liệu cho guild
+  // đó.
+  Q_INVOKABLE QVariantList guildRolesForGuild(const QString &guildId) const;
+
+  // Danh sách member đã được flatten (xem DiscordMember trong Models.hpp)
+  // của 1 channel, nạp từ opcode GUILD_MEMBER_LIST_UPDATE (op "SYNC") —
+  // xem DiscordClient::onGatewayDispatch() (Client.cpp). Key theo
+  // channelId (không phải guildId) vì Discord scope member list theo
+  // channel permission overwrite, không phải toàn guild. Mỗi phần tử là
+  // QVariantMap với key: userId, displayName, avatarUrl, status,
+  // primaryRoleId. Trả về danh sách rỗng nếu chưa có dữ liệu (sheet chưa
+  // mở lần nào, hoặc SYNC chưa về kịp).
+  Q_INVOKABLE QVariantList memberListForChannel(const QString &channelId) const;
+
 public Q_SLOTS:
   void clearMediaCacheState();
 
@@ -139,6 +158,20 @@ public Q_SLOTS:
   void setCurrentUserRoleIdsForGuild(const QString &guildId,
                                      const QStringList &roleIds);
 
+  // Ghi đè toàn bộ danh sách role của 1 guild (thay thế hoàn toàn, không
+  // patch từng phần tử — giống hành vi GUILD_CREATE của Discord: mỗi lần
+  // nhận event này coi như "state hiện tại" đầy đủ). Gọi từ
+  // DiscordClient khi nhận GUILD_CREATE.
+  void setGuildRoles(const QString &guildId, const QVariantList &roles);
+
+  // Ghi đè toàn bộ member list của 1 channel — chỉ gọi cho op "SYNC" của
+  // GUILD_MEMBER_LIST_UPDATE (snapshot đầy đủ). Các op "INSERT"/"UPDATE"/
+  // "DELETE" (thay đổi tức thời khi sheet đang mở) hiện CHƯA được xử lý ở
+  // bản này — chấp nhận đánh đổi để giữ phạm vi thay đổi nhỏ, an toàn;
+  // xem lại nếu cần realtime presence trong sheet Members.
+  void setMemberListForChannel(const QString &channelId,
+                               const QVariantList &members);
+
 Q_SIGNALS:
   void loggedInChanged(bool loggedIn);
   void busyChanged(bool busy);
@@ -170,6 +203,8 @@ Q_SIGNALS:
   void chatMessageUpdated(const QString &channelId, const QVariantMap &message);
   void chatMessageDeleted(const QString &channelId, const QString &messageId);
   void chatAvatarChanged(const QString &userId, const QString &avatarSource);
+  void guildRolesChanged(const QString &guildId);
+  void memberListChanged(const QString &channelId);
 
 private:
   bool m_loggedIn;
@@ -186,6 +221,8 @@ private:
   QString m_selectedChannelId;
   MessageCache m_messageCache;
   QMap<QString, QStringList> m_currentUserRoleIdsByGuildId;
+  QMap<QString, QVariantList> m_guildRolesByGuildId;
+  QMap<QString, QVariantList> m_memberListByChannelId;
 };
 
 #endif /* AppStore_HPP_ */

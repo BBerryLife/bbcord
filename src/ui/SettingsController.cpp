@@ -1,5 +1,8 @@
 #include "SettingsController.hpp"
 
+#include "../utils/Logger.hpp"
+
+#include <QDateTime>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
@@ -134,6 +137,38 @@ bool SettingsController::resetDiscordBackend() {
   bool apiChanged = setApiUrl(kOfficialApiUrl);
   bool cdnChanged = setCdnUrl(kOfficialCdnUrl);
   return apiChanged && cdnChanged;
+}
+
+QString SettingsController::exportLog() {
+  QString logPath = Logger::logFilePath();
+  QFileInfo logInfo(logPath);
+  if (!logInfo.exists() || logInfo.size() == 0) {
+    qWarning() << "[settings] no log file to export at" << logPath;
+    return QString();
+  }
+
+  QDir destDir("/accounts/1000/shared/documents/bbcord");
+  if (!destDir.exists() && !destDir.mkpath(".")) {
+    qWarning() << "[settings] failed to create export directory"
+               << destDir.absolutePath();
+    return QString();
+  }
+
+  QString destFileName =
+      QString("bbcord-log-%1.log")
+          .arg(QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss"));
+  QString destPath = destDir.absoluteFilePath(destFileName);
+
+  if (QFile::exists(destPath)) {
+    QFile::remove(destPath);
+  }
+
+  if (!QFile::copy(logPath, destPath)) {
+    qWarning() << "[settings] failed to copy log to" << destPath;
+    return QString();
+  }
+
+  return destPath;
 }
 
 bool SettingsController::guildFolderExpanded(const QString &folderId) const {

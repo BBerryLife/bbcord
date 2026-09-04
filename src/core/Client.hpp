@@ -82,6 +82,14 @@ public Q_SLOTS:
   void clearAvatarCacheState();
   Q_INVOKABLE void subscribeToGuildChannel(const QString &channelId,
                                            const QString &guildId);
+  // Force gửi lại request member-list-sync (op:14) qua
+  // DiscordGateway::sendMemberListSync() — KHÔNG bị chặn bởi dedup cache
+  // của subscribeToGuildChannel(). Gọi từ MemberListController khi sheet
+  // Members mở, vì channel gần như luôn đã được subscribeToGuildChannel()
+  // "tiêu" mất trước đó lúc user mở channel (message lazy-load), khiến
+  // sendLazyRequest() thường bị dedup chặn nếu gọi lại cùng key.
+  Q_INVOKABLE void requestMemberListSync(const QString &channelId,
+                                         const QString &guildId);
   Q_INVOKABLE void loadInitialChatMessages(const QString &channelId,
                                            const QString &guildId);
   Q_INVOKABLE void loadOlderChatMessages(const QString &channelId,

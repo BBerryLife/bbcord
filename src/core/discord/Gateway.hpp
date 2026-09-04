@@ -27,6 +27,19 @@ public:
   Q_INVOKABLE void disconnectFromGateway();
   Q_INVOKABLE void sendLazyRequest(const QString &guildId,
                                    const QString &channelId);
+  // Giống sendLazyRequest() (cùng payload op:14, cùng
+  // buildGuildSubscribePayload()) nhưng BỎ QUA hoàn toàn cache
+  // m_sentLazyRequests — luôn gửi request mới. Dùng riêng cho sheet
+  // Members: sendLazyRequest() đã bị "tiêu" dedup key ngay khi user mở
+  // channel (ChatController gọi trước đó), nên nếu sheet Members gọi lại
+  // sendLazyRequest() với cùng guildId/channelId sẽ bị chặn im lặng,
+  // không có SYNC mới nào trả về — đây là nguyên nhân sheet Members hiện
+  // trống dù channel đã mở trước đó. Hàm này không ghi vào
+  // m_sentLazyRequests để không ảnh hưởng dedup của luồng lazy-load tin
+  // nhắn (subscribeToGuildChannel/Chat.cpp), tách biệt hoàn toàn 2 mối
+  // quan tâm.
+  Q_INVOKABLE void sendMemberListSync(const QString &guildId,
+                                      const QString &channelId);
   Q_INVOKABLE void updateMessageFilterState(const QString &selectedChannelId,
                                             const QStringList &loadedChannelIds,
                                             const QString &currentUserId);

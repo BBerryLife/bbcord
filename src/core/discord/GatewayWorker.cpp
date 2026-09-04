@@ -205,6 +205,18 @@ void DiscordGatewayWorker::sendLazyRequest(const QString &guildId,
   m_gateway.sendLazyRequest(guildId, channelId);
 }
 
+void DiscordGatewayWorker::sendMemberListSync(const QString &guildId,
+                                              const QString &channelId) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "sendMemberListSync", Qt::QueuedConnection,
+                              Q_ARG(QString, guildId),
+                              Q_ARG(QString, channelId));
+    return;
+  }
+
+  m_gateway.sendMemberListSync(guildId, channelId);
+}
+
 void DiscordGatewayWorker::updateGatewayOrderingState(
     const QVariantList &guilds, const QVariantList &allDmChannels,
     const QVariantList &visibleDmChannels, const QStringList &orderedGuildIds,

@@ -172,6 +172,54 @@ QByteArray DiscordJsonParser::buildGuildSubscribePayload(
   return payload;
 }
 
+QByteArray DiscordJsonParser::buildMemberListSyncPayload(
+    const QString &guildId, const QString &channelId,
+    QString *errorMessage) {
+  QVariantMap data;
+  QString safeGuildId = guildId.trimmed();
+  QString safeChannelId = channelId.trimmed();
+  data["guild_id"] = safeGuildId;
+  data["typing"] = true;
+  data["activities"] = true;
+  data["threads"] = true;
+
+  if (!safeChannelId.isEmpty()) {
+    QVariantList range;
+    range.append(0);
+    range.append(99);
+
+    QVariantList ranges;
+    ranges.append(range);
+
+    QVariantMap channels;
+    channels[safeChannelId] = ranges;
+    data["channels"] = channels;
+  }
+
+  // KHÔNG có "guild_subscriptions" — khác buildGuildSubscribePayload()
+  // (dành cho lazy-load message). Xem giải thích trong JsonParser.hpp.
+
+  QVariantMap root2;
+  root2["op"] = 14;
+  root2["d"] = data;
+
+  bb::data::JsonDataAccess json2;
+  QByteArray payload2;
+  json2.saveToBuffer(root2, &payload2);
+
+  if (json2.hasError()) {
+    if (errorMessage != 0) {
+      *errorMessage = json2.error().errorMessage();
+    }
+    return QByteArray();
+  }
+
+  if (errorMessage != 0) {
+    errorMessage->clear();
+  }
+  return payload2;
+}
+
 int DiscordJsonParser::valueToInt(const QVariant &value, int fallback) {
   bool ok = false;
   int result = value.toInt(&ok);

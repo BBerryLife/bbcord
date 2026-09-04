@@ -154,6 +154,25 @@ Sheet {
                         }
                     }
                 }
+
+                Header {
+                    title: qsTr("Debug")
+                }
+
+                SettingItem {
+                    iconSource: "asset:///images/icons/settings/ca_open.png"
+                    title: qsTr("Export log")
+                    description: qsTr("Save the app log file, e.g. for bug reports.")
+                    onTriggered: {
+                        var savedPath = settingsController.exportLog()
+                        if (savedPath === "") {
+                            exportLogFailedToast.show()
+                        } else {
+                            exportLogSuccessToast.body = qsTr("Log saved to ") + savedPath
+                            exportLogSuccessToast.show()
+                        }
+                    }
+                }
             }
         }
 
@@ -213,6 +232,14 @@ Sheet {
                     }
                     settingsSheet.pendingApiUrl = ""
                 }
+            },
+            SystemToast {
+                id: exportLogFailedToast
+                body: qsTr("No log file found to export yet.")
+            },
+            SystemToast {
+                id: exportLogSuccessToast
+                body: ""
             },
             SystemDialog {
                 id: resetBackendDialog

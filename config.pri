@@ -62,9 +62,6 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/images/icons/caret-down.png) \
         $$quote($$BASEDIR/assets/images/icons/first.png) \
         $$quote($$BASEDIR/assets/images/icons/hash.png) \
-        $$quote($$BASEDIR/assets/images/icons/hub/ic_hub.png) \
-        $$quote($$BASEDIR/assets/images/icons/hub/ic_hub_read.png) \
-        $$quote($$BASEDIR/assets/images/icons/hub/ic_hub_unread.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_chat_multiperson.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_copy.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_edit.png) \
@@ -136,8 +133,10 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/ui/DmListController.cpp) \
         $$quote($$BASEDIR/src/ui/ImagePreview.cpp) \
         $$quote($$BASEDIR/src/ui/MainPageController.cpp) \
+        $$quote($$BASEDIR/src/ui/MemberListController.cpp) \
         $$quote($$BASEDIR/src/ui/ServerListController.cpp) \
         $$quote($$BASEDIR/src/ui/SettingsController.cpp) \
+        $$quote($$BASEDIR/src/utils/Logger.cpp) \
         $$quote($$BASEDIR/src/utils/MarkdownParser.cpp)
 
     HEADERS += \
@@ -174,8 +173,10 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/ui/DmListController.hpp) \
         $$quote($$BASEDIR/src/ui/ImagePreview.hpp) \
         $$quote($$BASEDIR/src/ui/MainPageController.hpp) \
+        $$quote($$BASEDIR/src/ui/MemberListController.hpp) \
         $$quote($$BASEDIR/src/ui/ServerListController.hpp) \
         $$quote($$BASEDIR/src/ui/SettingsController.hpp) \
+        $$quote($$BASEDIR/src/utils/Logger.hpp) \
         $$quote($$BASEDIR/src/utils/MarkdownParser.hpp)
 }
 
@@ -248,9 +249,6 @@ lupdate_inclusion {
         $$quote($$BASEDIR/../assets/images/icons/accent/*.qml) \
         $$quote($$BASEDIR/../assets/images/icons/accent/*.js) \
         $$quote($$BASEDIR/../assets/images/icons/accent/*.qs) \
-        $$quote($$BASEDIR/../assets/images/icons/hub/*.qml) \
-        $$quote($$BASEDIR/../assets/images/icons/hub/*.js) \
-        $$quote($$BASEDIR/../assets/images/icons/hub/*.qs) \
         $$quote($$BASEDIR/../assets/images/icons/settings/*.qml) \
         $$quote($$BASEDIR/../assets/images/icons/settings/*.js) \
         $$quote($$BASEDIR/../assets/images/icons/settings/*.qs) \

@@ -1,5 +1,5 @@
 1
-54
+53
 About.qml
 audio/connected.ogg
 audio/error.ogg
@@ -19,9 +19,6 @@ images/icons/action_delete.png
 images/icons/caret-down.png
 images/icons/first.png
 images/icons/hash.png
-images/icons/hub/ic_hub.png
-images/icons/hub/ic_hub_read.png
-images/icons/hub/ic_hub_unread.png
 images/icons/ic_chat_multiperson.png
 images/icons/ic_copy.png
 images/icons/ic_edit.png
@@ -38,9 +35,11 @@ images/icons/send.png
 images/icons/settings/ca_audio_active.png
 images/icons/settings/ca_data_management.png
 images/icons/settings/ca_message_error.png
+images/icons/settings/ca_open.png
 images/icons/settings/ca_security_wipe.png
 images/icons/settings/ca_sms.png
 images/icons/settings/ca_storage_access.png
+images/icons/settings/desktop.ini
 images/icons/speaker.png
 images/icons/x-disabled.png
 images/icons/x-hold.png
