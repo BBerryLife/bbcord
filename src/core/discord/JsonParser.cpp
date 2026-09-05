@@ -2,6 +2,49 @@
 
 #include <bb/data/JsonDataAccess>
 
+namespace {
+
+// bb::data::JsonDataAccess flattens a QVariantList nested inside another
+// QVariantList (e.g. channels[id] = [[0, 99]]) into a single flat array
+// instead of an array-of-arrays. Discord's gateway requires the nested
+// form for the "channels" ranges and closes the connection with code 4002
+// (decode error) if it gets the flattened one - see
+// buildGuildSubscribePayload()/buildMemberListSyncPayload(). Since
+// JsonDataAccess can't produce the correct shape, the "channels" field is
+// appended by hand as raw JSON text instead of going through QVariantMap.
+QByteArray injectChannelsField(const QByteArray &payload,
+                               const QString &channelId) {
+  QByteArray channelIdEscaped =
+      channelId.toUtf8().replace("\\", "\\\\").replace("\"", "\\\"");
+
+  QByteArray channelsField = "\"channels\":{\"" + channelIdEscaped +
+                             "\":[[0,99]]},";
+
+  // Insert right after the opening brace of the "d" object. Don't search
+  // for a literal "\"d\":{" - JsonDataAccess may emit spaces around colons
+  // and braces (e.g. {"d" : {...}, "op" : 14} when pretty-printed, or no
+  // spaces at all when compact), and matching the wrong exact spacing here
+  // previously caused this function to silently no-op, dropping the
+  // "channels" field entirely with no error anywhere. Instead, find the
+  // "d" key by its quoted name, then walk forward to that value's first
+  // '{' - this works regardless of whitespace style.
+  int dKeyPos = payload.indexOf("\"d\"");
+  if (dKeyPos < 0) {
+    return payload;
+  }
+  int braceAfterD = payload.indexOf('{', dKeyPos + 3);
+  if (braceAfterD < 0) {
+    return payload;
+  }
+  int insertPos = braceAfterD + 1;
+
+  QByteArray result = payload;
+  result.insert(insertPos, channelsField);
+  return result;
+}
+
+} // namespace
+
 DiscordJsonParser::GatewayPayload
 DiscordJsonParser::parseGatewayPayload(const QByteArray &bytes) {
   GatewayPayload payload;
@@ -134,22 +177,88 @@ QByteArray DiscordJsonParser::buildGuildSubscribePayload(
   data["activities"] = true;
   data["threads"] = true;
 
-  if (!safeChannelId.isEmpty()) {
-    QVariantList range;
-    range.append(0);
-    range.append(99);
-
-    QVariantList ranges;
-    ranges.append(range);
-
-    QVariantMap channels;
-    channels[safeChannelId] = ranges;
-    data["channels"] = channels;
-  }
-
   QVariantMap guildSubscriptions;
   guildSubscriptions[safeGuildId] = QVariantList();
   data["guild_subscriptions"] = guildSubscriptions;
+
+  QVariantMap root;
+  root["op"] = 14;
+  root["d"] = data;
+
+  bb::data::JsonDataAccess json;
+  QByteArray payload;
+  json.saveToBuffer(root, &payload);
+
+  if (json.hasError()) {
+    if (errorMessage != 0) {
+      *errorMessage = json.error().errorMessage();
+    }
+    return QByteArray();
+  }
+
+  if (!safeChannelId.isEmpty()) {
+    payload = injectChannelsField(payload, safeChannelId);
+  }
+
+  if (errorMessage != 0) {
+    errorMessage->clear();
+  }
+  return payload;
+}
+
+QByteArray DiscordJsonParser::buildMemberListSyncPayload(
+    const QString &guildId, const QString &channelId,
+    QString *errorMessage) {
+  QVariantMap data;
+  QString safeGuildId = guildId.trimmed();
+  QString safeChannelId = channelId.trimmed();
+  data["guild_id"] = safeGuildId;
+  data["typing"] = true;
+  data["activities"] = true;
+  data["threads"] = true;
+
+  // KHÔNG có "guild_subscriptions" — khác buildGuildSubscribePayload()
+  // (dành cho lazy-load message). Xem giải thích trong JsonParser.hpp.
+
+  QVariantMap root2;
+  root2["op"] = 14;
+  root2["d"] = data;
+
+  bb::data::JsonDataAccess json2;
+  QByteArray payload2;
+  json2.saveToBuffer(root2, &payload2);
+
+  if (json2.hasError()) {
+    if (errorMessage != 0) {
+      *errorMessage = json2.error().errorMessage();
+    }
+    return QByteArray();
+  }
+
+  if (!safeChannelId.isEmpty()) {
+    payload2 = injectChannelsField(payload2, safeChannelId);
+  }
+
+  if (errorMessage != 0) {
+    errorMessage->clear();
+  }
+  return payload2;
+}
+
+QByteArray DiscordJsonParser::buildMemberListUnsubscribePayload(
+    const QString &guildId, QString *errorMessage) {
+  QVariantMap data;
+  QString safeGuildId = guildId.trimmed();
+  data["guild_id"] = safeGuildId;
+  // Cố tình KHÔNG có "channels" - đây là điểm khác biệt duy nhất so với
+  // buildMemberListSyncPayload(). Gửi payload này trước sẽ "bỏ subscribe"
+  // channel range đã đăng ký trước đó cho guild này, để lần gửi
+  // buildMemberListSyncPayload() ngay sau đó được server coi là một
+  // subscribe MỚI (thay vì trùng lặp) và trả lời bằng GUILD_MEMBER_LIST_
+  // UPDATE (SYNC) - xem DiscordGateway::sendMemberListSync().
+  data["typing"] = true;
+  data["activities"] = true;
+  data["threads"] = true;
 
   QVariantMap root;
   root["op"] = 14;
@@ -170,54 +279,6 @@ QByteArray DiscordJsonParser::buildGuildSubscribePayload(
     errorMessage->clear();
   }
   return payload;
-}
-
-QByteArray DiscordJsonParser::buildMemberListSyncPayload(
-    const QString &guildId, const QString &channelId,
-    QString *errorMessage) {
-  QVariantMap data;
-  QString safeGuildId = guildId.trimmed();
-  QString safeChannelId = channelId.trimmed();
-  data["guild_id"] = safeGuildId;
-  data["typing"] = true;
-  data["activities"] = true;
-  data["threads"] = true;
-
-  if (!safeChannelId.isEmpty()) {
-    QVariantList range;
-    range.append(0);
-    range.append(99);
-
-    QVariantList ranges;
-    ranges.append(range);
-
-    QVariantMap channels;
-    channels[safeChannelId] = ranges;
-    data["channels"] = channels;
-  }
-
-  // KHÔNG có "guild_subscriptions" — khác buildGuildSubscribePayload()
-  // (dành cho lazy-load message). Xem giải thích trong JsonParser.hpp.
-
-  QVariantMap root2;
-  root2["op"] = 14;
-  root2["d"] = data;
-
-  bb::data::JsonDataAccess json2;
-  QByteArray payload2;
-  json2.saveToBuffer(root2, &payload2);
-
-  if (json2.hasError()) {
-    if (errorMessage != 0) {
-      *errorMessage = json2.error().errorMessage();
-    }
-    return QByteArray();
-  }
-
-  if (errorMessage != 0) {
-    errorMessage->clear();
-  }
-  return payload2;
 }
 
 int DiscordJsonParser::valueToInt(const QVariant &value, int fallback) {

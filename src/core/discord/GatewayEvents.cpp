@@ -248,18 +248,48 @@ void DiscordGateway::handleEvent(struct mg_connection *connection, int event,
         eventData ? static_cast<char *>(eventData) : "Gateway error");
 
     qDebug() << "[discord-gateway] error" << message;
+
+    // A dropped UDP packet to the DNS resolver on a flaky mobile/Wi-Fi
+    // connection surfaces here as "DNS timeout" even though the network is
+    // otherwise fine (the REST login that just ran a few seconds earlier is
+    // proof of that). Retry the resolve/connect a couple of times before
+    // giving up and telling the user - see kMaxDnsRetries. Other
+    // errors (TLS failures, refused connections, etc.) are surfaced
+    // immediately, same as before.
+    if (message.contains("DNS timeout", Qt::CaseInsensitive) &&
+        m_dnsRetriesLeft > 0) {
+      // (see kMaxDnsRetries in Gateway.hpp)
+      --m_dnsRetriesLeft;
+      qDebug() << "[discord-gateway] retrying after DNS timeout, retries left"
+               << m_dnsRetriesLeft;
+      // Don't reconnect here: MG_EV_CLOSE always follows MG_EV_ERROR for a
+      // failed connect, and that's where mongoose finishes tearing down
+      // this connection. Reconnecting now would race that teardown.
+      break;
+    }
+
     emit error(message);
     break;
   }
 
   case MG_EV_CLOSE: {
-    if (m_connection == connection) {
+    bool wasCurrentConnection = (m_connection == connection);
+    if (wasCurrentConnection) {
       m_connection = NULL;
     }
     if (m_timerId != 0) {
       killTimer(m_timerId);
       m_timerId = 0;
     }
+
+    if (wasCurrentConnection && m_state != Ready &&
+        m_dnsRetriesLeft < kMaxDnsRetries && !m_token.isEmpty()) {
+      // We consumed a retry in MG_EV_ERROR above; the failed connection has
+      // now fully torn down, so it's safe to open a fresh one.
+      beginConnectAttempt();
+      break;
+    }
+
     setState(Disconnected);
     emit closed();
     break;
@@ -500,6 +530,19 @@ void DiscordGateway::handleDispatch(const QString &eventName,
     setState(Ready);
     emit ready(m_sessionId);
     flushPendingLazyRequests();
+
+    // Nếu sheet Members đang mở lúc gateway bị đóng/reconnect (xem
+    // m_activeMemberListGuildId trong Gateway.hpp), Discord không nhớ
+    // subscription cũ sau khi socket đứt - phải gửi lại SYNC thủ công,
+    // nếu không sheet sẽ trống vĩnh viễn cho tới khi user tự đóng/mở lại.
+    if (!m_activeMemberListGuildId.isEmpty()) {
+      qDebug() << "[discord-gateway] re-sending member-list sync after "
+                  "reconnect"
+               << "guild" << m_activeMemberListGuildId << "channel"
+               << m_activeMemberListChannelId;
+      sendMemberListSync(m_activeMemberListGuildId,
+                         m_activeMemberListChannelId);
+    }
   }
 
   emit dispatchReceived(eventName, data);

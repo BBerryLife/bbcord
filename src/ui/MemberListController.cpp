@@ -160,6 +160,13 @@ void MemberListController::releaseMemberList() {
                               Qt::QueuedConnection);
   }
   m_loadingAvatarUrls.clear();
+
+  // Báo cho DiscordGateway biết sheet Members đã đóng, để nó dừng tự
+  // động gửi lại SYNC cho channel này nếu gateway reconnect sau khi user
+  // đã rời trang (xem Gateway.hpp: m_activeMemberListGuildId).
+  if (m_client) {
+    m_client->clearMemberListSync();
+  }
 }
 
 QString MemberListController::cachedAvatarSource(const QString &avatarUrl) {

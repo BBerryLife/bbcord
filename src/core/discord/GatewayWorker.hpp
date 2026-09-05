@@ -21,6 +21,7 @@ public Q_SLOTS:
   void disconnectGateway();
   void sendLazyRequest(const QString &guildId, const QString &channelId);
   void sendMemberListSync(const QString &guildId, const QString &channelId);
+  void clearMemberListSync();
   void updateGatewayOrderingState(const QVariantList &guilds,
                                   const QVariantList &allDmChannels,
                                   const QVariantList &visibleDmChannels,

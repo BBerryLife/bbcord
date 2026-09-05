@@ -217,6 +217,16 @@ void DiscordGatewayWorker::sendMemberListSync(const QString &guildId,
   m_gateway.sendMemberListSync(guildId, channelId);
 }
 
+void DiscordGatewayWorker::clearMemberListSync() {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "clearMemberListSync",
+                              Qt::QueuedConnection);
+    return;
+  }
+
+  m_gateway.clearMemberListSync();
+}
+
 void DiscordGatewayWorker::updateGatewayOrderingState(
     const QVariantList &guilds, const QVariantList &allDmChannels,
     const QVariantList &visibleDmChannels, const QStringList &orderedGuildIds,

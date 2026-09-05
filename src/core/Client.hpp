@@ -90,6 +90,12 @@ public Q_SLOTS:
   // sendLazyRequest() thường bị dedup chặn nếu gọi lại cùng key.
   Q_INVOKABLE void requestMemberListSync(const QString &channelId,
                                          const QString &guildId);
+  // Gọi khi sheet Members đóng (MemberListController::releaseMemberList()).
+  // Forward xuống DiscordGateway::clearMemberListSync() để dừng việc tự
+  // động gửi lại SYNC cho channel này nếu gateway reconnect SAU KHI user
+  // đã rời tab (xem comment tại Gateway.hpp:
+  // m_activeMemberListGuildId/ChannelId).
+  Q_INVOKABLE void clearMemberListSync();
   Q_INVOKABLE void loadInitialChatMessages(const QString &channelId,
                                            const QString &guildId);
   Q_INVOKABLE void loadOlderChatMessages(const QString &channelId,
@@ -246,6 +252,15 @@ private:
   QStringList &m_pendingUnreadChannelIds;
   QStringList &m_pendingDmPresenceUserIds;
   QHash<QString, QString> m_chatGuildByChannelId;
+  // Channel gần nhất được yêu cầu qua requestMemberListSync(). GUILD_
+  // MEMBER_LIST_UPDATE (op 14 - giao thức không chính thức) không đảm
+  // bảo có field "channel_id" ở cấp root, và field "id" (list id) thường
+  // là "everyone" chứ không phải channel id — không đáng tin cậy để map
+  // dữ liệu về đúng channel. Vì luồng hiện tại chỉ theo dõi member list
+  // của đúng 1 channel tại một thời điểm (sheet Members), dùng channel
+  // vừa yêu cầu làm fallback cuối cùng khi payload không tự xác định
+  // được channel - xem xử lý GUILD_MEMBER_LIST_UPDATE trong Client.cpp.
+  QString m_pendingMemberListChannelId;
   int &m_visibleDmChannelCount;
   int &m_visibleGuildChannelCount;
   bool &m_loadingGuilds;

@@ -7,6 +7,17 @@ Page {
 	property string guildId: ""
 	property string channelName: "general"
 	property alias title: titleBar.title
+	// Alias trỏ tới context property memberListController (inject từ C++
+	// vào root context của Page này). Cần alias riêng vì các delegate bên
+	// trong ListItemComponent chạy trong scope RIÊNG của chúng và KHÔNG
+	// nhìn thấy context property gắn ở root Page - chỉ thấy được
+	// ListItemData và các property thực sự khai báo trên Page cha, truy
+	// cập ngược lên qua id (memberPage.controller). Không có alias này,
+	// gọi thẳng "memberListController" trong ListItemComponent ném
+	// ReferenceError (xem tryLoadAvatar()/onCreationCompleted() bên dưới).
+	// Cascades QML không hỗ trợ kiểu "var" cho property (khác QtQuick
+	// thường) - dùng "variant" thay thế.
+	property variant controller: memberListController
 
 	signal backRequested()
 
@@ -80,7 +91,7 @@ Page {
 							if (ListItemData.avatarUrl === "") {
 								return
 							}
-							var cached = memberListController.cachedAvatarSource(ListItemData.avatarUrl)
+							var cached = memberPage.controller.cachedAvatarSource(ListItemData.avatarUrl)
 							if (cached !== "") {
 								memberRow.avatarSource = cached
 							}
@@ -94,7 +105,7 @@ Page {
 
 						onCreationCompleted: {
 							tryLoadAvatar()
-							memberListController.avatarCached.connect(memberRow.onAvatarCached)
+							memberPage.controller.avatarCached.connect(memberRow.onAvatarCached)
 						}
 
 						Container {

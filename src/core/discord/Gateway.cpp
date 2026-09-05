@@ -26,9 +26,9 @@ const int kGatewayDnsTimeoutMs = 10000;
 } // namespace
 
 DiscordGateway::DiscordGateway(QObject *parent)
-    : QObject(parent), m_connection(NULL), m_timerId(0), m_zstreamReady(false),
-      m_sequence(-1), m_heartbeatIntervalMs(0), m_nextHeartbeatMs(0),
-      m_state(Disconnected) {
+    : QObject(parent), m_connection(NULL), m_timerId(0), m_dnsRetriesLeft(0),
+      m_zstreamReady(false), m_sequence(-1), m_heartbeatIntervalMs(0),
+      m_nextHeartbeatMs(0), m_state(Disconnected) {
   m_mgr = new mg_mgr;
   mg_mgr_init(m_mgr);
   m_mgr->dnstimeout = kGatewayDnsTimeoutMs;
@@ -57,6 +57,11 @@ void DiscordGateway::connectToGateway(const QString &token) {
     return;
   }
 
+  m_dnsRetriesLeft = kMaxDnsRetries;
+  beginConnectAttempt();
+}
+
+void DiscordGateway::beginConnectAttempt() {
   setState(Connecting);
 
   QByteArray headers = DiscordUtils::desktopUserAgentHeader() +
@@ -164,6 +169,23 @@ void DiscordGateway::sendMemberListSync(const QString &guildId,
     return;
   }
 
+  // Discord không phát lại GUILD_MEMBER_LIST_UPDATE (SYNC) nếu request
+  // subscribe gửi đi trùng hệt subscription server đã ghi nhận trước đó
+  // (cùng guild_id + cùng range channel [0,99]) - điều này luôn đúng ở
+  // đây vì sendLazyRequest() đã subscribe đúng range này khi user mở
+  // channel, trước khi sheet Members được mở. Gửi 1 payload "unsubscribe"
+  // (không có "channels") ngay trước payload sync thật, để buộc server
+  // coi lần subscribe theo sau là một thay đổi thực sự cần đồng bộ lại.
+  // 2 gói được gửi liên tiếp không đợi phản hồi - thứ tự xử lý ở phía
+  // server được đảm bảo bởi chính giao thức WebSocket (TCP).
+  QString unsubscribeErrorMessage;
+  QByteArray unsubscribePayload = DiscordJsonParser::buildMemberListUnsubscribePayload(
+      safeGuildId, &unsubscribeErrorMessage);
+  if (unsubscribeErrorMessage.isEmpty() && !unsubscribePayload.isEmpty()) {
+    sendJsonText(
+        QString::fromUtf8(unsubscribePayload.constData(), unsubscribePayload.size()));
+  }
+
   QString errorMessage;
   QByteArray payload = DiscordJsonParser::buildMemberListSyncPayload(
       safeGuildId, safeChannelId, &errorMessage);
@@ -177,8 +199,15 @@ void DiscordGateway::sendMemberListSync(const QString &guildId,
            << QString::fromUtf8(payload.constData(), payload.size());
 
   sendJsonText(QString::fromUtf8(payload.constData(), payload.size()));
+  m_activeMemberListGuildId = safeGuildId;
+  m_activeMemberListChannelId = safeChannelId;
   qDebug() << "[discord-gateway] member-list sync request sent"
            << "guild" << safeGuildId << "channel" << safeChannelId;
+}
+
+void DiscordGateway::clearMemberListSync() {
+  m_activeMemberListGuildId.clear();
+  m_activeMemberListChannelId.clear();
 }
 
 void DiscordGateway::updateMessageFilterState(

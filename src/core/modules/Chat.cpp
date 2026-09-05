@@ -57,10 +57,20 @@ void DiscordClient::requestMemberListSync(const QString &channelId,
 
   qDebug() << "[discord-chat] member-list sync requested"
            << "guild" << safeGuildId << "channel" << safeChannelId;
+  m_pendingMemberListChannelId = safeChannelId;
   if (m_gatewayWorker != 0) {
     QMetaObject::invokeMethod(m_gatewayWorker, "sendMemberListSync",
                               Qt::QueuedConnection, Q_ARG(QString, safeGuildId),
                               Q_ARG(QString, safeChannelId));
+  }
+}
+
+void DiscordClient::clearMemberListSync() {
+  qDebug() << "[discord-chat] member-list sync cleared";
+  m_pendingMemberListChannelId.clear();
+  if (m_gatewayWorker != 0) {
+    QMetaObject::invokeMethod(m_gatewayWorker, "clearMemberListSync",
+                              Qt::QueuedConnection);
   }
 }
 

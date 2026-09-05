@@ -772,7 +772,43 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
     // INSERT/UPDATE/DELETE (thay đổi tức thời khi sheet Members đang mở)
     // CHƯA được xử lý — xem comment ở AppStore::setMemberListForChannel().
     QString guildId = payload.value("guild_id").toString().trimmed();
+    // Payload chuẩn của op:14/GUILD_MEMBER_LIST_UPDATE (giao thức không
+    // chính thức, không có trong docs bot chính thức của Discord) không
+    // có field "channel_id" ở cấp root - field đó chỉ tồn tại cho các
+    // event channel thông thường (MESSAGE_CREATE, v.v.). Với single-
+    // channel subscribe (channels: {"<id>": [[0,99]]} - xem
+    // buildMemberListSyncPayload() trong JsonParser.cpp), Discord trả về
+    // channel id đó trong field "id" ở cấp root thay vào đó. Đọc
+    // "channel_id" trước (phòng trường hợp Discord đổi format), fallback
+    // "id" nếu rỗng - trước đây code chỉ đọc "channel_id" nên luôn nhận
+    // chuỗi rỗng và vứt bỏ toàn bộ member list đã parse.
     QString channelId = payload.value("channel_id").toString().trimmed();
+    if (channelId.isEmpty()) {
+      channelId = payload.value("id").toString().trimmed();
+    }
+    // "id" thường là list id logic ("everyone") chứ không phải channel
+    // id thật, nên không đáng tin cậy 100%. Vì luồng hiện tại chỉ theo
+    // dõi member list của đúng 1 channel tại một thời điểm, fallback về
+    // channel vừa được yêu cầu qua requestMemberListSync() nếu 2 nguồn
+    // trên đều rỗng hoặc không khớp channel đang chờ dữ liệu.
+    if (channelId.isEmpty() || channelId == "everyone") {
+      channelId = m_pendingMemberListChannelId;
+    }
+    // SYNC ĐẦU TIÊN cho 1 channel luôn tới ngay sau khi channel đó được
+    // subscribe (sendLazyRequest() trong Gateway.cpp - gọi khi user MỞ
+    // channel, không phải khi mở sheet Members). Tại thời điểm đó,
+    // m_pendingMemberListChannelId còn rỗng (sheet Members chưa mở lần
+    // nào), nên fallback ở trên không đủ - dữ liệu member list THẬT SỰ
+    // đã có trong SYNC này nhưng bị vứt bỏ nếu không xác định được
+    // channel. Discord không gửi thêm SYNC nào nữa khi sheet Members mở
+    // sau đó và gửi lại đúng request cũ (hành vi đã biết của gateway:
+    // request subscribe trùng với subscription hiện có không được trả
+    // lời) - nên đây LÀ CƠ HỘI DUY NHẤT để lấy dữ liệu. Fallback về
+    // channel đang mở trong khung chat (selectedChannelId) khi vẫn chưa
+    // xác định được channel nào khác.
+    if (channelId.isEmpty() && m_store) {
+      channelId = m_store->selectedChannelId();
+    }
     qDebug() << "[discord-gateway] GUILD_MEMBER_LIST_UPDATE received guild"
              << guildId << "channel" << channelId << "ops"
              << payload.value("ops").toList().size();

@@ -20,6 +20,12 @@ class DiscordGateway : public QObject {
 public:
   enum ConnectionState { Disconnected, Connecting, Connected, Ready };
 
+  // A single dropped UDP packet to the DNS resolver on a flaky mobile/Wi-Fi
+  // connection can exhaust mongoose's (already-raised) DNS timeout with no
+  // automatic retry. Allow a couple of silent reconnect attempts before
+  // surfacing "DNS timeout" to the user - see Gateway.cpp/GatewayEvents.cpp.
+  static const int kMaxDnsRetries = 2;
+
   explicit DiscordGateway(QObject *parent = 0);
   virtual ~DiscordGateway();
 
@@ -40,6 +46,12 @@ public:
   // quan tâm.
   Q_INVOKABLE void sendMemberListSync(const QString &guildId,
                                       const QString &channelId);
+  // Gọi khi sheet Members đóng lại, để dừng việc tự động re-sync sau
+  // reconnect (xem m_activeMemberListGuildId/ChannelId). Không bắt buộc
+  // gọi hàm này để sendMemberListSync() hoạt động đúng - chỉ ảnh hưởng
+  // tới việc có tự re-sync hay không nếu gateway reconnect SAU KHI user
+  // đã rời tab.
+  Q_INVOKABLE void clearMemberListSync();
   Q_INVOKABLE void updateMessageFilterState(const QString &selectedChannelId,
                                             const QStringList &loadedChannelIds,
                                             const QString &currentUserId);
@@ -76,10 +88,12 @@ private:
   void flushPendingLazyRequests();
   QString lazyRequestKey(const QString &guildId,
                          const QString &channelId) const;
+  void beginConnectAttempt();
 
   mg_mgr *m_mgr;
   mg_connection *m_connection;
   int m_timerId;
+  int m_dnsRetriesLeft;
   QString m_token;
   QString m_sessionId;
   QString m_resumeGatewayUrl;
@@ -95,6 +109,14 @@ private:
   QString m_selectedChannelId;
   QStringList m_loadedChannelIds;
   QString m_currentUserId;
+  // Guild/channel currently synced for the Members sheet, if open. Used to
+  // silently re-send the member-list SYNC after a reconnect (Discord closes
+  // the connection with code 4002 - see JsonParser.cpp - or the app itself
+  // reconnects for other reasons - the server has no memory of the previous
+  // subscription once the socket drops, so without this the Members sheet
+  // stays permanently empty until the user closes and reopens it).
+  QString m_activeMemberListGuildId;
+  QString m_activeMemberListChannelId;
 };
 
 #endif /* Gateway_HPP_ */

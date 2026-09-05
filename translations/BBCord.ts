@@ -148,7 +148,7 @@
 <context>
     <name>ChannelMemberList</name>
     <message>
-        <location filename="../assets/ChannelMemberList.qml" line="17"/>
+        <location filename="../assets/ChannelMemberList.qml" line="28"/>
         <source>Members #</source>
         <translation type="unfinished"></translation>
     </message>
@@ -195,22 +195,22 @@
     <name>ChatController</name>
     <message>
         <location filename="../src/ui/ChatController.cpp" line="307"/>
-        <location filename="../src/ui/ChatController.cpp" line="1182"/>
+        <location filename="../src/ui/ChatController.cpp" line="1284"/>
         <source>Maximum 10 attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1167"/>
+        <location filename="../src/ui/ChatController.cpp" line="1269"/>
         <source>Attachment file not found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1177"/>
+        <location filename="../src/ui/ChatController.cpp" line="1279"/>
         <source>Attachment is too large</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1216"/>
+        <location filename="../src/ui/ChatController.cpp" line="1318"/>
         <source>%1 files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -320,13 +320,13 @@
 <context>
     <name>MemberListController</name>
     <message>
-        <location filename="../src/ui/MemberListController.cpp" line="295"/>
+        <location filename="../src/ui/MemberListController.cpp" line="302"/>
         <source>Online</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/MemberListController.cpp" line="299"/>
-        <location filename="../src/ui/MemberListController.cpp" line="367"/>
+        <location filename="../src/ui/MemberListController.cpp" line="306"/>
+        <location filename="../src/ui/MemberListController.cpp" line="374"/>
         <source>Offline</source>
         <translation type="unfinished"></translation>
     </message>

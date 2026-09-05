@@ -40,6 +40,15 @@ public:
   static QByteArray buildMemberListSyncPayload(const QString &guildId,
                                                const QString &channelId,
                                                QString *errorMessage = 0);
+  // Payload op:14 KHÔNG kèm "channels" — dùng để "unsubscribe" channel
+  // khỏi member list trước khi subscribe lại (xem
+  // DiscordGateway::sendMemberListSync()). Discord không phát lại
+  // GUILD_MEMBER_LIST_UPDATE (SYNC) nếu request subscribe trùng hệt
+  // subscription đã có (cùng guild_id + cùng range channel) - cần đổi
+  // trạng thái subscribe trước để buộc server coi đây là thay đổi thực
+  // sự cần đồng bộ lại.
+  static QByteArray buildMemberListUnsubscribePayload(
+      const QString &guildId, QString *errorMessage = 0);
   static int valueToInt(const QVariant &value, int fallback);
   static bool hasJsonToken(const QByteArray &bytes, const char *compactToken,
                            const char *spacedToken);
