@@ -51,8 +51,7 @@ public:
   Q_INVOKABLE void loadMoreDmChannels();
   Q_INVOKABLE void loadDmAvatar(const QString &channelId);
   Q_INVOKABLE void loadGuildChannels(const QString &guildId);
-  Q_INVOKABLE void loadMoreGuildChannels();
-  Q_INVOKABLE void selectHome();
+  Q_INVOKABLE void loadMoreGuildChannels();  Q_INVOKABLE void selectHome();
   Q_INVOKABLE void selectGuild(const QString &guildId);
   Q_INVOKABLE void selectChannel(const QString &channelId);
   // guildId đã cache cho 1 channelId cụ thể, nếu channel đó từng được
@@ -63,6 +62,26 @@ public:
   // này (trường hợp mở app từ Hub khi app đang cold-start — xem
   // ApplicationUI::onInvoked()).
   Q_INVOKABLE QString guildIdForChannel(const QString &channelId) const;
+  // Danh sách active thread (đã map qua ItemMapper, cùng shape với item
+  // trong guildChannels) của 1 channel cụ thể. Dữ liệu đến hoàn toàn qua
+  // GATEWAY (event THREAD_LIST_SYNC, xem Client.cpp::onGatewayDispatch())
+  // - KHÔNG qua REST, vì mọi endpoint REST "active threads" (cả cấp-guild
+  // lẫn cấp-channel) đều bị Discord từ chối với user token ({"message":
+  // "Only bots can use this endpoint.", "code": 20002}, đã xác nhận thật
+  // qua nhiều lần test). Có thể rỗng nếu Discord chưa từng gửi
+  // THREAD_LIST_SYNC cho channel này trong phiên hiện tại (event này gửi
+  // theo guild lúc subscribe, không theo yêu cầu chủ động của app).
+  Q_INVOKABLE QVariantList threadsForChannel(const QString &channelId) const;
+  // Thread bị Discord tự động archive không còn nằm trong
+  // threadsForChannel()/active threads nữa - fetch riêng qua REST (endpoint
+  // cấp-channel /channels/{id}/threads/archived/public, đã xác nhận hoạt
+  // động với user token, khác 2 endpoint "active threads" đã bị chặn bot-
+  // only). "beforeCursor" rỗng = trang đầu; truyền id của thread cũ nhất
+  // đã có để tải thêm trang cũ hơn. Kết quả trả về qua signal
+  // archivedThreadsLoaded, KHÔNG lưu vào threadsForChannel() (tách biệt
+  // khỏi active threads, tránh trộn lẫn 2 khái niệm khác nhau).
+  Q_INVOKABLE void requestArchivedThreads(const QString &channelId,
+                                          const QString &beforeCursor);
 
   bool loggedIn() const;
   bool busy() const;
@@ -77,6 +96,12 @@ Q_SIGNALS:
   void loggedInChanged(bool loggedIn);
   void busyChanged(bool busy);
   void statusTextChanged(const QString &statusText);
+  // QML tự Connections{} vào signal này (khác threadsForChannel() - hàm
+  // đọc theo yêu cầu) vì requestArchivedThreads() là request bất đồng bộ
+  // qua REST, cần push kết quả ngược lại UI khi về, không có sẵn để đọc
+  // ngay lập tức.
+  void archivedThreadsLoaded(const QString &channelId,
+                             const QVariantList &threads, bool hasMore);
 
 public Q_SLOTS:
   void clearAvatarCacheState();
@@ -123,6 +148,8 @@ private Q_SLOTS:
   void onDmChannelsLoaded(const QVariantList &channels);
   void onGuildChannelsLoaded(const QString &guildId,
                              const QVariantList &channels);
+  void onArchivedThreadsLoaded(const QString &channelId,
+                               const QVariantList &threads, bool hasMore);
   void onChannelMessagesLoaded(const QString &channelId,
                                const QString &beforeMessageId,
                                const QVariantList &messages);
@@ -184,6 +211,14 @@ private:
   bool updateGuildChannelMentionCount(const QString &channelId,
                                       int mentionCount);
   void appendVisibleGuildChannels();
+  // Dùng chung giữa GUILD_CREATE (payload.threads - threads có sẵn ngay
+  // lúc guild trở nên available, theo tài liệu chính thức Discord) và
+  // THREAD_LIST_SYNC (bắn khi "gains access to a channel", ít xảy ra hơn
+  // lúc mở app bình thường) - cả 2 event đều mang cùng shape "threads"/
+  // "channel_ids" nên gộp logic map + merge vào cache 1 chỗ duy nhất,
+  // xem Client.cpp::onGatewayDispatch().
+  void mergeThreadsIntoCache(const QVariantList &rawThreads,
+                             const QVariantList &channelIdsToClear);
   void scheduleGuildsCacheSave();
   void scheduleDmChannelsCacheSave();
   void updateDataLoading();
@@ -246,6 +281,9 @@ private:
   QVariantList &m_dmChannels;
   QVariantList &m_allGuildChannels;
   QVariantList &m_visibleGuildChannels;
+  QVariantMap &m_channelThreadsByParentId;
+  QString &m_activeThreadChannelId;
+  QString &m_activeThreadParentId;
   QVariantMap &m_pendingMentionCountsByGuildId;
   QVariantMap &m_pendingMentionCountsByChannelId;
   QStringList &m_pendingUnreadGuildIds;

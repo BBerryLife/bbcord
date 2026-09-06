@@ -91,6 +91,9 @@ struct DiscordChannel {
     GroupDm = 3,
     GuildCategory = 4,
     GuildAnnouncement = 5,
+    AnnouncementThread = 10,
+    PublicThread = 11,
+    PrivateThread = 12,
     GuildForum = 15,
     GuildMedia = 16,
     Unknown = -1
@@ -101,8 +104,20 @@ struct DiscordChannel {
   QString name;
   ChannelType type;
   int position;
+  // ID channel cha — rỗng cho channel top-level, hoặc trỏ tới channel
+  // GuildText/GuildForum/GuildAnnouncement chứa nó nếu đây là 1 thread
+  // (AnnouncementThread/PublicThread/PrivateThread). Đã có sẵn ở tầng
+  // QVariantMap qua ItemMapper::guildChannelToItem() ("parentId") — thêm
+  // vào đây để struct phản ánh đúng, dùng khi cần nhóm thread dưới đúng
+  // channel cha hoặc kiểm tra "channel này có phải thread không".
+  QString parentId;
 
   DiscordChannel() : type(Unknown), position(0) {}
+
+  bool isThread() const {
+    return type == AnnouncementThread || type == PublicThread ||
+           type == PrivateThread;
+  }
 };
 
 struct DiscordMessage {

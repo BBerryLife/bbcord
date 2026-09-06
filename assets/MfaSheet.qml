@@ -21,15 +21,16 @@ Sheet {
 
     function reset() {
         codeField.text = ""
+        codeField.liveText = ""
         submitting = false
     }
 
     function submitCode() {
-        if (submitting || codeField.text.length !== 6) {
+        if (submitting || codeField.liveText.length !== 6) {
             return
         }
         submitting = true
-        discordClient.submitMfaCode(mfaSheet.ticket, mfaSheet.loginInstanceId, codeField.text)
+        discordClient.submitMfaCode(mfaSheet.ticket, mfaSheet.loginInstanceId, codeField.liveText)
     }
 
     function showMfaFailed(message) {
@@ -97,6 +98,16 @@ Sheet {
                     text: ""
                     visible: !appStore.busy
 
+                    // Fix: same BB10 virtual-keyboard buffering issue as
+                    // LoginPage.qml's emailField/passwordField (see comment
+                    // there) - text can lag behind what onTextChanging
+                    // already sees per keystroke, which kept btnVerify
+                    // greyed out even after typing all 6 digits until an
+                    // unrelated focus change forced the keyboard to commit.
+                    // Mirror the live value into a plain property here too
+                    // and bind/submit against that instead of codeField.text.
+                    property string liveText: ""
+
                     onTextChanging: {
                         // Keep it numeric-only and capped at 6 digits.
                         var digitsOnly = text.replace(/[^0-9]/g, "")
@@ -106,6 +117,7 @@ Sheet {
                         if (digitsOnly !== text) {
                             text = digitsOnly
                         }
+                        codeField.liveText = digitsOnly
                     }
 
                     input {
@@ -119,7 +131,7 @@ Sheet {
                     id: btnVerify
                     text: qsTr("Verify")
                     horizontalAlignment: HorizontalAlignment.Fill
-                    enabled: !appStore.busy && !mfaSheet.submitting && codeField.text.length === 6
+                    enabled: !appStore.busy && !mfaSheet.submitting && codeField.liveText.length === 6
                     visible: !appStore.busy
 
                     onClicked: {

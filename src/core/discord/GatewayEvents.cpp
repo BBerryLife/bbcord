@@ -61,7 +61,18 @@ bool shouldParseDispatch(const QString &eventName) {
          eventName == "GUILD_CREATE" || eventName == "GUILD_DELETE" ||
          eventName == "USER_SETTINGS_PROTO_UPDATE" ||
          eventName == "PRESENCE_UPDATE" ||
-         eventName == "GUILD_MEMBER_LIST_UPDATE";
+         eventName == "GUILD_MEMBER_LIST_UPDATE" ||
+         // Fix: THREAD_LIST_SYNC bị bỏ sót khỏi whitelist này khi thêm
+         // tính năng Threads - mọi message không nằm trong danh sách bị
+         // return sớm ở dòng shouldParseDispatch() check ngay đầu
+         // handleTextMessage(), KHÔNG BAO GIỜ tới được handleDispatch()/
+         // onGatewayDispatch() dù Discord có gửi event này hay không. Đây
+         // là lý do thật khiến GUILD_CREATE cũng có vẻ "không chạy" khi
+         // debug log không xuất hiện - nghi ngờ ban đầu, nhưng
+         // THREAD_LIST_SYNC mới là event thực sự managed bởi OP 14 lazy
+         // subscribe (đã dùng cho member list/channel list) và cần được
+         // parse.
+         eventName == "THREAD_LIST_SYNC";
 }
 
 QByteArray extractArrayBytes(const QByteArray &bytes, const char *fieldName) {
@@ -181,6 +192,19 @@ QVariantMap buildLightReadyPayload(const QByteArray &bytes) {
         DiscordJsonParser::extractStringField(settingsBytes, "proto");
     payload["settings"] = settings;
   }
+
+  // Fix: user-token gateway (khác hẳn bot protocol) KHÔNG gửi GUILD_CREATE
+  // riêng lẻ cho từng guild - đã xác nhận bằng debug log thực tế (0/140
+  // event nhận được là GUILD_CREATE trong cả phiên). Discord dồn toàn bộ
+  // guild data đầy đủ (channels, roles, threads...) NGAY TRONG chính
+  // payload READY này, ở field "guilds" cấp root của "d" - đây cũng là
+  // lý do payload READY nặng ~5MB dù chỉ có 49 guild. buildLightReadyPayload
+  // trước đây cố tình bỏ qua hẳn field này để tối ưu hiệu năng (không
+  // parse full JSON của payload khổng lồ) - giữ nguyên tinh thần đó,
+  // chỉ trích ra ĐÚNG mảng "guilds" thô bằng extractArrayField() (không
+  // parse sâu từng object bên trong ở đây), để Client.cpp tự parse riêng
+  // từng guild khi cần (threads) mà không phải parse toàn bộ payload.
+  payload["guilds"] = DiscordJsonParser::extractArrayField(dataBytes, "guilds");
 
   return payload;
 }

@@ -86,6 +86,13 @@ private:
   QString avatarCachePath(const QString &avatarUrl) const;
   QString filePreviewSource(const QString &filePath) const;
   void ensureAvatarImageWorker();
+  // Map raw status string từ Discord ("online"/"idle"/"dnd"/"" hoặc
+  // "offline") sang label đầy đủ, có bản dịch, để hiển thị dưới tên
+  // member trong sheet Members (vd. "dnd" -> "Do Not Disturb", khớp
+  // đúng cách Discord client chính chủ hiển thị). Là method thay vì hàm
+  // tự do trong namespace {} ẩn danh vì cần gọi tr() (chỉ khả dụng trên
+  // QObject-derived class).
+  QString displayLabelForStatus(const QString &status) const;
 
   DiscordClient *m_client;
   AppStore *m_store;

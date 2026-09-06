@@ -56,6 +56,10 @@ QVariantList AppStore::dmChannels() const { return m_dmChannels; }
 
 QVariantList AppStore::guildChannels() const { return m_guildChannels; }
 
+QVariantMap AppStore::channelThreadsByParentId() const {
+  return m_channelThreadsByParentId;
+}
+
 QString AppStore::selectedGuildId() const { return m_selectedGuildId; }
 
 QString AppStore::selectedChannelId() const { return m_selectedChannelId; }
@@ -183,6 +187,7 @@ void AppStore::clearSession() {
   setGuildFolders(QVariantList());
   setDmChannels(QVariantList());
   setGuildChannels(QVariantList());
+  setChannelThreadsByParentId(QVariantMap());
   clearChatCache();
   selectHome();
 }
@@ -413,6 +418,16 @@ void AppStore::appendDmChannels(const QVariantList &channels) {
     m_dmChannels.append(channels.at(i));
   }
   emit dmChannelsAppended(channels);
+}
+
+void AppStore::setChannelThreadsByParentId(
+    const QVariantMap &threadsByParentId) {
+  if (m_channelThreadsByParentId == threadsByParentId) {
+    return;
+  }
+
+  m_channelThreadsByParentId = threadsByParentId;
+  emit channelThreadsChanged();
 }
 
 void AppStore::setGuildChannels(const QVariantList &channels) {

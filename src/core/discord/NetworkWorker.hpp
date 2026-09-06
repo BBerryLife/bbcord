@@ -26,6 +26,9 @@ public Q_SLOTS:
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
                           int limit, const QString &afterId);
+  void fetchActiveThreads(const QString &token, const QString &channelId);
+  void fetchArchivedThreads(const QString &token, const QString &channelId,
+                            const QString &beforeCursor);
   void fetchChannelMessages(const QString &token, const QString &channelId,
                             int limit, const QString &beforeMessageId);
   void sendChannelMessage(const QString &token, const QString &channelId,
@@ -56,6 +59,10 @@ Q_SIGNALS:
   void dmChannelsLoaded(const QVariantList &channels);
   void guildChannelsLoaded(const QString &guildId,
                            const QVariantList &channels);
+  void activeThreadsLoaded(const QString &channelId,
+                           const QVariantList &threads);
+  void archivedThreadsLoaded(const QString &channelId,
+                             const QVariantList &threads, bool hasMore);
   void channelMessagesLoaded(const QString &channelId,
                              const QString &beforeMessageId,
                              const QVariantList &messages);

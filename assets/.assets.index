@@ -1,5 +1,5 @@
 1
-53
+54
 About.qml
 audio/connected.ogg
 audio/error.ogg
@@ -35,9 +35,9 @@ images/icons/send.png
 images/icons/settings/ca_audio_active.png
 images/icons/settings/ca_data_management.png
 images/icons/settings/ca_message_error.png
-images/icons/settings/ca_open.png
 images/icons/settings/ca_security_wipe.png
 images/icons/settings/ca_sms.png
+images/icons/settings/ca_softwarelogtool.png
 images/icons/settings/ca_storage_access.png
 images/icons/settings/desktop.ini
 images/icons/speaker.png
@@ -52,4 +52,5 @@ MessageBubble.qml
 MfaSheet.qml
 ServerList.qml
 Settings.qml
+ThreadList.qml
 UserSheet.qml

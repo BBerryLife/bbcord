@@ -8,6 +8,11 @@ Container {
     property string serverId: ""
 
     signal channelSelected(string channelId, string guildId, string channelName)
+    // Forum/Media channel không có tin nhắn trực tiếp để mở qua ChatCard -
+    // mỗi "post" của forum thực chất LÀ 1 thread (parentId trỏ về channel
+    // này). Phát signal riêng để MainPage.qml mở ThreadList.qml (xem danh
+    // sách post/thread) thay vì cố mở ChatCard như channel text thường.
+    signal forumChannelSelected(string channelId, string guildId, string channelName)
 
     horizontalAlignment: HorizontalAlignment.Fill
     verticalAlignment: VerticalAlignment.Fill
@@ -44,9 +49,8 @@ Container {
             var item = serverListController.channelDataModel.data(indexPath);
 
             if (item.type == "channel") {
-                if (item.implemented == false) {
-                    unsupportedChannelToast.body = qsTr("Discussion/media channels are not implemented yet");
-                    unsupportedChannelToast.show();
+                if (item.isForumLike == true) {
+                    serverList.forumChannelSelected(item.id, serverList.serverId, item.name);
                     return;
                 }
                 serverList.channelSelected(item.id, serverList.serverId, item.name);

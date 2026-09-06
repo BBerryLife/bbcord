@@ -7,17 +7,6 @@ Page {
 	property string guildId: ""
 	property string channelName: "general"
 	property alias title: titleBar.title
-	// Alias trỏ tới context property memberListController (inject từ C++
-	// vào root context của Page này). Cần alias riêng vì các delegate bên
-	// trong ListItemComponent chạy trong scope RIÊNG của chúng và KHÔNG
-	// nhìn thấy context property gắn ở root Page - chỉ thấy được
-	// ListItemData và các property thực sự khai báo trên Page cha, truy
-	// cập ngược lên qua id (memberPage.controller). Không có alias này,
-	// gọi thẳng "memberListController" trong ListItemComponent ném
-	// ReferenceError (xem tryLoadAvatar()/onCreationCompleted() bên dưới).
-	// Cascades QML không hỗ trợ kiểu "var" cho property (khác QtQuick
-	// thường) - dùng "variant" thay thế.
-	property variant controller: memberListController
 
 	signal backRequested()
 
@@ -87,11 +76,27 @@ Page {
 							orientation: LayoutOrientation.LeftToRight
 						}
 
+						// Fix: id bên ngoài (memberPage) KHÔNG resolve được từ
+						// trong scope riêng của ListItemComponent trong Cascades
+						// (xem comment ở đầu file) — "memberPage.controller" ném
+						// ReferenceError ngay tại onCreationCompleted(), khiến
+						// tryLoadAvatar() không bao giờ thực sự gọi
+						// cachedAvatarSource() và avatarCached không bao giờ
+						// được connect. Hệ quả quan sát được: avatar không tải
+						// lazy per-row như thiết kế, mà chỉ xuất hiện đồng loạt
+						// khi cả ListView được rebuild/re-render. Sửa bằng cách
+						// dùng đúng pattern đã ổn định ở nơi khác trong app
+						// (xem ChatCard.qml: loadAttachmentImage() khai báo trên
+						// ListView cha, delegate gọi ngược lên qua
+						// "ListItem.view.<function>" — API chuẩn Cascades cho
+						// delegate truy cập ListView chứa nó) thay vì cố truy
+						// cập context property qua 1 id cục bộ không nhìn thấy
+						// được từ scope này.
 						function tryLoadAvatar() {
 							if (ListItemData.avatarUrl === "") {
 								return
 							}
-							var cached = memberPage.controller.cachedAvatarSource(ListItemData.avatarUrl)
+							var cached = ListItem.view.loadMemberAvatar(ListItemData.avatarUrl)
 							if (cached !== "") {
 								memberRow.avatarSource = cached
 							}
@@ -105,7 +110,7 @@ Page {
 
 						onCreationCompleted: {
 							tryLoadAvatar()
-							memberPage.controller.avatarCached.connect(memberRow.onAvatarCached)
+							ListItem.view.connectAvatarCached(memberRow.onAvatarCached)
 						}
 
 						Container {
@@ -165,6 +170,19 @@ Page {
 
 			function itemType(data, indexPath) {
 				return data.type
+			}
+
+			// Cầu nối cho delegate "member" gọi ngược lên qua
+			// ListItem.view.loadMemberAvatar()/connectAvatarCached() — xem
+			// comment tại tryLoadAvatar() trong ListItemComponent "member"
+			// phía trên để biết lý do không gọi thẳng memberListController
+			// (hay alias memberPage.controller) từ trong scope delegate.
+			function loadMemberAvatar(avatarUrl) {
+				return memberListController.cachedAvatarSource(avatarUrl)
+			}
+
+			function connectAvatarCached(handler) {
+				memberListController.avatarCached.connect(handler)
 			}
 		}
 	}

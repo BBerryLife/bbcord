@@ -47,6 +47,7 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/MfaSheet.qml) \
         $$quote($$BASEDIR/assets/ServerList.qml) \
         $$quote($$BASEDIR/assets/Settings.qml) \
+        $$quote($$BASEDIR/assets/ThreadList.qml) \
         $$quote($$BASEDIR/assets/UserSheet.qml) \
         $$quote($$BASEDIR/assets/audio/connected.ogg) \
         $$quote($$BASEDIR/assets/audio/error.ogg) \
@@ -78,9 +79,9 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/images/icons/settings/ca_audio_active.png) \
         $$quote($$BASEDIR/assets/images/icons/settings/ca_data_management.png) \
         $$quote($$BASEDIR/assets/images/icons/settings/ca_message_error.png) \
-        $$quote($$BASEDIR/assets/images/icons/settings/ca_open.png) \
         $$quote($$BASEDIR/assets/images/icons/settings/ca_security_wipe.png) \
         $$quote($$BASEDIR/assets/images/icons/settings/ca_sms.png) \
+        $$quote($$BASEDIR/assets/images/icons/settings/ca_softwarelogtool.png) \
         $$quote($$BASEDIR/assets/images/icons/settings/ca_storage_access.png) \
         $$quote($$BASEDIR/assets/images/icons/settings/desktop.ini) \
         $$quote($$BASEDIR/assets/images/icons/speaker.png) \

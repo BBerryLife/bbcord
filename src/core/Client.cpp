@@ -9,6 +9,15 @@
 #include "client/AvatarManager.hpp"
 #include "client/CacheManager.hpp"
 #include "client/GatewayHandler.hpp"
+// Fix: Client.hpp chỉ forward-declare "class ItemMapper;" (đủ cho con
+// trỏ m_itemMapper làm thành viên, nhưng KHÔNG đủ để gọi method trên nó -
+// kiểu chưa hoàn chỉnh/"incomplete type"). Trước đây chỉ GuildChannels.cpp
+// (1 file module riêng) include đầy đủ header này. Giờ Client.cpp cũng
+// tự gọi m_itemMapper->guildChannelToItem() trực tiếp trong xử lý
+// THREAD_LIST_SYNC (onGatewayDispatch()), nên cần include ở đây - lỗi
+// build thật đã xác nhận: "invalid use of incomplete type 'struct
+// ItemMapper'" tại đúng dòng gọi guildChannelToItem() trong Client.cpp.
+#include "client/ItemMapper.hpp"
 
 #include <QDebug>
 #include <QMetaObject>
@@ -47,6 +56,9 @@ DiscordClient::DiscordClient(QObject *parent)
       m_allDmChannels(m_state.allDmChannels), m_dmChannels(m_state.dmChannels),
       m_allGuildChannels(m_state.allGuildChannels),
       m_visibleGuildChannels(m_state.visibleGuildChannels),
+      m_channelThreadsByParentId(m_state.channelThreadsByParentId),
+      m_activeThreadChannelId(m_state.activeThreadChannelId),
+      m_activeThreadParentId(m_state.activeThreadParentId),
       m_pendingMentionCountsByGuildId(m_state.pendingMentionCountsByGuildId),
       m_pendingMentionCountsByChannelId(
           m_state.pendingMentionCountsByChannelId),
@@ -108,6 +120,9 @@ DiscordClient::DiscordClient(AppStore *store, QObject *parent)
       m_allDmChannels(m_state.allDmChannels), m_dmChannels(m_state.dmChannels),
       m_allGuildChannels(m_state.allGuildChannels),
       m_visibleGuildChannels(m_state.visibleGuildChannels),
+      m_channelThreadsByParentId(m_state.channelThreadsByParentId),
+      m_activeThreadChannelId(m_state.activeThreadChannelId),
+      m_activeThreadParentId(m_state.activeThreadParentId),
       m_pendingMentionCountsByGuildId(m_state.pendingMentionCountsByGuildId),
       m_pendingMentionCountsByChannelId(
           m_state.pendingMentionCountsByChannelId),
@@ -683,6 +698,37 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
         m_store->setGuildFolders(m_guildFolders);
       }
     }
+
+    // Fix: đã xác nhận bằng debug log thực tế rằng GUILD_CREATE KHÔNG BAO
+    // GIỜ được gateway user-token này gửi (0/140 event trong 1 phiên đầy
+    // đủ, gồm cả lúc mở nhiều guild/channel/forum) - khác hẳn giao thức
+    // bot truyền thống. Toàn bộ dữ liệu guild đầy đủ (channels, threads,
+    // roles, members...) được Discord dồn thẳng vào chính field "guilds"
+    // trong payload READY - đây cũng là lý do payload READY nặng ~5MB dù
+    // chỉ 49 guild. buildLightReadyPayload() (GatewayEvents.cpp) đã được
+    // sửa để trích riêng mảng "guilds" thô này (không parse full JSON cả
+    // payload, giữ tinh thần tối ưu fast-path) - lặp qua đây để lấy
+    // threads của TỪNG guild, dùng chung mergeThreadsIntoCache() với
+    // THREAD_LIST_SYNC.
+    if (eventName == "READY") {
+      // Fix: user-token gateway KHÔNG gửi GUILD_CREATE riêng lẻ cho từng
+      // guild lúc load ban đầu (đã xác nhận bằng debug log thực tế: 0/140
+      // event trong 1 phiên đầy đủ) - khác hẳn giao thức bot truyền
+      // thống. Toàn bộ dữ liệu guild đầy đủ (channels, threads, roles,
+      // members...) được Discord dồn thẳng vào field "guilds" ngay trong
+      // chính payload READY - đây cũng là lý do payload READY nặng ~5MB
+      // dù chỉ 49 guild. buildLightReadyPayload() (GatewayEvents.cpp) đã
+      // được sửa để trích riêng mảng "guilds" thô này (không parse full
+      // JSON cả payload, giữ tinh thần tối ưu fast-path) - lặp qua đây
+      // để lấy threads của TỪNG guild, dùng chung mergeThreadsIntoCache()
+      // với THREAD_LIST_SYNC.
+      QVariantList readyGuilds = payload.value("guilds").toList();
+      for (int i = 0; i < readyGuilds.size(); ++i) {
+        QVariantMap guildRaw = readyGuilds.at(i).toMap();
+        mergeThreadsIntoCache(guildRaw.value("threads").toList(),
+                              QVariantList());
+      }
+    }
   }
 
   if (eventName == "GUILD_CREATE") {
@@ -757,6 +803,15 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       }
       m_store->setGuildRoles(guildId, parsedRoles);
     }
+
+    // GUILD_CREATE không chạy trên user-token gateway lúc load ban đầu
+    // (đã xác nhận: 0/140 event trong 1 phiên đầy đủ - xem comment ở
+    // khối "READY" phía trên, đó mới là nguồn threads thật cho trường
+    // hợp thông thường). Giữ logic đọc threads ở đây phòng trường hợp
+    // Discord vẫn gửi GUILD_CREATE khi user JOIN 1 guild mới trong lúc
+    // đang chạy app (tài liệu chính thức liệt kê đây là 1 trong 3 lý do
+    // GUILD_CREATE được gửi).
+    mergeThreadsIntoCache(payload.value("threads").toList(), QVariantList());
   }
 
   if (eventName == "GUILD_MEMBER_LIST_UPDATE") {
@@ -882,7 +937,14 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
                                     .arg(effectiveAvatarHash);
           }
 
-          QVariantMap presence = item.value("presence").toMap();
+          // "presence" nằm TRONG object "member" (memberRaw), không phải
+          // ngang hàng với "member" ở cấp "item" — đọc nhầm item.value(
+          // "presence") luôn trả về map rỗng, khiến status luôn fallback
+          // "offline" cho MỌI member bất kể trạng thái thật (bug đã xác
+          // nhận: sheet Members hiện toàn bộ 97 member "Offline" và mất
+          // luôn phân nhóm theo role, vì mọi người bị dồn hết vào
+          // offlineGroup ở MemberListController::rebuildMemberDataModel()).
+          QVariantMap presence = memberRaw.value("presence").toMap();
           member.status = presence.value("status").toString();
           if (member.status.isEmpty()) {
             member.status = "offline";
@@ -918,6 +980,25 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
         }
       }
     }
+  }
+
+  // Fix: GET /guilds/{id}/threads/active VÀ GET /channels/{id}/threads/
+  // active (2 endpoint REST đã thử trước đây) đều bị Discord từ chối
+  // thẳng thừng với user token - response thật xác nhận: {"message":
+  // "Only bots can use this endpoint.", "code": 20002}. Đây là giới hạn
+  // cứng của Discord, không sửa được bằng cách đổi request. Cách Discord
+  // client chính chủ thực sự dùng (xác nhận qua network trace cộng đồng):
+  // gateway op:14 (Lazy Guild Subscribe) với "threads: true" - đã bật sẵn
+  // từ trước trong DiscordJsonParser::buildGuildSubscribePayload() (xem
+  // JsonParser.cpp) - khiến Discord tự đẩy threads qua dispatch event
+  // THREAD_LIST_SYNC mỗi khi subscribe 1 guild, không cần tự request.
+  if (eventName == "THREAD_LIST_SYNC") {
+    QVariantList rawThreads = payload.value("threads").toList();
+    QVariantList syncedChannelIds = payload.value("channel_ids").toList();
+    mergeThreadsIntoCache(rawThreads, syncedChannelIds);
+    qDebug() << "[discord-gateway] THREAD_LIST_SYNC received guild"
+             << payload.value("guild_id").toString() << "threads"
+             << rawThreads.size();
   }
 
   if (eventName == "MESSAGE_CREATE" || eventName == "MESSAGE_UPDATE" ||
@@ -956,6 +1037,50 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       eventName, payload, m_pendingUnreadGuildIds,
       m_pendingMentionCountsByGuildId, m_pendingMentionCountsByChannelId,
       m_pendingUnreadChannelIds, m_pendingDmUiUpdate, m_gatewayUiUpdateQueued);
+}
+
+void DiscordClient::mergeThreadsIntoCache(
+    const QVariantList &rawThreads, const QVariantList &channelIdsToClear) {
+  QVariantMap threadsByParentId = m_channelThreadsByParentId;
+
+  // channelIdsToClear liệt kê CẢ những channel không còn thread active
+  // nào (chỉ có ở THREAD_LIST_SYNC, rỗng khi gọi từ GUILD_CREATE) - phải
+  // xoá key cũ của các channel đó trước khi nạp lại, nếu không danh sách
+  // sẽ giữ thread đã đóng/archive từ trước.
+  for (int i = 0; i < channelIdsToClear.size(); ++i) {
+    threadsByParentId.remove(channelIdsToClear.at(i).toString());
+  }
+
+  for (int i = 0; i < rawThreads.size(); ++i) {
+    QVariantMap item = m_itemMapper->guildChannelToItem(rawThreads.at(i).toMap());
+    QString itemId = item.value("id").toString();
+    QString parentId = item.value("parentId").toString();
+    if (itemId.isEmpty() || parentId.isEmpty()) {
+      continue;
+    }
+
+    QVariantList siblingThreads = threadsByParentId.value(parentId).toList();
+    // Fix: THREAD_LIST_SYNC có thể bắn nhiều lần cho cùng 1 guild trong
+    // 1 phiên (mỗi lần subscribe 1 channel mới trong guild đó) - trước
+    // đây append() thẳng không kiểm tra trùng, nên cùng 1 thread (cùng
+    // itemId) bị cộng dồn nhiều lần mỗi lần merge, gây duplicate quan
+    // sát được trên UI (bug đã xác nhận qua test thực tế). Loại bỏ item
+    // cũ cùng itemId trước khi append lại - đảm bảo bản mới nhất luôn
+    // thắng (dữ liệu thread có thể đổi giữa các lần sync, vd. message
+    // count) mà không nhân đôi trong danh sách.
+    for (int j = siblingThreads.size() - 1; j >= 0; --j) {
+      if (siblingThreads.at(j).toMap().value("id").toString() == itemId) {
+        siblingThreads.removeAt(j);
+      }
+    }
+    siblingThreads.append(item);
+    threadsByParentId.insert(parentId, siblingThreads);
+  }
+
+  m_channelThreadsByParentId = threadsByParentId;
+  if (m_store) {
+    m_store->setChannelThreadsByParentId(m_channelThreadsByParentId);
+  }
 }
 
 void DiscordClient::onGatewayReady(const QString &sessionId) {

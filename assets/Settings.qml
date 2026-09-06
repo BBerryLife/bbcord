@@ -160,7 +160,7 @@ Sheet {
                 }
 
                 SettingItem {
-                    iconSource: "asset:///images/icons/settings/ca_open.png"
+                    iconSource: "asset:///images/icons/settings/ca_softwarelogtool.png"
                     title: qsTr("Export log")
                     description: qsTr("Save the app log file, e.g. for bug reports.")
                     onTriggered: {

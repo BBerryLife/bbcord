@@ -21,6 +21,11 @@ Page {
     signal backRequested
     signal memberListRequested
 
+    // Trước đây đổi sang Visible để đặt action "Threads" trên action bar
+    // (Page.actions + ActionBarPlacement.OnBar). Bỏ lại vì action đó
+    // chiếm nguyên 1 thanh ngang chỉ để chứa 1 nút, và giờ đã có cách vào
+    // Threads trực tiếp từ ServerList.qml (bấm channel Forum/Media mở
+    // thẳng ThreadList.qml) - không cần entry point trùng lặp ở đây.
     actionBarVisibility: ChromeVisibility.Hidden
 
     titleBar: TitleBar {

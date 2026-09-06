@@ -387,6 +387,10 @@ void DiscordRestClient::processNextRequest() {
       message = "Could not create Discord DM connection";
     } else if (m_requestType == GuildChannelsRequest) {
       message = "Could not create Discord channel connection";
+    } else if (m_requestType == ActiveThreadsRequest) {
+      message = "Could not create Discord threads connection";
+    } else if (m_requestType == ArchivedThreadsRequest) {
+      message = "Could not create Discord archived threads connection";
     } else if (m_requestType == ChannelMessagesRequest) {
       message = "Could not create Discord messages connection";
     } else if (m_requestType == SendMessageRequest ||
@@ -642,6 +646,63 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
       }
 
       failDataRequest(dataErrorMessage(requestName, status));
+      break;
+    }
+
+    if (m_requestType == ActiveThreadsRequest) {
+      qDebug() << "[discord-rest] active threads status" << status;
+      if (status == 200) {
+        // GET .../threads/active trả về 1 OBJECT {threads: [...], members:
+        // [...], has_more: bool} - KHÁC với /guilds/{id}/channels (trả
+        // thẳng array) - nên parseObject() + lấy field "threads" ra,
+        // không dùng parseArray() như 3 request phía trên.
+        QString parseError;
+        QVariantMap responseObject =
+            DiscordJsonParser::parseObject(body, &parseError);
+        if (!parseError.isEmpty()) {
+          failDataRequest(
+              QString("Discord REST JSON error: %1").arg(parseError));
+          break;
+        }
+
+        QVariantList threads = responseObject.value("threads").toList();
+        QString channelId = m_channelId;
+        finishRequest(keepConnectionAlive);
+        emit activeThreadsLoaded(channelId, threads);
+        processNextRequest();
+        break;
+      }
+
+      failDataRequest(dataErrorMessage("active threads", status));
+      break;
+    }
+
+    if (m_requestType == ArchivedThreadsRequest) {
+      qDebug() << "[discord-rest] archived threads status" << status;
+      if (status == 200) {
+        // Cùng shape response {threads, members, has_more} như active
+        // threads - nhưng archivedThreadsLoaded cần thêm has_more để UI
+        // biết còn trang cũ hơn để tải tiếp hay không (active threads
+        // không phân trang, Discord luôn trả hết trong 1 lần).
+        QString parseError;
+        QVariantMap responseObject =
+            DiscordJsonParser::parseObject(body, &parseError);
+        if (!parseError.isEmpty()) {
+          failDataRequest(
+              QString("Discord REST JSON error: %1").arg(parseError));
+          break;
+        }
+
+        QVariantList threads = responseObject.value("threads").toList();
+        bool hasMore = responseObject.value("has_more").toBool();
+        QString channelId = m_channelId;
+        finishRequest(keepConnectionAlive);
+        emit archivedThreadsLoaded(channelId, threads, hasMore);
+        processNextRequest();
+        break;
+      }
+
+      failDataRequest(dataErrorMessage("archived threads", status));
       break;
     }
 

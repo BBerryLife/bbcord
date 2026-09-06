@@ -20,6 +20,8 @@ enum RequestType {
   GuildsRequest,
   DmChannelsRequest,
   GuildChannelsRequest,
+  ActiveThreadsRequest,
+  ArchivedThreadsRequest,
   ChannelMessagesRequest,
   SendMessageRequest,
   UploadMessageRequest,
@@ -76,6 +78,22 @@ public:
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
                           int limit, const QString &afterId);
+  // Threads không nằm trong response /guilds/{id}/channels thường
+  // (channel list REST của Discord chỉ trả channel top-level) - phải gọi
+  // riêng endpoint "active threads". LƯU Ý: dùng endpoint cấp-CHANNEL
+  // (/channels/{channel.id}/threads/active), KHÔNG dùng cấp-guild
+  // (/guilds/{id}/threads/active) - endpoint cấp-guild chỉ hoạt động với
+  // bot token, luôn trả 403 với user token (xem comment chi tiết ở
+  // Channel.cpp::fetchActiveThreads()).
+  void fetchActiveThreads(const QString &token, const QString &channelId);
+  // Thread bị Discord tự động archive (không hoạt động quá
+  // auto_archive_duration) không còn nằm trong active threads nữa - gọi
+  // riêng endpoint này để xem lại. "beforeCursor" (rỗng = trang đầu) là
+  // id/timestamp của thread cũ nhất đã có, dùng để phân trang lấy tiếp
+  // các thread cũ hơn (xem activeThreadsLoaded's "hasMore" tương ứng
+  // qua archivedThreadsLoaded).
+  void fetchArchivedThreads(const QString &token, const QString &channelId,
+                            const QString &beforeCursor);
   void fetchChannelMessages(const QString &token, const QString &channelId,
                             int limit, const QString &beforeMessageId);
   void sendChannelMessage(const QString &token, const QString &channelId,
@@ -108,6 +126,21 @@ Q_SIGNALS:
   void dmChannelsLoaded(const QVariantList &channels);
   void guildChannelsLoaded(const QString &guildId,
                            const QVariantList &channels);
+  // Trả về đúng field "threads" của response GET .../threads/active (đã
+  // rút gọn từ object {threads, members, has_more} — xem xử lý ở
+  // RestClient.cpp) - mỗi item vẫn là channel object thô (type 10/11/12),
+  // đi qua ItemMapper::guildChannelToItem() giống channel thường trước
+  // khi lưu vào AppStore. Key theo channelId (channel cha vừa fetch),
+  // không phải guildId - từ khi đổi sang endpoint cấp-channel.
+  void activeThreadsLoaded(const QString &channelId,
+                           const QVariantList &threads);
+  // Khác activeThreadsLoaded: mang thêm "hasMore" (từ field has_more của
+  // response) để UI biết còn trang cũ hơn để tải tiếp hay không, và
+  // "threads" ở đây KHÔNG merge vào cache active threads
+  // (m_channelThreadsByParentId) - archived threads hiển thị riêng, tách
+  // biệt khỏi danh sách active, tránh trộn lẫn 2 khái niệm khác nhau.
+  void archivedThreadsLoaded(const QString &channelId,
+                             const QVariantList &threads, bool hasMore);
   void channelMessagesLoaded(const QString &channelId,
                              const QString &beforeMessageId,
                              const QVariantList &messages);

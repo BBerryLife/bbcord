@@ -31,6 +31,13 @@ class AppStore : public QObject {
   Q_PROPERTY(QVariantList dmChannels READ dmChannels NOTIFY dmChannelsChanged)
   Q_PROPERTY(
       QVariantList guildChannels READ guildChannels NOTIFY guildChannelsChanged)
+  // Threads active của guild đang chọn, đã group theo channel cha (key =
+  // channelId cha, value = list thread item). QML tự tra map này bằng
+  // discordClient.threadsForChannel(channelId) thay vì bind trực tiếp
+  // Q_PROPERTY này — expose ở đây chủ yếu để phát tín hiệu thay đổi
+  // (channelThreadsChanged) cho ChatCard biết cần gọi lại threadsForChannel().
+  Q_PROPERTY(QVariantMap channelThreadsByParentId READ channelThreadsByParentId
+                 NOTIFY channelThreadsChanged)
   Q_PROPERTY(
       QString selectedGuildId READ selectedGuildId NOTIFY selectionChanged)
   Q_PROPERTY(
@@ -65,6 +72,7 @@ public:
   QVariantList guildFolders() const;
   QVariantList dmChannels() const;
   QVariantList guildChannels() const;
+  QVariantMap channelThreadsByParentId() const;
   QString selectedGuildId() const;
   QString selectedChannelId() const;
   QVariantList currentChannelMessages() const;
@@ -137,6 +145,7 @@ public Q_SLOTS:
   void setDmChannels(const QVariantList &dmChannels);
   void appendDmChannels(const QVariantList &channels);
   void setGuildChannels(const QVariantList &channels);
+  void setChannelThreadsByParentId(const QVariantMap &threadsByParentId);
   void appendGuildChannels(const QVariantList &channels);
   void setChatLoadingInitial(const QString &channelId, bool loading);
   void setChatLoadingBefore(const QString &channelId, bool loading);
@@ -190,6 +199,7 @@ Q_SIGNALS:
                        const QString &statusColor);
   void guildChannelsChanged();
   void guildChannelsAppended(const QVariantList &channels);
+  void channelThreadsChanged();
   void selectionChanged();
   void currentChannelMessagesChanged();
   void currentChatStateChanged();
@@ -217,6 +227,7 @@ private:
   QVariantList m_guildFolders;
   QVariantList m_dmChannels;
   QVariantList m_guildChannels;
+  QVariantMap m_channelThreadsByParentId;
   QString m_selectedGuildId;
   QString m_selectedChannelId;
   MessageCache m_messageCache;

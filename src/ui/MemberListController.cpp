@@ -271,6 +271,22 @@ void MemberListController::ensureAvatarImageWorker() {
   m_avatarThread->start();
 }
 
+QString MemberListController::displayLabelForStatus(
+    const QString &status) const {
+  if (status == "online") {
+    return tr("Online");
+  }
+  if (status == "idle") {
+    return tr("Idle");
+  }
+  if (status == "dnd") {
+    return tr("Do Not Disturb");
+  }
+  // "offline" hoặc rỗng (field presence không có/không parse được) đều
+  // rơi vào đây - Discord không phân biệt UI giữa 2 trường hợp này.
+  return tr("Offline");
+}
+
 void MemberListController::rebuildMemberDataModel() {
   m_memberDataModel->clear();
   if (!m_store || m_channelId.isEmpty()) {
@@ -371,7 +387,7 @@ void MemberListController::rebuildMemberDataModel() {
       memberRow["avatar"] = QString(); // QML tự nạp qua cachedAvatarSource()
       memberRow["avatarColor"] = fallbackAvatarColorForUserId(userId);
       memberRow["nameColor"] = group.color.isEmpty() ? "#F2F3F5" : group.color;
-      memberRow["status"] = status.isEmpty() ? tr("Offline") : status;
+      memberRow["status"] = displayLabelForStatus(status);
       m_memberDataModel->append(memberRow);
     }
   }

@@ -152,6 +152,9 @@ QVariantMap ItemMapper::guildChannelToItem(const QVariantMap &channel) const {
 
   QVariantMap item;
   int type = channel.value("type").toInt();
+  bool isThread = type == DiscordChannel::AnnouncementThread ||
+                  type == DiscordChannel::PublicThread ||
+                  type == DiscordChannel::PrivateThread;
   item["id"] = channel.value("id").toString();
   item["name"] = channel.value("name").toString();
   item["type"] = type == DiscordChannel::GuildCategory ? "category" : "channel";
@@ -161,9 +164,24 @@ QVariantMap ItemMapper::guildChannelToItem(const QVariantMap &channel) const {
   } else if (type == DiscordChannel::GuildForum ||
              type == DiscordChannel::GuildMedia) {
     item["icon"] = "asset:///images/icons/ic_chat_multiperson.png";
+  } else if (isThread) {
+    // Chưa có icon riêng cho thread trong assets/images/icons — dùng tạm
+    // cùng icon "nhiều người" như forum/media, thay vì hash.png mặc định,
+    // để phân biệt trực quan với channel text thường trong danh sách.
+    // TODO: thêm icon thread riêng (dạng nhánh/thread) nếu có asset.
+    item["icon"] = "asset:///images/icons/ic_chat_multiperson.png";
   }
-  item["implemented"] =
-      type != DiscordChannel::GuildForum && type != DiscordChannel::GuildMedia;
+  // Thread DÙNG CHUNG ChatController với channel text thường (xem
+  // DiscordClient::selectChannel() — không phân biệt theo channelType).
+  // GuildForum/GuildMedia không có tin nhắn trực tiếp để mở qua ChatCard
+  // (mỗi "post" của forum thực chất LÀ 1 thread, parentId trỏ về đây) -
+  // trước đây "implemented: false" để chặn hẳn, giờ đổi thành true vì
+  // ServerList.qml đã biết cách mở đúng UI (ThreadList.qml, xem danh
+  // sách post/thread của channel đó) thay vì cố mở ChatCard.
+  item["implemented"] = true;
+  item["isForumLike"] = type == DiscordChannel::GuildForum ||
+                        type == DiscordChannel::GuildMedia;
+  item["isThread"] = isThread;
   item["position"] = channel.value("position").toInt();
   item["channelType"] = type;
   item["parentId"] = channel.value("parent_id").toString();

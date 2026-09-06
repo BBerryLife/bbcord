@@ -421,6 +421,51 @@ Page {
         }
     }
 
+    // Tách riêng từ bên trong openChat() (nơi trước đây chỉ mở được qua
+    // action "Threads" của 1 channel đã mở) để dùng chung được cho cả
+    // trường hợp bấm THẲNG vào 1 forum/media channel trong ServerList
+    // (channel loại này không mở qua ChatCard được — không có tin nhắn
+    // trực tiếp, mỗi "post" của nó thực chất LÀ 1 thread).
+    function openThreadList(channelId, guildId, channelName) {
+        var threadPage = threadListDefinition.createObject();
+
+        if (threadPage) {
+            threadPage.channelId = channelId;
+            threadPage.guildId = guildId;
+            threadPage.channelName = channelName;
+            threadPage.title = qsTr("Threads #") + channelName;
+            threadPage.backRequested.connect(function () {
+                threadPage.cleanup();
+                if (mainPage.navigationPane) {
+                    mainPage.navigationPane.pop();
+                }
+            });
+            threadPage.threadSelected.connect(function (threadId, threadName) {
+                threadPage.cleanup();
+                if (mainPage.navigationPane) {
+                    mainPage.navigationPane.pop();
+                }
+                // Mở thread y hệt 1 channel thường: ChatController chỉ
+                // cần channelId hợp lệ, không quan tâm nó có nằm trong
+                // allGuildChannels/channelTree hay không (xem AppStore::
+                // selectChannel() - chỉ set m_selectedChannelId, không
+                // tra cứu gì thêm) - nên tái dùng thẳng openChat(),
+                // không cần luồng riêng cho thread.
+                mainPage.openChat(threadId, guildId, threadName);
+            });
+            if (mainPage.navigationPane) {
+                mainPage.navigationPane.push(threadPage);
+            }
+            // Cùng lưu ý như ChannelMemberList.qml: createObject() chạy
+            // onCreationCompleted() của ThreadList.qml TRƯỚC các dòng gán
+            // property ở trên, nên gọi lại tường minh sau khi channelId
+            // đã có giá trị thật.
+            threadPage.requestThreadsNow();
+        } else {
+            console.log("Could not create ThreadList.qml");
+        }
+    }
+
     function loadServerList(serverId, serverName) {
         if (activeContentType == "server" && activeServerId == serverId) {
             return;
@@ -433,6 +478,9 @@ Page {
             page.serverName = serverName;
             page.channelSelected.connect(function (channelId, guildId, channelName) {
                 mainPage.openChat(channelId, guildId, channelName);
+            });
+            page.forumChannelSelected.connect(function (channelId, guildId, channelName) {
+                mainPage.openThreadList(channelId, guildId, channelName);
             });
             replaceContent(page);
             activeContentType = "server";
@@ -455,6 +503,10 @@ Page {
         ComponentDefinition {
             id: channelMemberListDefinition
             source: "asset:///ChannelMemberList.qml"
+        },
+        ComponentDefinition {
+            id: threadListDefinition
+            source: "asset:///ThreadList.qml"
         },
         ComponentDefinition {
             id: serverListDefinition

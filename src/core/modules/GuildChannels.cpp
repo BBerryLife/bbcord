@@ -9,6 +9,8 @@
 #include "../discord/NetworkWorker.hpp"
 #include "FeatureConstants.hpp"
 
+#include <QDebug>
+
 #include <QMetaObject>
 
 void DiscordClient::loadGuildChannels(const QString &guildId) {
@@ -111,6 +113,55 @@ void DiscordClient::onGuildChannelsLoaded(const QString &guildId,
 
   appendVisibleGuildChannels();
   setStatusText("Connected");
+
+  // Fix: Threads KHÔNG được fetch qua REST ở đây (hay bất kỳ đâu khác).
+  // Đã thử cả GET /guilds/{id}/threads/active và GET /channels/{id}/
+  // threads/active - Discord từ chối cả 2 với đúng cùng lỗi:
+  // {"message": "Only bots can use this endpoint.", "code": 20002} -
+  // đây là giới hạn cứng, chỉ bot token mới gọi được các endpoint REST
+  // "active threads", không có cách nào lách qua từ phía request. Dữ
+  // liệu threads giờ đến hoàn toàn qua GATEWAY: Discord tự đẩy event
+  // THREAD_LIST_SYNC khi subscribe 1 guild với cờ "threads: true" (đã
+  // bật sẵn từ trước trong buildGuildSubscribePayload(), xem
+  // JsonParser.cpp) - xử lý ở Client.cpp::onGatewayDispatch(), ghi thẳng
+  // vào m_channelThreadsByParentId, không cần lớp trung gian nào ở đây.
+}
+
+QVariantList DiscordClient::threadsForChannel(const QString &channelId) const {
+  return m_channelThreadsByParentId.value(channelId.trimmed()).toList();
+}
+
+void DiscordClient::requestArchivedThreads(const QString &channelId,
+                                           const QString &beforeCursor) {
+  QString safeChannelId = channelId.trimmed();
+  if (safeChannelId.isEmpty() || m_token.trimmed().isEmpty()) {
+    return;
+  }
+
+  if (m_networkWorker != 0) {
+    QMetaObject::invokeMethod(
+        m_networkWorker, "fetchArchivedThreads", Qt::QueuedConnection,
+        Q_ARG(QString, m_token), Q_ARG(QString, safeChannelId),
+        Q_ARG(QString, beforeCursor.trimmed()));
+  }
+}
+
+void DiscordClient::onArchivedThreadsLoaded(const QString &channelId,
+                                            const QVariantList &threads,
+                                            bool hasMore) {
+  QVariantList mappedThreads;
+  for (int i = 0; i < threads.size(); ++i) {
+    QVariantMap item = m_itemMapper->guildChannelToItem(threads.at(i).toMap());
+    if (!item.value("id").toString().isEmpty()) {
+      mappedThreads.append(item);
+    }
+  }
+
+  // Cố tình KHÔNG merge vào m_channelThreadsByParentId/threadsForChannel()
+  // - archived threads là danh sách riêng biệt, hiển thị tách khỏi active
+  // threads trên UI, tránh trộn lẫn 2 trạng thái khác nhau (archived vs
+  // active) vào cùng 1 nguồn dữ liệu.
+  emit archivedThreadsLoaded(channelId, mappedThreads, hasMore);
 }
 
 bool DiscordClient::updateGuildChannelUnread(const QString &channelId,

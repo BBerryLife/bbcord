@@ -148,7 +148,7 @@
 <context>
     <name>ChannelMemberList</name>
     <message>
-        <location filename="../assets/ChannelMemberList.qml" line="28"/>
+        <location filename="../assets/ChannelMemberList.qml" line="17"/>
         <source>Members #</source>
         <translation type="unfinished"></translation>
     </message>
@@ -156,37 +156,37 @@
 <context>
     <name>ChatCard</name>
     <message>
-        <location filename="../assets/ChatCard.qml" line="216"/>
+        <location filename="../assets/ChatCard.qml" line="221"/>
         <source>Loading more messages...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="271"/>
+        <location filename="../assets/ChatCard.qml" line="276"/>
         <source>Replying to </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="303"/>
+        <location filename="../assets/ChatCard.qml" line="308"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="370"/>
+        <location filename="../assets/ChatCard.qml" line="375"/>
         <source>File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="445"/>
+        <location filename="../assets/ChatCard.qml" line="450"/>
         <source>Message </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="498"/>
+        <location filename="../assets/ChatCard.qml" line="503"/>
         <source>Editing message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="524"/>
+        <location filename="../assets/ChatCard.qml" line="529"/>
         <source>Attach files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -282,7 +282,7 @@
     </message>
     <message>
         <location filename="../assets/LoginPage.qml" line="93"/>
-        <location filename="../assets/LoginPage.qml" line="128"/>
+        <location filename="../assets/LoginPage.qml" line="150"/>
         <source>Login</source>
         <translation type="unfinished"></translation>
     </message>
@@ -292,41 +292,60 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="116"/>
+        <location filename="../assets/LoginPage.qml" line="132"/>
         <source>Password</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="142"/>
+        <location filename="../assets/LoginPage.qml" line="170"/>
         <source>Login with token instead</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="142"/>
+        <location filename="../assets/LoginPage.qml" line="170"/>
         <source>Login with email/phone &amp; password</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="155"/>
+        <location filename="../assets/LoginPage.qml" line="183"/>
         <source>Continue</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/LoginPage.qml" line="190"/>
+        <location filename="../assets/LoginPage.qml" line="218"/>
         <source>How to get token</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>MainPage</name>
+    <message>
+        <location filename="../assets/MainPage.qml" line="436"/>
+        <source>Threads #</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>MemberListController</name>
     <message>
-        <location filename="../src/ui/MemberListController.cpp" line="302"/>
+        <location filename="../src/ui/MemberListController.cpp" line="277"/>
+        <location filename="../src/ui/MemberListController.cpp" line="318"/>
         <source>Online</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/MemberListController.cpp" line="306"/>
-        <location filename="../src/ui/MemberListController.cpp" line="374"/>
+        <location filename="../src/ui/MemberListController.cpp" line="280"/>
+        <source>Idle</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/MemberListController.cpp" line="283"/>
+        <source>Do Not Disturb</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/MemberListController.cpp" line="287"/>
+        <location filename="../src/ui/MemberListController.cpp" line="322"/>
         <source>Offline</source>
         <translation type="unfinished"></translation>
     </message>
@@ -407,36 +426,28 @@
 <context>
     <name>MfaSheet</name>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="43"/>
+        <location filename="../assets/MfaSheet.qml" line="44"/>
         <source>Verification failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="64"/>
+        <location filename="../assets/MfaSheet.qml" line="65"/>
         <source>Two-factor authentication</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="85"/>
+        <location filename="../assets/MfaSheet.qml" line="86"/>
         <source>Enter the 6-digit code from your authenticator app</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="93"/>
+        <location filename="../assets/MfaSheet.qml" line="94"/>
         <source>6-digit code</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MfaSheet.qml" line="120"/>
+        <location filename="../assets/MfaSheet.qml" line="132"/>
         <source>Verify</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
-<context>
-    <name>ServerList</name>
-    <message>
-        <location filename="../assets/ServerList.qml" line="48"/>
-        <source>Discussion/media channels are not implemented yet</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -626,6 +637,29 @@
     <message>
         <location filename="../src/ui/SettingsController.cpp" line="261"/>
         <source>%1 B</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>ThreadList</name>
+    <message>
+        <location filename="../assets/ThreadList.qml" line="53"/>
+        <source>Threads #</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ThreadList.qml" line="179"/>
+        <source>No active threads in this channel</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ThreadList.qml" line="245"/>
+        <source>Loading...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ThreadList.qml" line="245"/>
+        <source>Load older threads</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
