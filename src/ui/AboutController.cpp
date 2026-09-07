@@ -16,7 +16,7 @@ extern "C" {
 namespace {
 const char *kGitHubApiHost = "api.github.com";
 const char *kGitHubApiUrl = "https://api.github.com";
-const char *kLatestReleasePath = "/repos/michioxd/bbcord/releases?per_page=1";
+const char *kLatestReleasePath = "/repos/BBerryLife/bbcord/releases?per_page=1";
 const int kPollIntervalMs = 10;
 const int kRequestTimeoutTicks = 600;
 

@@ -39,7 +39,7 @@ Sheet {
 
                     gestureHandlers: [
                         TapHandler {
-                            onTapped: aboutSheet.openLink("https://github.com/michioxd/bbcord")
+                            onTapped: aboutSheet.openLink("https://github.com/BBerryLife/bbcord")
                         }
                     ]
                 }
@@ -54,7 +54,7 @@ Sheet {
 
                     gestureHandlers: [
                         TapHandler {
-                            onTapped: aboutSheet.openLink("https://github.com/michioxd/bbcord")
+                            onTapped: aboutSheet.openLink("https://github.com/BBerryLife/bbcord")
                         }
                     ]
                 }
@@ -69,7 +69,7 @@ Sheet {
 
                     gestureHandlers: [
                         TapHandler {
-                            onTapped: aboutSheet.openLink("https://github.com/michioxd/bbcord/releases/tag/" + applicationInfo.version)
+                            onTapped: aboutSheet.openLink("https://github.com/BBerryLife/bbcord/releases/tag/" + applicationInfo.version)
                         }
                     ]
                 }
@@ -83,7 +83,7 @@ Sheet {
 
                     gestureHandlers: [
                         TapHandler {
-                            onTapped: aboutSheet.openLink("https://github.com/michioxd/bbcord/blob/main/LICENSE")
+                            onTapped: aboutSheet.openLink("https://github.com/BBerryLife/bbcord/blob/main/LICENSE")
                         }
                     ]
                 }
