@@ -114,17 +114,18 @@ void DiscordClient::onGuildChannelsLoaded(const QString &guildId,
   appendVisibleGuildChannels();
   setStatusText("Connected");
 
-  // Fix: Threads KHÔNG được fetch qua REST ở đây (hay bất kỳ đâu khác).
-  // Đã thử cả GET /guilds/{id}/threads/active và GET /channels/{id}/
-  // threads/active - Discord từ chối cả 2 với đúng cùng lỗi:
+  // Fix: Threads are NOT fetched via REST here (or anywhere else).
+  // Tried both GET /guilds/{id}/threads/active and GET /channels/{id}/
+  // threads/active - Discord rejects both with the exact same error:
   // {"message": "Only bots can use this endpoint.", "code": 20002} -
-  // đây là giới hạn cứng, chỉ bot token mới gọi được các endpoint REST
-  // "active threads", không có cách nào lách qua từ phía request. Dữ
-  // liệu threads giờ đến hoàn toàn qua GATEWAY: Discord tự đẩy event
-  // THREAD_LIST_SYNC khi subscribe 1 guild với cờ "threads: true" (đã
-  // bật sẵn từ trước trong buildGuildSubscribePayload(), xem
-  // JsonParser.cpp) - xử lý ở Client.cpp::onGatewayDispatch(), ghi thẳng
-  // vào m_channelThreadsByParentId, không cần lớp trung gian nào ở đây.
+  // this is a hard limit, only bot tokens can call the "active threads"
+  // REST endpoints, no way around it from the request side. Thread
+  // data now comes entirely through the GATEWAY: Discord pushes a
+  // THREAD_LIST_SYNC event when subscribing to a guild with the
+  // "threads: true" flag (already enabled in
+  // buildGuildSubscribePayload(), see JsonParser.cpp) - handled in
+  // Client.cpp::onGatewayDispatch(), written straight into
+  // m_channelThreadsByParentId, no intermediate layer needed here.
 }
 
 QVariantList DiscordClient::threadsForChannel(const QString &channelId) const {
@@ -157,10 +158,10 @@ void DiscordClient::onArchivedThreadsLoaded(const QString &channelId,
     }
   }
 
-  // Cố tình KHÔNG merge vào m_channelThreadsByParentId/threadsForChannel()
-  // - archived threads là danh sách riêng biệt, hiển thị tách khỏi active
-  // threads trên UI, tránh trộn lẫn 2 trạng thái khác nhau (archived vs
-  // active) vào cùng 1 nguồn dữ liệu.
+  // Deliberately NOT merged into m_channelThreadsByParentId/
+  // threadsForChannel() - archived threads are a separate list, shown
+  // apart from active threads in the UI, to avoid mixing two different
+  // states (archived vs active) into the same data source.
   emit archivedThreadsLoaded(channelId, mappedThreads, hasMore);
 }
 

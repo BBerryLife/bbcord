@@ -38,26 +38,27 @@ bool memberNameLess(const QVariant &a, const QVariant &b) {
   return nameA.compare(nameB, Qt::CaseInsensitive) < 0;
 }
 
-// "online" hiển thị icon 1 màu xanh trong sheet Members của Discord thật,
-// "idle"/"dnd" cũng được coi là đang hoạt động cho mục đích phân nhóm
-// "Online" (chỉ tách riêng "offline"/rỗng vào nhóm "Offline").
+// "online" shows as a single green icon in the real Discord's Members
+// sheet, "idle"/"dnd" are also treated as active for the "Online" group
+// (only "offline"/empty go into the "Offline" group).
 bool isOnlineStatus(const QString &status) {
   return status == "online" || status == "idle" || status == "dnd";
 }
 
-// Bảng màu fallback khi member chưa có avatar cache (đang tải hoặc tải
-// lỗi) — cùng họ màu "blurple" mà Discord dùng cho avatar mặc định, để
-// nhất quán thẩm mỹ với phần còn lại của app thay vì 1 màu tím cứng cho
-// mọi người như bản mock cũ.
+// Fallback color palette for members without a cached avatar yet
+// (loading or failed) — same "blurple" color family Discord uses for
+// default avatars, for visual consistency with the rest of the app
+// instead of one hardcoded purple for everyone like the old mock.
 const char *kFallbackAvatarColors[] = {
     "#5865F2", "#EB459E", "#57F287", "#FEE75C",
     "#ED4245", "#3BA55D", "#9B84EE", "#00A8FC",
 };
 const int kFallbackAvatarColorCount = 8;
 
-// Chọn màu fallback ổn định theo userId (cùng 1 user luôn ra cùng 1 màu
-// giữa các lần mở sheet, giống Discord thật gán màu avatar mặc định theo
-// hash discriminator/id chứ không random mỗi lần render).
+// Picks a stable fallback color based on userId (same user always gets
+// the same color across sheet opens, matching how Discord assigns
+// default avatar colors by hashing the discriminator/id rather than
+// randomizing on every render).
 QString fallbackAvatarColorForUserId(const QString &userId) {
   if (userId.isEmpty()) {
     return QString::fromLatin1(kFallbackAvatarColors[0]);
@@ -115,10 +116,10 @@ void MemberListController::requestMemberList(const QString &channelId,
   bool hadCachedList =
       m_store && !m_store->memberListForChannel(safeChannelId).isEmpty();
   if (hadCachedList) {
-    // Sheet mở lại cho channel đã từng load — hiện luôn dữ liệu cũ ngay
-    // lập tức thay vì màn hình trống trong lúc chờ SYNC mới (nếu guild
-    // subscribe request đã gửi trước đó, Discord có thể không gửi lại
-    // SYNC nếu state phía server không đổi).
+    // Sheet reopened for a channel already loaded before — show the
+    // old data immediately instead of a blank screen while waiting for
+    // a new SYNC (if the guild subscribe request was already sent,
+    // Discord may not re-send SYNC if server-side state hasn't changed).
     rebuildMemberDataModel();
   } else {
     m_memberDataModel->clear();
@@ -129,18 +130,20 @@ void MemberListController::requestMemberList(const QString &channelId,
     emit isLoadingChanged();
   }
 
-  // DM channel không có guild_id — sheet Members không áp dụng cho DM
-  // (ChatCard.qml hiện chỉ cho mở sheet Members từ context guild), nhưng
-  // guard ở đây để không gửi guild-subscribe rỗng nếu lỡ gọi từ DM.
-  // Dùng requestMemberListSync() (KHÔNG dùng subscribeToGuildChannel())
-  // vì channel gần như luôn đã được subscribeToGuildChannel() "tiêu" mất
-  // request lúc user mở channel để lazy-load tin nhắn — gọi lại
-  // subscribeToGuildChannel() ở đây sẽ bị dedup cache trong
-  // DiscordGateway::sendLazyRequest() chặn im lặng, không có SYNC mới
-  // nào trả về, khiến sheet Members hiện trống dù channel đã mở trước
-  // đó (bug đã xác nhận qua log thực tế). requestMemberListSync() gọi
-  // DiscordGateway::sendMemberListSync() — cùng payload op:14 nhưng
-  // KHÔNG qua dedup, luôn gửi request mới.
+  // DM channels have no guild_id — the Members sheet doesn't apply to
+  // DMs (ChatCard.qml currently only allows opening the Members sheet
+  // from a guild context), but this guard prevents sending an empty
+  // guild-subscribe if called from a DM by mistake. Uses
+  // requestMemberListSync() (NOT subscribeToGuildChannel()) since the
+  // channel has almost always already had its subscribeToGuildChannel()
+  // request "consumed" when the user opened the channel for message
+  // lazy-load — calling subscribeToGuildChannel() again here would get
+  // silently dropped by the dedup cache in
+  // DiscordGateway::sendLazyRequest(), no new SYNC coming back, leaving
+  // the Members sheet empty even though the channel was already open
+  // (confirmed via real logs). requestMemberListSync() calls
+  // DiscordGateway::sendMemberListSync() — same op:14 payload but
+  // bypassing dedup, always sends a fresh request.
   qDebug() << "[member-list] requestMemberList channel" << safeChannelId
            << "guild" << safeGuildId << "hadCachedList" << hadCachedList;
   if (!safeGuildId.isEmpty() && m_client) {
@@ -161,9 +164,10 @@ void MemberListController::releaseMemberList() {
   }
   m_loadingAvatarUrls.clear();
 
-  // Báo cho DiscordGateway biết sheet Members đã đóng, để nó dừng tự
-  // động gửi lại SYNC cho channel này nếu gateway reconnect sau khi user
-  // đã rời trang (xem Gateway.hpp: m_activeMemberListGuildId).
+  // Tell DiscordGateway the Members sheet has closed, so it stops
+  // auto-resending SYNC for this channel if the gateway reconnects
+  // after the user has left the page (see Gateway.hpp:
+  // m_activeMemberListGuildId).
   if (m_client) {
     m_client->clearMemberListSync();
   }
@@ -212,9 +216,9 @@ void MemberListController::onGuildRolesChanged(const QString &guildId) {
   if (guildId != m_guildId) {
     return;
   }
-  // Role vừa cập nhật (vd: đổi màu role, đổi tên role) — build lại để
-  // heading/màu tên member phản ánh đúng, dùng lại member list đã có
-  // sẵn (không cần chờ SYNC mới).
+  // A role was just updated (e.g. color or name changed) — rebuild so
+  // the heading/member name color reflects it, reusing the member list
+  // already in hand (no need to wait for a new SYNC).
   rebuildMemberDataModel();
 }
 
@@ -226,9 +230,10 @@ void MemberListController::onAvatarImageCached(const QString &url,
 
 void MemberListController::onAvatarImageFailed(const QString &url) {
   m_loadingAvatarUrls.remove(url);
-  // Không emit avatarCached() khi lỗi — QML giữ nguyên avatarColor
-  // fallback đã có sẵn trong row, không cần signal riêng cho failure vì
-  // UI không có gì phải đổi (đã hiển thị fallback từ đầu).
+  // No avatarCached() emit on failure — QML keeps the fallback
+  // avatarColor already on the row, no separate signal needed for
+  // failure since there's nothing for the UI to change (fallback was
+  // already shown from the start).
 }
 
 QString
@@ -282,8 +287,8 @@ QString MemberListController::displayLabelForStatus(
   if (status == "dnd") {
     return tr("Do Not Disturb");
   }
-  // "offline" hoặc rỗng (field presence không có/không parse được) đều
-  // rơi vào đây - Discord không phân biệt UI giữa 2 trường hợp này.
+  // "offline" or empty (presence field missing/unparseable) both land
+  // here - Discord doesn't visually distinguish the two cases.
   return tr("Offline");
 }
 
@@ -316,11 +321,11 @@ void MemberListController::rebuildMemberDataModel() {
   RoleGroup onlineGroup;
   onlineGroup.id = "";
   onlineGroup.name = tr("Online");
-  onlineGroup.position = -1; // luôn xếp sau mọi role hoisted có position >= 0
+  onlineGroup.position = -1; // always sorted after any hoisted role with position >= 0
   RoleGroup offlineGroup;
   offlineGroup.id = "";
   offlineGroup.name = tr("Offline");
-  offlineGroup.position = -2; // luôn xếp sau nhóm Online
+  offlineGroup.position = -2; // always sorted after the Online group
 
   for (int i = 0; i < members.size(); ++i) {
     QVariantMap member = members.at(i).toMap();
@@ -369,13 +374,14 @@ void MemberListController::rebuildMemberDataModel() {
       QString userId = member.value("userId").toString();
       QString remoteAvatarUrl = member.value("avatarUrl").toString();
 
-      // "avatar" ở đây CHỈ chứa URL gốc trên CDN (chưa cache) — QML phải
-      // tự gọi memberListController.cachedAvatarSource(avatar) khi hàng
-      // này thực sự render trên màn hình để lấy source file cục bộ (hoặc
-      // trigger tải nếu chưa có), đúng thiết kế lazy-per-row-visibility.
-      // Không gọi cachedAvatarSource() ở đây (trong C++) vì điều đó sẽ
-      // tải avatar cho MỌI member ngay khi model build xong, kể cả những
-      // hàng chưa cuộn tới — đi ngược lại yêu cầu tối ưu ban đầu.
+      // "avatar" here holds ONLY the raw CDN URL (not cached) — QML
+      // must call memberListController.cachedAvatarSource(avatar)
+      // itself once this row actually renders on screen to get the
+      // local file source (or trigger a load if not cached yet), per
+      // the lazy-per-row-visibility design. Not calling
+      // cachedAvatarSource() here (in C++) since that would load every
+      // member's avatar as soon as the model is built, including rows
+      // never scrolled to — defeating the original optimization goal.
       QVariantMap memberRow;
       memberRow["type"] = "member";
       memberRow["userId"] = userId;
@@ -384,7 +390,7 @@ void MemberListController::rebuildMemberDataModel() {
           displayName.isEmpty() ? QString("?")
                                 : displayName.left(1).toUpper();
       memberRow["avatarUrl"] = remoteAvatarUrl;
-      memberRow["avatar"] = QString(); // QML tự nạp qua cachedAvatarSource()
+      memberRow["avatar"] = QString(); // QML loads it via cachedAvatarSource()
       memberRow["avatarColor"] = fallbackAvatarColorForUserId(userId);
       memberRow["nameColor"] = group.color.isEmpty() ? "#F2F3F5" : group.color;
       memberRow["status"] = displayLabelForStatus(status);

@@ -30,23 +30,23 @@ public:
   static QByteArray buildGuildSubscribePayload(const QString &guildId,
                                                const QString &channelId,
                                                QString *errorMessage = 0);
-  // Payload op:14 tối giản, CHỈ dành cho member-list sync (sheet
-  // Members). Khác buildGuildSubscribePayload() ở chỗ KHÔNG gửi field
-  // "guild_subscriptions" — field này không cần thiết cho việc lấy
-  // member list theo channel, và bị nghi là nguyên nhân Discord trả
-  // closeCode 4002 (decode error) khi gọi song song với 1 subscribe
-  // request khác đã gửi trước đó cho cùng guild (xem
+  // Minimal op:14 payload, used ONLY for member-list sync (Members
+  // sheet). Unlike buildGuildSubscribePayload(), it does NOT send the
+  // "guild_subscriptions" field — not needed for fetching a member
+  // list by channel, and suspected to cause Discord's closeCode 4002
+  // (decode error) when sent alongside another subscribe request
+  // already sent for the same guild (see
   // DiscordGateway::sendMemberListSync()).
   static QByteArray buildMemberListSyncPayload(const QString &guildId,
                                                const QString &channelId,
                                                QString *errorMessage = 0);
-  // Payload op:14 KHÔNG kèm "channels" — dùng để "unsubscribe" channel
-  // khỏi member list trước khi subscribe lại (xem
-  // DiscordGateway::sendMemberListSync()). Discord không phát lại
-  // GUILD_MEMBER_LIST_UPDATE (SYNC) nếu request subscribe trùng hệt
-  // subscription đã có (cùng guild_id + cùng range channel) - cần đổi
-  // trạng thái subscribe trước để buộc server coi đây là thay đổi thực
-  // sự cần đồng bộ lại.
+  // op:14 payload WITHOUT "channels" — used to "unsubscribe" a channel
+  // from the member list before resubscribing (see
+  // DiscordGateway::sendMemberListSync()). Discord won't re-send
+  // GUILD_MEMBER_LIST_UPDATE (SYNC) if the subscribe request exactly
+  // matches an existing subscription (same guild_id + same channel
+  // range) - the subscribe state needs to change first to force the
+  // server to treat it as an actual change needing resync.
   static QByteArray buildMemberListUnsubscribePayload(
       const QString &guildId, QString *errorMessage = 0);
   static int valueToInt(const QVariant &value, int fallback);

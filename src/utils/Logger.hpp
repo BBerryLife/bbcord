@@ -4,26 +4,26 @@
 #include <QString>
 
 /*!
- * @brief Ghi log toàn app ra file, kèm timestamp cho từng dòng.
+ * @brief Logs the whole app to a file, with a timestamp per line.
  *
- * install() cần được gọi sớm nhất có thể (đầu main()), trước khi bất kỳ
- * qDebug/qWarning/qCritical/qFatal nào được gọi, để không bỏ sót log nào.
- * Mọi message Qt log framework (qDebug, qWarning, qCritical, qFatal) sẽ
- * tự động được ghi vào file log kèm timestamp, đồng thời vẫn in ra
- * console/stderr như bình thường.
+ * install() should be called as early as possible (start of main()),
+ * before any qDebug/qWarning/qCritical/qFatal call, so no logs are missed.
+ * All Qt log framework messages (qDebug, qWarning, qCritical, qFatal) are
+ * automatically written to the log file with a timestamp, while still
+ * being printed to console/stderr as usual.
  */
 namespace Logger {
 
-// Cài đặt message handler ghi log ra file. An toàn khi gọi nhiều lần
-// (chỉ cài lần đầu).
+// Installs the message handler that logs to a file. Safe to call
+// multiple times (only installs on first call).
 void install();
 
-// Đường dẫn tuyệt đối tới file log hiện tại
+// Absolute path to the current log file
 // (home/data/logs/bbcord.log).
 QString logFilePath();
 
-// Ghi thủ công 1 dòng log kèm timestamp, không thông qua qDebug/...
-// Dùng cho các mốc quan trọng (vd: app start/stop, login, logout).
+// Manually writes a timestamped log line, bypassing qDebug/etc.
+// Used for key events (e.g. app start/stop, login, logout).
 void write(const QString &message);
 
 } // namespace Logger

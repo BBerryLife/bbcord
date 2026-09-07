@@ -21,11 +21,12 @@ Page {
     signal backRequested
     signal memberListRequested
 
-    // Trước đây đổi sang Visible để đặt action "Threads" trên action bar
-    // (Page.actions + ActionBarPlacement.OnBar). Bỏ lại vì action đó
-    // chiếm nguyên 1 thanh ngang chỉ để chứa 1 nút, và giờ đã có cách vào
-    // Threads trực tiếp từ ServerList.qml (bấm channel Forum/Media mở
-    // thẳng ThreadList.qml) - không cần entry point trùng lặp ở đây.
+    // Previously changed to Visible to put a "Threads" action on the
+    // action bar (Page.actions + ActionBarPlacement.OnBar). Reverted
+    // since that action took up a whole bar just for one button, and
+    // there's now a direct way into Threads from ServerList.qml
+    // (tapping a Forum/Media channel opens ThreadList.qml directly) -
+    // no need for a duplicate entry point here.
     actionBarVisibility: ChromeVisibility.Hidden
 
     titleBar: TitleBar {
@@ -462,10 +463,12 @@ Page {
                         }
                     }
 
-                    // Cascades không luôn re-evaluate property binding
-                    // của sendButton.enabled ngay khi gõ (chỉ refresh khi
-                    // trang được tạo/kích hoạt lại). Cập nhật tường minh
-                    // qua signal để nút Send bật/tắt đúng theo từng ký tự.
+                    // Cascades doesn't always re-evaluate the
+                    // sendButton.enabled property binding right away on
+                    // keystrokes (only refreshes when the page is
+                    // created/reactivated). Update explicitly via a
+                    // signal so the Send button enables/disables
+                    // correctly on every character.
                     onTextChanging: {
                         chatPage.hasComposedText = text.length > 0;
                     }

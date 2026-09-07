@@ -591,9 +591,9 @@ void ChatController::onChatMessagesPrepended(const QString &channelId,
   for (int i = 0; i <= refreshEnd; ++i) {
     if (i >= 0 && i < m_chatDataModel->size() && i < current.size()) {
       QVariantMap rawMessage = current.at(i).toMap();
-      // Item này có thể đã tồn tại từ trước (không phải 1 trong các
-      // message vừa prepend ở trên) và đã có avatar tải xong - giữ lại
-      // trước khi build lại từ dữ liệu thô. Xem giải thích đầy đủ ở
+      // This item may already exist (not one of the messages just
+      // prepended above) and already have its avatar loaded - preserve
+      // it before rebuilding from raw data. See full explanation in
       // refreshModelGroupingAround()/onChatMessagesBatched().
       QString existingAvatarSource =
           m_chatDataModel->value(i).toMap().value("avatarSource").toString();
@@ -621,13 +621,14 @@ void ChatController::onChatMessagesBatched(const QString &channelId,
     if (index < 0) {
       index = chatDataModelIndexForNonce(rawMessage.value("nonce").toString());
     }
-    // Nếu message này đã có trong model (đang update, không phải mới),
-    // copy avatarSource hiện có sang trước khi build lại - "rawMessage"
-    // đến từ AppStore, không mang theo avatarSource (chỉ tồn tại trong
-    // m_chatDataModel, set bởi onChatAvatarChanged() khi avatar tải
-    // xong). Không làm vậy có thể xoá mất avatar đã tải đúng của item
-    // này nếu avatar chưa kịp có trong cache tại đúng lúc này (đang tải
-    // dở avatar của MỘT tin nhắn khác, cùng tác giả) - xem
+    // If this message is already in the model (an update, not new),
+    // copy its existing avatarSource over before rebuilding -
+    // "rawMessage" comes from AppStore and doesn't carry avatarSource
+    // (that field only lives in m_chatDataModel, set by
+    // onChatAvatarChanged() once the avatar finishes loading). Skipping
+    // this can wipe out a correctly loaded avatar for this item if the
+    // avatar isn't in cache yet at this exact moment (still loading for
+    // a DIFFERENT message by the same author) - see
     // prepareMessageForModel().
     if (index >= 0) {
       QString existingAvatarSource =
@@ -783,11 +784,12 @@ void ChatController::rebuildChatDataModel() {
 }
 
 void ChatController::replaceChatDataModel(const QVariantList &messages) {
-  // clear() xoá sạch mọi state hiện có trong model, bao gồm avatarSource
-  // đã tải xong của từng message (field đó chỉ tồn tại trong
-  // m_chatDataModel, không có trong dữ liệu thô của AppStore - xem
-  // refreshModelGroupingAround()). Gom lại theo authorId trước khi clear
-  // để không phải tải lại avatar cho những tác giả đã có avatar đúng.
+  // clear() wipes all existing model state, including each message's
+  // already-loaded avatarSource (that field only lives in
+  // m_chatDataModel, not in AppStore's raw data - see
+  // refreshModelGroupingAround()). Grouped by authorId before clearing
+  // so avatars for authors who already have the right one don't need
+  // reloading.
   QHash<QString, QString> avatarSourceByAuthorId;
   for (int i = 0; i < m_chatDataModel->size(); ++i) {
     QVariantMap existing = m_chatDataModel->value(i).toMap();
@@ -834,10 +836,10 @@ void ChatController::syncChatDataModel(const QVariantList &messages) {
       }
       for (int i = refreshStart; i < messages.size(); ++i) {
         QVariantMap rawMessage = messages.at(i).toMap();
-        // i có thể trỏ tới item ĐÃ tồn tại từ trước (refreshStart lùi 1
-        // để refresh phần grouping giáp ranh) - giữ lại avatar đã tải
-        // của item đó trước khi build lại từ dữ liệu thô. Xem giải thích
-        // đầy đủ ở refreshModelGroupingAround().
+        // i can point to an item that ALREADY existed (refreshStart is
+        // moved back by 1 to refresh grouping at the boundary) -
+        // preserve that item's loaded avatar before rebuilding from raw
+        // data. See full explanation in refreshModelGroupingAround().
         if (i < m_chatDataModel->size()) {
           QString existingAvatarSource = m_chatDataModel->value(i)
                                              .toMap()
@@ -1005,17 +1007,19 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
       }
     }
     if (avatarSource.isEmpty()) {
-      // Chưa tính ra avatar mới (avatar đang tải hoặc chưa bắt đầu tải).
-      // Giữ nguyên avatarSource đã có sẵn trong item đầu vào thay vì để
-      // trống - "message" truyền vào hàm này có thể là dữ liệu THÔ đọc
-      // lại từ store (xem currentMessages() ở refreshModelGroupingAround()
-      // / onChatMessagesBatched()), vốn không mang theo avatarSource đã
-      // được set trước đó bởi onChatAvatarChanged() khi avatar tải xong
-      // lần đầu. Không giữ lại giá trị cũ ở đây khiến avatar của tin
-      // nhắn ĐÃ CÓ AVATAR ĐÚNG bị xoá về rỗng mỗi khi item được re-render
-      // qua đường này trong lúc avatar của MỘT tin nhắn khác (cùng tác
-      // giả) vẫn đang trong hàng đợi tải - đúng hiện tượng "2 tin nhắn
-      // cùng tác giả, chỉ 1 cái có avatar" quan sát được trên thiết bị.
+      // No new avatar computed yet (avatar still loading or not
+      // started). Keep the avatarSource already present on the input
+      // item instead of leaving it empty - "message" passed into this
+      // function may be RAW data read back from the store (see
+      // currentMessages() in refreshModelGroupingAround()/
+      // onChatMessagesBatched()), which doesn't carry the
+      // avatarSource that was set earlier by onChatAvatarChanged() when
+      // the avatar first loaded. Not preserving the old value here
+      // would clear a message's ALREADY-CORRECT avatar back to empty
+      // every time the item is re-rendered through this path while a
+      // DIFFERENT message's avatar (same author) is still in the load
+      // queue - exactly the "two messages same author, only one has an
+      // avatar" symptom observed on-device.
       avatarSource = item.value("avatarSource").toString();
       item["avatarSource"] = avatarSource;
     } else {
@@ -1052,11 +1056,11 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
       !authorId.isEmpty() && m_store && authorId == m_store->currentUserId();
   item["initials"] = item.value("initials").toString();
   item["avatarHash"] = avatarHash;
-  // KHÔNG ghi đè bằng item.value("avatarSource") ở đây nữa - khối phía
-  // trên đã set item["avatarSource"] đúng cách (giá trị mới hoặc giá trị
-  // cũ được giữ lại), ghi đè lại bằng chính field đó là dư thừa và, tệ
-  // hơn, từng khiến giá trị cũ bị đọc nhầm nếu thứ tự các trường trong
-  // "item" không như mong đợi.
+  // NO LONGER overwriting with item.value("avatarSource") here - the
+  // block above already sets item["avatarSource"] correctly (either the
+  // new value or the preserved old one), re-setting it from that same
+  // field is redundant and, worse, previously caused the old value to
+  // be read incorrectly if field order in "item" wasn't as expected.
   item["avatarColor"] = item.value("avatarColor", "#5865F2").toString();
   if (item.value("avatarColor").toString().isEmpty()) {
     item["avatarColor"] = "#5865F2";
@@ -1153,13 +1157,14 @@ void ChatController::refreshModelGroupingAround(int index) {
     }
 
     QVariantMap rawMessage = messages.at(i).toMap();
-    // messages.at(i) đến từ AppStore::messagesForChannel() - dữ liệu THÔ,
-    // không mang theo "avatarSource" (field đó chỉ tồn tại trong
-    // m_chatDataModel, được set bởi onChatAvatarChanged() khi avatar tải
-    // xong). Nếu không copy nó qua trước khi gọi prepareMessageForModel(),
-    // và avatar chưa kịp có trong cache tại đúng thời điểm này (đang tải
-    // dở cho MỘT tin nhắn khác của cùng tác giả), avatar ĐÃ TẢI ĐÚNG của
-    // dòng này bị xoá về rỗng khi replace() bên dưới chạy.
+    // messages.at(i) comes from AppStore::messagesForChannel() - RAW
+    // data, doesn't carry "avatarSource" (that field only lives in
+    // m_chatDataModel, set by onChatAvatarChanged() once the avatar
+    // finishes loading). If it's not copied over before calling
+    // prepareMessageForModel(), and the avatar isn't in cache yet at
+    // this exact moment (still loading for ANOTHER message by the same
+    // author), this row's ALREADY-LOADED avatar gets cleared back to
+    // empty when replace() below runs.
     QVariantMap existing = m_chatDataModel->value(i).toMap();
     QString existingAvatarSource = existing.value("avatarSource").toString();
     if (!existingAvatarSource.isEmpty()) {

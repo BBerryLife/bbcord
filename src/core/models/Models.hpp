@@ -49,36 +49,40 @@ struct DiscordRole {
   QString id;
   QString guildId;
   QString name;
-  // Màu hex "#RRGGBB", rỗng nếu role không có màu riêng (color == 0 trong
-  // payload Discord — client thật fallback về màu chữ mặc định khi đó,
-  // không phải màu đen).
+  // Hex color "#RRGGBB", empty if the role has no custom color (color
+  // == 0 in the Discord payload — the real client falls back to the
+  // default text color then, not black).
   QString color;
-  // Vị trí role trong hierarchy — số càng lớn càng "cao". Dùng để: (1)
-  // chọn role có màu cao nhất cho tên hiển thị của member (2) sắp xếp
-  // nhóm member theo role trong sheet Members, giống Discord client thật.
+  // Role position in the hierarchy — higher number means "higher up".
+  // Used to: (1) pick the highest-position role's color for a member's
+  // display name (2) group members by role in the Members sheet, same
+  // as the real Discord client.
   int position;
-  // true nếu role được Discord tách nhóm riêng trong danh sách member
-  // ("hoist" trong payload gốc) — chỉ những role này mới tạo thành 1
-  // heading riêng trong sheet Members; role không hoist gộp chung vào
-  // nhóm "Online"/"Offline".
+  // true if Discord separates this role into its own group in the
+  // member list ("hoist" in the raw payload) — only hoisted roles get
+  // their own heading in the Members sheet; non-hoisted roles fall
+  // into the "Online"/"Offline" group.
   bool hoisted;
 
   DiscordRole() : position(0), hoisted(false) {}
 };
 
-// 1 dòng "member" đã được làm phẳng trong sheet Members, ghép từ guild
-// member object + user object trong payload GUILD_MEMBER_LIST_UPDATE.
-// Không map 1-1 với payload gốc — chỉ giữ field thực sự cần cho UI, để
-// tránh vác nguyên object lồng nhau (presence/activities/...) qua QML.
+// A single flattened "member" row in the Members sheet, merged from the
+// guild member object + user object in the GUILD_MEMBER_LIST_UPDATE
+// payload. Not a 1:1 map of the raw payload — only keeps the fields the
+// UI actually needs, to avoid dragging nested objects (presence/
+// activities/...) into QML.
 struct DiscordMember {
   QString userId;
-  QString displayName; // nick nếu có, fallback về username/global_name
-  QString avatarUrl;   // rỗng nếu dùng avatar mặc định (chữ cái viết tắt)
+  QString displayName; // nick if set, falls back to username/global_name
+  QString avatarUrl;   // empty when using the default avatar (initials)
   QString status;      // "online" | "idle" | "dnd" | "offline"
-  // roleId của role hoisted có position cao nhất mà member sở hữu — dùng
-  // để nhóm member vào đúng heading và tô màu tên theo role đó. Rỗng nếu
-  // member không có role hoisted nào (rơi vào nhóm "Online"/"Offline").
+  // roleId of the highest-position hoisted role the member has — used
+  // to group the member under the right heading and color their name.
+  // Empty if the member has no hoisted role (falls into "Online"/
+  // "Offline").
   QString primaryRoleId;
+
 
   DiscordMember() {}
 };
@@ -104,12 +108,13 @@ struct DiscordChannel {
   QString name;
   ChannelType type;
   int position;
-  // ID channel cha — rỗng cho channel top-level, hoặc trỏ tới channel
-  // GuildText/GuildForum/GuildAnnouncement chứa nó nếu đây là 1 thread
-  // (AnnouncementThread/PublicThread/PrivateThread). Đã có sẵn ở tầng
-  // QVariantMap qua ItemMapper::guildChannelToItem() ("parentId") — thêm
-  // vào đây để struct phản ánh đúng, dùng khi cần nhóm thread dưới đúng
-  // channel cha hoặc kiểm tra "channel này có phải thread không".
+  // Parent channel ID — empty for top-level channels, or pointing to
+  // the GuildText/GuildForum/GuildAnnouncement channel containing this
+  // one if it's a thread (AnnouncementThread/PublicThread/PrivateThread).
+  // Already present at the QVariantMap level via
+  // ItemMapper::guildChannelToItem() ("parentId") — added here too so
+  // the struct is accurate, used when grouping threads under their
+  // parent channel or checking "is this channel a thread".
   QString parentId;
 
   DiscordChannel() : type(Unknown), position(0) {}

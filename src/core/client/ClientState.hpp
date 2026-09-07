@@ -30,17 +30,18 @@ public:
   QVariantList dmChannels;
   QVariantList allGuildChannels;
   QVariantList visibleGuildChannels;
-  // Threads KHÔNG được lưu trong allGuildChannels/visibleGuildChannels:
-  // SortUtils::sortedAccessibleGuildChannels() chỉ lồng 1 channel dưới
-  // channel khác nếu parentId trỏ tới 1 CATEGORY - với thread, parentId
-  // trỏ tới channel text/forum cha, nên sẽ bị coi nhầm là root channel
-  // nếu trộn chung. Lưu riêng, group sẵn theo parentId (channel chứa
-  // thread đó) để UI query đúng "các thread của channel đang mở" mà
-  // không cần lọc lại toàn bộ danh sách mỗi lần.
+  // Threads are NOT stored in allGuildChannels/visibleGuildChannels:
+  // SortUtils::sortedAccessibleGuildChannels() only nests a channel
+  // under another if parentId points to a CATEGORY - for threads,
+  // parentId points to the parent text/forum channel, so mixing them
+  // in would misclassify threads as root channels. Stored separately,
+  // pre-grouped by parentId (the channel that owns the thread) so the
+  // UI can query "threads of the currently open channel" without
+  // re-filtering the whole list each time.
   QVariantMap channelThreadsByParentId;
-  // Channel/thread hiện đang mở trong ChatController - dùng để phân biệt
-  // "đang xem 1 thread" khỏi "đang xem channel cha của nó", cho những chỗ
-  // UI cần biết (vd. nút quay lại channel cha, hoặc tiêu đề màn hình).
+  // Channel/thread currently open in ChatController - used to tell
+  // "viewing a thread" apart from "viewing its parent channel", for
+  // places the UI needs to know (e.g. back-to-parent button, title).
   QString activeThreadChannelId;
   QString activeThreadParentId;
   QVariantMap pendingMentionCountsByGuildId;

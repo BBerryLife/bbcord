@@ -46,8 +46,8 @@ const char *levelLabel(QtMsgType type) {
   case QtFatalMsg:
     return "FATAL";
   default:
-    // Qt4 chỉ có 4 mức trên (không có QtInfoMsg, chỉ xuất hiện từ
-    // Qt5). Giữ default để an toàn nếu enum có thêm giá trị mới.
+    // Qt4 only has the 4 levels above (no QtInfoMsg, that's Qt5+).
+    // Keep default as a safety net in case the enum gets new values.
     return "LOG";
   }
 }
@@ -75,8 +75,8 @@ void messageHandler(QtMsgType type, const char *message) {
 
   appendLine(line);
 
-  // Vẫn in ra stderr như hành vi mặc định của Qt để không phá vỡ việc
-  // xem log qua console khi debug bằng Momentics/slog2.
+  // Still print to stderr, matching Qt's default behavior, so console
+  // logging via Momentics/slog2 keeps working.
   fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
 
   if (type == QtFatalMsg) {

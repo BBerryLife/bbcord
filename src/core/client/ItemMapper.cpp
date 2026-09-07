@@ -165,19 +165,19 @@ QVariantMap ItemMapper::guildChannelToItem(const QVariantMap &channel) const {
              type == DiscordChannel::GuildMedia) {
     item["icon"] = "asset:///images/icons/ic_chat_multiperson.png";
   } else if (isThread) {
-    // Chưa có icon riêng cho thread trong assets/images/icons — dùng tạm
-    // cùng icon "nhiều người" như forum/media, thay vì hash.png mặc định,
-    // để phân biệt trực quan với channel text thường trong danh sách.
-    // TODO: thêm icon thread riêng (dạng nhánh/thread) nếu có asset.
+    // No dedicated thread icon yet in assets/images/icons — reuse the
+    // "multiperson" icon from forum/media instead of the default
+    // hash.png, so threads stand out from regular text channels.
+    // TODO: add a proper thread icon (branch/thread style) if available.
     item["icon"] = "asset:///images/icons/ic_chat_multiperson.png";
   }
-  // Thread DÙNG CHUNG ChatController với channel text thường (xem
-  // DiscordClient::selectChannel() — không phân biệt theo channelType).
-  // GuildForum/GuildMedia không có tin nhắn trực tiếp để mở qua ChatCard
-  // (mỗi "post" của forum thực chất LÀ 1 thread, parentId trỏ về đây) -
-  // trước đây "implemented: false" để chặn hẳn, giờ đổi thành true vì
-  // ServerList.qml đã biết cách mở đúng UI (ThreadList.qml, xem danh
-  // sách post/thread của channel đó) thay vì cố mở ChatCard.
+  // Threads SHARE ChatController with regular text channels (see
+  // DiscordClient::selectChannel() — no special-casing by channelType).
+  // GuildForum/GuildMedia have no messages of their own to open via
+  // ChatCard (each forum "post" IS a thread, parentId points back here) -
+  // used to be "implemented: false" to block this outright, now true
+  // since ServerList.qml knows how to open the right UI (ThreadList.qml,
+  // showing that channel's posts/threads) instead of trying ChatCard.
   item["implemented"] = true;
   item["isForumLike"] = type == DiscordChannel::GuildForum ||
                         type == DiscordChannel::GuildMedia;

@@ -38,10 +38,10 @@ public:
   Q_INVOKABLE bool guildFolderExpanded(const QString &folderId) const;
   Q_INVOKABLE void setGuildFolderExpanded(const QString &folderId,
                                           bool expanded);
-  // Copy file log hiện tại vào thư mục Documents dùng chung
-  // (/accounts/1000/shared/documents/BBcord) để người dùng có thể lấy
-  // ra bằng file manager, cáp USB, v.v. Trả về đường dẫn file đã lưu,
-  // hoặc chuỗi rỗng nếu thất bại (không có log, hoặc copy lỗi).
+  // Copies the current log file to the shared Documents folder
+  // (/accounts/1000/shared/documents/BBcord) so the user can grab it
+  // via file manager, USB, etc. Returns the saved path, or an empty
+  // string on failure (no log, or copy error).
   Q_INVOKABLE QString exportLog();
 
 Q_SIGNALS:

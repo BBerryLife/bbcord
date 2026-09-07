@@ -41,17 +41,19 @@ void DiscordRestClient::fetchGuildChannels(const QString &token,
 
 void DiscordRestClient::fetchActiveThreads(const QString &token,
                                            const QString &channelId) {
-  // Fix: GET /guilds/{id}/threads/active (dùng trước đây) luôn trả 403
-  // "Invalid Discord token" với USER token (login qua email/password),
-  // bất kể token/permission đúng đến đâu - đã xác nhận qua nhiều lần
-  // test thực tế (log: mọi guild đều 403, kể cả guild có quyền admin).
-  // Đây KHÔNG phải bug code: endpoint cấp-guild này chỉ hoạt động với
-  // BOT token theo chính thiết kế của Discord (xem thảo luận cộng đồng
-  // discord.js-selfbot-v13 issue #1137 - "chỉ bot account mới dùng được
-  // fetch active threads [cấp guild]"). Endpoint cấp-CHANNEL
-  // (GET /channels/{channel.id}/threads/active) không có giới hạn này,
-  // hoạt động với user token bình thường - đổi sang gọi endpoint này,
-  // theo TỪNG channel cần xem threads, thay vì 1 lần cho cả guild.
+  // Fix: GET /guilds/{id}/threads/active (used previously) always
+  // returns 403 "Invalid Discord token" with a USER token (email/
+  // password login), no matter how correct the token/permissions are -
+  // confirmed through repeated real-world testing (log: every guild
+  // returns 403, including guilds with admin rights). This is NOT a
+  // code bug: this guild-level endpoint only works with BOT tokens by
+  // Discord's own design (see community discussion in
+  // discord.js-selfbot-v13 issue #1137 - "only bot accounts can fetch
+  // active threads [at guild level]"). The CHANNEL-level endpoint
+  // (GET /channels/{channel.id}/threads/active) has no such
+  // restriction and works fine with user tokens - switched to calling
+  // this instead, per channel that needs its threads, rather than once
+  // for the whole guild.
   RestRequest request;
   request.token = token.trimmed();
   request.channelId = channelId.trimmed();
@@ -70,14 +72,15 @@ void DiscordRestClient::fetchActiveThreads(const QString &token,
 void DiscordRestClient::fetchArchivedThreads(const QString &token,
                                              const QString &channelId,
                                              const QString &beforeCursor) {
-  // Thread bị Discord tự động archive (không hoạt động quá
-  // auto_archive_duration) KHÔNG còn nằm trong active threads/
-  // THREAD_LIST_SYNC nữa - cần gọi riêng endpoint này để xem lại. Khác
-  // active threads (chỉ có bản cấp-channel, và cả 2 phiên bản active
-  // đều đã xác nhận hoạt động với user token) - endpoint archived này
-  // cũng thuộc nhóm /channels/{id}/... (cấp-channel, không phải cấp-
-  // guild), cùng nhóm với endpoint active threads cấp-channel đã xác
-  // nhận KHÔNG bị chặn bot-only, nên tin cậy dùng được với user token.
+  // Threads auto-archived by Discord (inactive past
+  // auto_archive_duration) are NO LONGER in active threads/
+  // THREAD_LIST_SYNC - need this separate endpoint to see them. Unlike
+  // active threads (only a channel-level version exists, and both
+  // active variants are confirmed working with user tokens) - this
+  // archived endpoint is also in the /channels/{id}/... group
+  // (channel-level, not guild-level), same group as the channel-level
+  // active threads endpoint confirmed NOT blocked as bot-only, so it's
+  // safe to assume it works with user tokens too.
   RestRequest request;
   request.token = token.trimmed();
   request.channelId = channelId.trimmed();

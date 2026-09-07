@@ -156,10 +156,10 @@ void DiscordGateway::sendMemberListSync(const QString &guildId,
     return;
   }
 
-  // KHÔNG kiểm tra m_sentLazyRequests — đây là điểm khác biệt duy nhất so
-  // với sendLazyRequest(), theo đúng thiết kế: sheet Members cần 1 SYNC
-  // mới mỗi lần mở, bất kể channel đã được subscribe trước đó cho mục
-  // đích lazy-load tin nhắn hay chưa.
+  // Deliberately does NOT check m_sentLazyRequests — this is the one
+  // difference from sendLazyRequest(): the Members sheet needs a fresh
+  // SYNC every time it opens, regardless of whether the channel was
+  // already subscribed for message lazy-load.
   if (m_state != Ready || m_connection == NULL || !m_connection->is_websocket ||
       m_connection->is_closing) {
     qDebug() << "[discord-gateway] member-list sync request dropped; "
@@ -169,15 +169,17 @@ void DiscordGateway::sendMemberListSync(const QString &guildId,
     return;
   }
 
-  // Discord không phát lại GUILD_MEMBER_LIST_UPDATE (SYNC) nếu request
-  // subscribe gửi đi trùng hệt subscription server đã ghi nhận trước đó
-  // (cùng guild_id + cùng range channel [0,99]) - điều này luôn đúng ở
-  // đây vì sendLazyRequest() đã subscribe đúng range này khi user mở
-  // channel, trước khi sheet Members được mở. Gửi 1 payload "unsubscribe"
-  // (không có "channels") ngay trước payload sync thật, để buộc server
-  // coi lần subscribe theo sau là một thay đổi thực sự cần đồng bộ lại.
-  // 2 gói được gửi liên tiếp không đợi phản hồi - thứ tự xử lý ở phía
-  // server được đảm bảo bởi chính giao thức WebSocket (TCP).
+  // Discord won't re-send GUILD_MEMBER_LIST_UPDATE (SYNC) if the
+  // subscribe request exactly matches a subscription the server already
+  // has on record (same guild_id + same channel range [0,99]) - this is
+  // always the case here since sendLazyRequest() already subscribed to
+  // this exact range when the user opened the channel, before the
+  // Members sheet was opened. So we send an "unsubscribe" payload (no
+  // "channels") right before the real sync payload, forcing the server
+  // to treat the following subscribe as an actual change that needs
+  // resyncing. Both packets are sent back-to-back without waiting for a
+  // response - server-side processing order is guaranteed by the
+  // WebSocket (TCP) protocol itself.
   QString unsubscribeErrorMessage;
   QByteArray unsubscribePayload = DiscordJsonParser::buildMemberListUnsubscribePayload(
       safeGuildId, &unsubscribeErrorMessage);

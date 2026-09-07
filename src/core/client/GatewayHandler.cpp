@@ -24,10 +24,10 @@ QString authorDisplayNameFromPayload(const QVariantMap &payload) {
   return name;
 }
 
-// mention_roles: mảng role ID (string) bị @ trong content — Discord tự
-// resolve field này dựa theo nội dung tin nhắn, không cần app tự parse
-// text. Trả về true nếu có ít nhất 1 role trong mention_roles trùng với
-// role hiện tại của mình trong guild đó.
+// mention_roles: array of role IDs (string) @-mentioned in content —
+// Discord resolves this field itself based on message content, no need
+// for the app to parse text. Returns true if any role in mention_roles
+// matches one of our current roles in that guild.
 bool payloadMentionsRoleOf(const QVariantMap &payload,
                           const QStringList &myRoleIds) {
   if (myRoleIds.isEmpty()) {
@@ -56,9 +56,9 @@ QString guildNameById(AppStore *store, const QString &guildId) {
   return QString();
 }
 
-// Trả về true và điền dmName/isGroup nếu tìm thấy channelId trong danh
-// sách DM channel đã cache ở AppStore (đã được ItemMapper::dmChannelToItem
-// build sẵn field "name"/"isGroup" — xem ItemMapper.cpp).
+// Returns true and fills dmName/isGroup if channelId is found in the
+// cached DM channel list in AppStore (the "name"/"isGroup" fields are
+// pre-built by ItemMapper::dmChannelToItem — see ItemMapper.cpp).
 bool findDmChannel(AppStore *store, const QString &channelId, QString *dmName,
                    bool *isGroup) {
   if (store == 0 || channelId.isEmpty()) {
@@ -319,8 +319,8 @@ MentionNotification GatewayHandler::buildMentionNotification(
   QString authorId = payload.value("author").toMap().value("id").toString();
   if (currentUserId.isEmpty() || authorId.isEmpty() ||
       authorId == currentUserId) {
-    // Không tự thông báo tin nhắn do chính mình gửi (kể cả khi tự @mention
-    // chính mình hoặc reply chính mình).
+    // Never notify for messages we sent ourselves (even if we
+    // @mention or reply to ourselves).
     return result;
   }
 
@@ -334,7 +334,7 @@ MentionNotification GatewayHandler::buildMentionNotification(
   qint64 timestampMs = messageTimestampMsFromPayload(payload);
 
   if (!guildId.isEmpty()) {
-    // ----- Guild: mention trực tiếp / @everyone / @here / role-mention -----
+    // ----- Guild: direct mention / @everyone / @here / role mention -----
     bool mentionsMe = gatewayMessageMentionsCurrentUser(payload);
     if (!mentionsMe) {
       return result;
@@ -361,14 +361,14 @@ MentionNotification GatewayHandler::buildMentionNotification(
   bool foundDm = findDmChannel(m_store, channelId, &dmName, &isGroup);
 
   if (isGroup) {
-    // Group DM: chỉ đáng thông báo khi tin nhắn là reply nhắm tới đúng
-    // tin nhắn của mình. Model DiscordMessage::fromVariantMap() đã tự
-    // parse referenced_message -> replyAuthor/replyContent, nhưng để biết
-    // reply đó có nhắm TỚI MÌNH hay không (không chỉ "là 1 reply nào đó")
-    // cần tra thẳng author.id trong referenced_message của payload gốc,
-    // vì replyAuthor chỉ lưu display name (không đủ để so sánh chính xác
-    // theo id, và 2 người trùng tên hiển thị vẫn có thể xảy ra trong 1
-    // group).
+    // Group DM: only worth notifying if the message is a reply to one
+    // of our own messages. DiscordMessage::fromVariantMap() already
+    // parses referenced_message -> replyAuthor/replyContent, but to
+    // know if that reply targets US specifically (not just "is a
+    // reply") we need author.id straight from referenced_message in
+    // the raw payload, since replyAuthor only stores the display name
+    // (not reliable for id comparison — two people can share a
+    // display name in the same group).
     QVariantMap reference = payload.value("referenced_message").toMap();
     QString repliedToAuthorId =
         reference.value("author").toMap().value("id").toString();
@@ -388,9 +388,9 @@ MentionNotification GatewayHandler::buildMentionNotification(
     return result;
   }
 
-  // DM 1-1 (hoặc channel chưa kịp cache trong dmChannels — vẫn coi là DM
-  // 1-1 theo mặc định an toàn, vì guildId đã xác nhận rỗng ở trên nên đây
-  // chắc chắn không phải guild channel): mọi tin nhắn mới đều thông báo.
+  // 1-1 DM (or a channel not yet cached in dmChannels — still treated
+  // as a 1-1 DM as a safe default, since guildId was confirmed empty
+  // above so this can't be a guild channel): notify for every new message.
   Q_UNUSED(foundDm);
   QString authorName = authorDisplayNameFromPayload(payload);
   QString title = !dmName.isEmpty() ? dmName : authorName;

@@ -14,15 +14,17 @@ class DiscordClient;
 class AppStore;
 class QTimer;
 
-// Kết quả build sẵn cho 1 thông báo Hub, theo đúng 2 định dạng đã chốt:
-//   Guild:     title = "Tên Server", preview = "Tên ai ping: nội dung"
-//   DM/group:  title = "Tên người gửi", preview = "Replied: nội dung"
-// shouldNotify=false nghĩa là tin nhắn này không đáng đẩy vào Hub theo quy
-// tắc hiện tại (không ping mình ở guild; group DM nhưng không phải reply
-// tới mình) — mọi field khác không có ý nghĩa khi shouldNotify=false.
+// Pre-built result for a Hub notification, following the two agreed
+// formats:
+//   Guild:     title = "Server Name", preview = "Who pinged: content"
+//   DM/group:  title = "Sender Name", preview = "Replied: content"
+// shouldNotify=false means this message isn't worth pushing to the Hub
+// under current rules (no mention of us in a guild; group DM that isn't
+// a reply to us) — all other fields are meaningless when shouldNotify
+// is false.
 struct MentionNotification {
   bool shouldNotify;
-  QString sourceId; // channelId — dùng làm UDS source_id cho dòng Hub
+  QString sourceId; // channelId — used as the UDS source_id for the Hub entry
   QString title;
   QString preview;
   qint64 timestampMs;
@@ -50,11 +52,12 @@ public:
 
   bool gatewayMessageMentionsCurrentUser(const QVariantMap &payload) const;
 
-  // Quyết định 1 payload MESSAGE_CREATE có đáng đẩy vào BlackBerry Hub hay
-  // không, và nếu có thì build sẵn title/preview theo đúng 2 định dạng đã
-  // thống nhất. payload cần đủ field (không dùng được với "light payload"
-  // rút gọn từ GatewayEvents.cpp — cần channel_id/guild_id/author/content/
-  // mentions/mention_everyone/mention_roles/referenced_message đầy đủ).
+  // Decides whether a MESSAGE_CREATE payload is worth pushing to the
+  // BlackBerry Hub, and if so, pre-builds its title/preview in the two
+  // agreed formats. Needs the full payload (won't work with the
+  // trimmed-down "light payload" from GatewayEvents.cpp — requires
+  // channel_id/guild_id/author/content/mentions/mention_everyone/
+  // mention_roles/referenced_message all present).
   MentionNotification
   buildMentionNotification(const QVariantMap &payload) const;
 

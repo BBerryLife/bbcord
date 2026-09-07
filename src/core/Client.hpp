@@ -54,32 +54,34 @@ public:
   Q_INVOKABLE void loadMoreGuildChannels();  Q_INVOKABLE void selectHome();
   Q_INVOKABLE void selectGuild(const QString &guildId);
   Q_INVOKABLE void selectChannel(const QString &channelId);
-  // guildId đã cache cho 1 channelId cụ thể, nếu channel đó từng được
-  // select/load trong phiên hiện tại (m_chatGuildByChannelId, xem
-  // GuildChannels.cpp::selectChannel()). Trả về rỗng nếu không tìm thấy
-  // — nghĩa là channelId đó là DM (guild channel luôn được insert vào map
-  // này ngay khi select), hoặc guild channel chưa từng mở trong phiên
-  // này (trường hợp mở app từ Hub khi app đang cold-start — xem
-  // ApplicationUI::onInvoked()).
+  // Cached guildId for a specific channelId, if that channel was ever
+  // selected/loaded this session (m_chatGuildByChannelId, see
+  // GuildChannels.cpp::selectChannel()). Returns empty if not found —
+  // meaning that channelId is a DM (guild channels are always inserted
+  // into this map on select), or a guild channel never opened this
+  // session (e.g. opening the app from the Hub during a cold start —
+  // see ApplicationUI::onInvoked()).
   Q_INVOKABLE QString guildIdForChannel(const QString &channelId) const;
-  // Danh sách active thread (đã map qua ItemMapper, cùng shape với item
-  // trong guildChannels) của 1 channel cụ thể. Dữ liệu đến hoàn toàn qua
-  // GATEWAY (event THREAD_LIST_SYNC, xem Client.cpp::onGatewayDispatch())
-  // - KHÔNG qua REST, vì mọi endpoint REST "active threads" (cả cấp-guild
-  // lẫn cấp-channel) đều bị Discord từ chối với user token ({"message":
-  // "Only bots can use this endpoint.", "code": 20002}, đã xác nhận thật
-  // qua nhiều lần test). Có thể rỗng nếu Discord chưa từng gửi
-  // THREAD_LIST_SYNC cho channel này trong phiên hiện tại (event này gửi
-  // theo guild lúc subscribe, không theo yêu cầu chủ động của app).
+  // Active thread list (mapped through ItemMapper, same shape as items
+  // in guildChannels) for a specific channel. Data comes entirely
+  // through the GATEWAY (THREAD_LIST_SYNC event, see
+  // Client.cpp::onGatewayDispatch()) - NOT via REST, since every REST
+  // "active threads" endpoint (guild-level and channel-level alike) is
+  // rejected by Discord for user tokens ({"message": "Only bots can use
+  // this endpoint.", "code": 20002}, confirmed through repeated
+  // testing). Can be empty if Discord hasn't sent THREAD_LIST_SYNC for
+  // this channel this session yet (this event fires per-guild on
+  // subscribe, not on-demand from the app).
   Q_INVOKABLE QVariantList threadsForChannel(const QString &channelId) const;
-  // Thread bị Discord tự động archive không còn nằm trong
-  // threadsForChannel()/active threads nữa - fetch riêng qua REST (endpoint
-  // cấp-channel /channels/{id}/threads/archived/public, đã xác nhận hoạt
-  // động với user token, khác 2 endpoint "active threads" đã bị chặn bot-
-  // only). "beforeCursor" rỗng = trang đầu; truyền id của thread cũ nhất
-  // đã có để tải thêm trang cũ hơn. Kết quả trả về qua signal
-  // archivedThreadsLoaded, KHÔNG lưu vào threadsForChannel() (tách biệt
-  // khỏi active threads, tránh trộn lẫn 2 khái niệm khác nhau).
+  // Threads auto-archived by Discord are no longer in
+  // threadsForChannel()/active threads - fetch them separately via REST
+  // (channel-level endpoint /channels/{id}/threads/archived/public,
+  // confirmed working with user tokens, unlike the two "active threads"
+  // endpoints which are bot-only). "beforeCursor" empty = first page;
+  // pass the oldest loaded thread's id to fetch an older page. Result
+  // comes back via the archivedThreadsLoaded signal, NOT stored in
+  // threadsForChannel() (kept separate from active threads, to avoid
+  // mixing the two concepts).
   Q_INVOKABLE void requestArchivedThreads(const QString &channelId,
                                           const QString &beforeCursor);
 
@@ -96,10 +98,11 @@ Q_SIGNALS:
   void loggedInChanged(bool loggedIn);
   void busyChanged(bool busy);
   void statusTextChanged(const QString &statusText);
-  // QML tự Connections{} vào signal này (khác threadsForChannel() - hàm
-  // đọc theo yêu cầu) vì requestArchivedThreads() là request bất đồng bộ
-  // qua REST, cần push kết quả ngược lại UI khi về, không có sẵn để đọc
-  // ngay lập tức.
+  // QML uses a Connections{} on this signal itself (unlike
+  // threadsForChannel() - a read-on-demand function) since
+  // requestArchivedThreads() is an async REST request, needing the
+  // result pushed back to the UI when it arrives, not readable
+  // immediately.
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
 
@@ -107,18 +110,21 @@ public Q_SLOTS:
   void clearAvatarCacheState();
   Q_INVOKABLE void subscribeToGuildChannel(const QString &channelId,
                                            const QString &guildId);
-  // Force gửi lại request member-list-sync (op:14) qua
-  // DiscordGateway::sendMemberListSync() — KHÔNG bị chặn bởi dedup cache
-  // của subscribeToGuildChannel(). Gọi từ MemberListController khi sheet
-  // Members mở, vì channel gần như luôn đã được subscribeToGuildChannel()
-  // "tiêu" mất trước đó lúc user mở channel (message lazy-load), khiến
-  // sendLazyRequest() thường bị dedup chặn nếu gọi lại cùng key.
+  // Force-resends the member-list-sync (op:14) request through
+  // DiscordGateway::sendMemberListSync() — NOT blocked by
+  // subscribeToGuildChannel()'s dedup cache. Called from
+  // MemberListController when the Members sheet opens, since the
+  // channel has almost always already had its subscribeToGuildChannel()
+  // "consumed" earlier when the user opened it (message lazy-load),
+  // which would cause sendLazyRequest() to be dropped by dedup if
+  // called again with the same key.
   Q_INVOKABLE void requestMemberListSync(const QString &channelId,
                                          const QString &guildId);
-  // Gọi khi sheet Members đóng (MemberListController::releaseMemberList()).
-  // Forward xuống DiscordGateway::clearMemberListSync() để dừng việc tự
-  // động gửi lại SYNC cho channel này nếu gateway reconnect SAU KHI user
-  // đã rời tab (xem comment tại Gateway.hpp:
+  // Called when the Members sheet closes (MemberListController::
+  // releaseMemberList()). Forwards to
+  // DiscordGateway::clearMemberListSync() to stop auto-resending SYNC
+  // for this channel if the gateway reconnects AFTER the user has
+  // already left the tab (see comment at Gateway.hpp:
   // m_activeMemberListGuildId/ChannelId).
   Q_INVOKABLE void clearMemberListSync();
   Q_INVOKABLE void loadInitialChatMessages(const QString &channelId,
@@ -211,12 +217,12 @@ private:
   bool updateGuildChannelMentionCount(const QString &channelId,
                                       int mentionCount);
   void appendVisibleGuildChannels();
-  // Dùng chung giữa GUILD_CREATE (payload.threads - threads có sẵn ngay
-  // lúc guild trở nên available, theo tài liệu chính thức Discord) và
-  // THREAD_LIST_SYNC (bắn khi "gains access to a channel", ít xảy ra hơn
-  // lúc mở app bình thường) - cả 2 event đều mang cùng shape "threads"/
-  // "channel_ids" nên gộp logic map + merge vào cache 1 chỗ duy nhất,
-  // xem Client.cpp::onGatewayDispatch().
+  // Shared between GUILD_CREATE (payload.threads - threads already
+  // present as soon as a guild becomes available, per official Discord
+  // docs) and THREAD_LIST_SYNC (fires on "gains access to a channel",
+  // rarer during normal app usage) - both events carry the same
+  // "threads"/"channel_ids" shape, so the map + cache-merge logic is
+  // combined in one place, see Client.cpp::onGatewayDispatch().
   void mergeThreadsIntoCache(const QVariantList &rawThreads,
                              const QVariantList &channelIdsToClear);
   void scheduleGuildsCacheSave();
@@ -290,14 +296,15 @@ private:
   QStringList &m_pendingUnreadChannelIds;
   QStringList &m_pendingDmPresenceUserIds;
   QHash<QString, QString> m_chatGuildByChannelId;
-  // Channel gần nhất được yêu cầu qua requestMemberListSync(). GUILD_
-  // MEMBER_LIST_UPDATE (op 14 - giao thức không chính thức) không đảm
-  // bảo có field "channel_id" ở cấp root, và field "id" (list id) thường
-  // là "everyone" chứ không phải channel id — không đáng tin cậy để map
-  // dữ liệu về đúng channel. Vì luồng hiện tại chỉ theo dõi member list
-  // của đúng 1 channel tại một thời điểm (sheet Members), dùng channel
-  // vừa yêu cầu làm fallback cuối cùng khi payload không tự xác định
-  // được channel - xem xử lý GUILD_MEMBER_LIST_UPDATE trong Client.cpp.
+  // Most recent channel requested via requestMemberListSync().
+  // GUILD_MEMBER_LIST_UPDATE (op 14 - unofficial protocol) doesn't
+  // guarantee a root-level "channel_id" field, and the "id" field (list
+  // id) is often "everyone" rather than the channel id — not reliable
+  // for mapping data to the right channel. Since the current flow only
+  // tracks one channel's member list at a time (the Members sheet), the
+  // most recently requested channel is used as a last-resort fallback
+  // when the payload can't self-identify its channel - see
+  // GUILD_MEMBER_LIST_UPDATE handling in Client.cpp.
   QString m_pendingMemberListChannelId;
   int &m_visibleDmChannelCount;
   int &m_visibleGuildChannelCount;

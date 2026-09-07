@@ -27,9 +27,8 @@
 using namespace bb::cascades;
 
 Q_DECL_EXPORT int main(int argc, char **argv) {
-  // Cài message handler ghi log ra file sớm nhất có thể, trước khi
-  // bất kỳ qDebug/qWarning nào khác được gọi, để không bỏ sót log nào
-  // trong quá trình khởi động app.
+  // Install the log message handler as early as possible, before any
+  // other qDebug/qWarning call, so no startup logs are missed.
   Logger::install();
   Logger::write("Application starting");
 

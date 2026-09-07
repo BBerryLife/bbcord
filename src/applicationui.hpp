@@ -55,11 +55,11 @@ public:
   Q_INVOKABLE void openLink(const QString &url);
 private slots:
   void onSystemLanguageChanged();
-  // Được gọi khi app được mở qua invoke — bao gồm cả trường hợp
-  // BlackBerry Hub tự soạn InvokeRequest lúc user tap/long-press 1 item
-  // trong tab BBCord của Hub (xem HubIntegration.cpp,
-  // uds_register_item_context_action). Parse channelId từ payload và
-  // điều hướng thẳng tới guild/channel hoặc DM tương ứng.
+  // Called when the app is opened via invoke — including when
+  // BlackBerry Hub builds an InvokeRequest after the user taps/
+  // long-presses an item in BBCord's Hub tab (see HubIntegration.cpp,
+  // uds_register_item_context_action). Parses channelId from the
+  // payload and navigates straight to the matching guild/channel or DM.
   void onInvoked(const bb::system::InvokeRequest &request);
 
 private:

@@ -68,9 +68,9 @@ ApplicationUI::ApplicationUI()
   // initial load
   onSystemLanguageChanged();
 
-  // Nhận InvokeRequest từ BlackBerry Hub khi user tap/long-press item
-  // trong tab BBCord (xem HubIntegration.cpp + bar-descriptor.xml
-  // <invoke-target id="ch.michioxd.bbcord.invoke">).
+  // Receives the InvokeRequest from BlackBerry Hub when the user taps/
+  // long-presses an item in the BBCord tab (see HubIntegration.cpp +
+  // bar-descriptor.xml <invoke-target id="ch.michioxd.bbcord.invoke">).
   m_pInvokeManager = new bb::system::InvokeManager(this);
   QObject::connect(
       m_pInvokeManager,
@@ -129,11 +129,12 @@ void ApplicationUI::onSystemLanguageChanged() {
 }
 
 void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {
-  // BlackBerry Hub tự soạn InvokeRequest khi user tap/long-press 1 item
-  // trong tab BBCord. sourceId (chính là channelId, xem
-  // HubIntegration::upsertThreadItem) nằm trong data() dưới dạng JSON:
+  // BlackBerry Hub builds the InvokeRequest itself when the user taps/
+  // long-presses an item in the BBCord tab. sourceId (which is the
+  // channelId, see HubIntegration::upsertThreadItem) lives in data() as
+  // JSON:
   //   { "attributes": { "sourceId": "<channelId>", ... } }
-  // KHÔNG nằm trong uri() (Hub luôn để uri() rỗng khi tự soạn invoke).
+  // NOT in uri() (Hub always leaves uri() empty for self-built invokes).
   QByteArray rawData = request.data();
   if (rawData.isEmpty()) {
     return;
@@ -150,13 +151,13 @@ void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {
     return;
   }
 
-  // channelId rỗng ở m_chatGuildByChannelId nghĩa là DM (guild channel
-  // luôn được insert vào map này ngay khi select — xem
-  // GuildChannels.cpp::selectChannel()), hoặc app đang cold-start và
-  // channel đó chưa từng được mở trong phiên hiện tại. Với guild channel
-  // chưa từng mở, selectGuild() rỗng sẽ bị AppStore::selectChannel() bỏ
-  // qua phần điều hướng guild — chấp nhận được vì đây là trường hợp hiếm
-  // (channel có ping nhưng app chưa từng load nó trong phiên này).
+  // An empty channelId in m_chatGuildByChannelId means either a DM
+  // (guild channels are always inserted into this map on select — see
+  // GuildChannels.cpp::selectChannel()), or a cold-started app where
+  // this channel was never opened this session. For an unopened guild
+  // channel, an empty guildId means AppStore::selectChannel() skips
+  // guild navigation — acceptable since this is a rare case (a channel
+  // got pinged but the app never loaded it this session).
   QString guildId = m_discordClient->guildIdForChannel(channelId);
   if (!guildId.isEmpty()) {
     m_discordClient->selectGuild(guildId);

@@ -1,10 +1,11 @@
 import bb.cascades 1.4
 
-// Danh sách active thread của 1 channel. Không dùng controller C++ riêng vì
-// dữ liệu đã có sẵn qua discordClient.threadsForChannel(channelId)
-// (Q_INVOKABLE, xem GuildChannels.cpp::threadsForChannel()) - đủ đơn giản để
-// nạp thẳng vào 1 ArrayDataModel ở tầng QML, không cần thêm 1
-// ListItemProvider/Controller mới chỉ để trung chuyển cùng dữ liệu.
+// Active thread list for a channel. Doesn't use a dedicated C++
+// controller since the data is already available via
+// discordClient.threadsForChannel(channelId) (Q_INVOKABLE, see
+// GuildChannels.cpp::threadsForChannel()) - simple enough to load
+// straight into an ArrayDataModel at the QML level, no need for another
+// ListItemProvider/Controller just to relay the same data.
 Page {
 	id: threadListPage
 
@@ -13,32 +14,35 @@ Page {
 	property string channelName: "general"
 	property alias title: titleBar.title
 
-	// Fix: "visible: threadDataModel.size() === 0" (dùng trước đây) gọi
-	// thẳng hàm size() bên trong biểu thức binding declarative - cùng
-	// lớp bug với "enabled: field.text.length" ở LoginPage.qml/MfaSheet.qml
-	// (xem lịch sử fix đó): binding declarative không đảm bảo tự
-	// re-evaluate khi NỘI DUNG model đổi qua append()/clear(), chỉ đáng
-	// tin khi phụ thuộc 1 property có NOTIFY signal chuẩn. Dùng property
-	// tường minh này, tự cập nhật ngay sau mỗi lần reload(), để chắc chắn
-	// UI re-render đúng lúc.
+	// Fix: "visible: threadDataModel.size() === 0" (used previously)
+	// calls size() directly inside a declarative binding expression -
+	// same bug class as "enabled: field.text.length" in
+	// LoginPage.qml/MfaSheet.qml (see that fix history): a declarative
+	// binding isn't guaranteed to re-evaluate when the model's CONTENT
+	// changes via append()/clear(), it's only reliable when depending
+	// on a property with a proper NOTIFY signal. Uses this explicit
+	// property instead, updated right after every reload(), to make
+	// sure the UI re-renders at the right time.
 	property int threadCount: 0
 
-	// Lớp phòng thủ thứ 2, độc lập với việc disconnect() có chạy đúng
-	// lúc hay không (xem cleanup() bên dưới) - đề phòng cả trường hợp
-	// NavigationPane tự pop qua đường khác (vd. nút back vật lý của hệ
-	// thống) mà không đi qua backRequested lẫn threadSelected, nơi
-	// cleanup() được gọi tường minh. Tự quản lý hoàn toàn ở đây (không
-	// dựa vào 1 API "isValid"/lifecycle nào của framework mà tôi không
-	// chắc chắn tồn tại), set false trong cleanup() và kiểm tra ngay đầu
-	// reload() trước khi động vào threadDataModel.
+	// A second line of defense, independent of whether disconnect()
+	// runs at the right time (see cleanup() below) - in case the
+	// NavigationPane gets popped some other way (e.g. the system's
+	// physical back button) without going through either backRequested
+	// or threadSelected, where cleanup() is called explicitly.
+	// Fully self-managed here (not relying on some framework
+	// "isValid"/lifecycle API I'm not sure exists), set to false in
+	// cleanup() and checked right at the top of reload() before
+	// touching threadDataModel.
 	property bool _isActive: true
 
-	// Archived threads: tách biệt hoàn toàn khỏi threadDataModel (active
-	// threads) - Discord trả 2 khái niệm khác nhau qua 2 nguồn khác nhau
-	// (gateway thụ động vs REST theo yêu cầu), trộn chung dễ gây nhầm lẫn
-	// trạng thái nào là active/archived. archivedHasMore điều khiển hiện/
-	// ẩn nút "Load older threads"; archivedCursor là id thread cũ nhất đã
-	// tải, dùng làm "before" cho trang tiếp theo.
+	// Archived threads: kept entirely separate from threadDataModel
+	// (active threads) - Discord returns these as two different
+	// concepts through two different sources (passive gateway vs
+	// on-demand REST), mixing them would easily confuse which state is
+	// active/archived. archivedHasMore controls showing/hiding the
+	// "Load older threads" button; archivedCursor is the oldest loaded
+	// thread's id, used as "before" for the next page.
 	property bool archivedLoading: false
 	property bool archivedHasMore: false
 	property string archivedCursor: ""
@@ -68,11 +72,11 @@ Page {
 		}
 	]
 
-	// Nạp lại danh sách thread mỗi lần sheet này được mở, và mỗi khi
-	// AppStore.channelThreadsByParentId đổi (thread mới tạo, thread active
-	// khác load về) trong lúc sheet đang mở — tránh tình trạng danh sách
-	// đứng yên (stale) nếu backend cập nhật threads trong khi người dùng
-	// đang xem sheet.
+	// Reloads the thread list every time this sheet is opened, and
+	// whenever AppStore.channelThreadsByParentId changes (a new thread
+	// created, another active thread loaded) while the sheet is open —
+	// avoids the list going stale if the backend updates threads while
+	// the user is viewing the sheet.
 	function reload() {
 		if (!threadListPage._isActive) {
 			return
@@ -91,28 +95,31 @@ Page {
 	}
 
 	onCreationCompleted: {
-		// Cùng lưu ý như ChannelMemberList.qml/MainPage.qml: createObject()
-		// chạy onCreationCompleted() TRƯỚC khi property channelId được gán
-		// từ nơi gọi (xem MainPage.qml::openChat()) - đừng gọi reload() ở
-		// đây, gọi lại tường minh sau khi property đã có giá trị thật
-		// (threadListPage.requestThreadsNow(), gọi từ MainPage.qml).
+		// Same caveat as ChannelMemberList.qml/MainPage.qml:
+		// createObject() runs onCreationCompleted() BEFORE the
+		// channelId property gets assigned by the caller (see
+		// MainPage.qml::openChat()) - don't call reload() here, call it
+		// again explicitly after the property has a real value
+		// (threadListPage.requestThreadsNow(), called from
+		// MainPage.qml).
 		appStore.channelThreadsChanged.connect(threadListPage.reload)
 		discordClient.archivedThreadsLoaded.connect(threadListPage.onArchivedThreadsResult)
 	}
 
-	// Fix: "Page" trong Cascades KHÔNG có signal "onDestruction" (đó là
-	// API của QtQuick Component, không tồn tại ở đây) - khai báo nó khiến
-	// toàn bộ file lỗi parse (bug đã xác nhận qua log thực tế trước đây).
-	// Từng dùng onBackRequested để disconnect, NHƯNG signal đó chỉ emit
-	// khi bấm đúng nút back trên titleBar - khi người dùng bấm vào 1
-	// thread (threadSelected), MainPage.qml gọi thẳng navigationPane.
-	// pop() mà KHÔNG qua backRequested, nên disconnect không bao giờ
-	// chạy trong trường hợp đó. Hệ quả quan sát thực tế: ReferenceError
-	// "Can't find variable: threadListPage" khi THREAD_LIST_SYNC bắn tới
-	// sau khi page đã bị pop/hủy, cố gọi lại reload() trên object không
-	// còn tồn tại. Đưa cleanup ra 1 hàm riêng, gọi tường minh từ MỌI nơi
-	// pop trang này (xem MainPage.qml), không chỉ riêng nút back. Áp dụng
-	// đúng bài học này cho cả archivedThreadsLoaded (cùng rủi ro).
+	// Fix: Cascades' "Page" has NO "onDestruction" signal (that's a
+	// QtQuick Component API, doesn't exist here) - declaring it breaks
+	// parsing for the whole file (confirmed bug via real logs before).
+	// Used to use onBackRequested to disconnect, BUT that signal only
+	// fires on the titleBar's actual back button - when the user taps a
+	// thread (threadSelected), MainPage.qml calls navigationPane.pop()
+	// directly WITHOUT going through backRequested, so disconnect never
+	// runs in that case. Observed real-world effect: ReferenceError
+	// "Can't find variable: threadListPage" when THREAD_LIST_SYNC fires
+	// after the page has already been popped/destroyed, trying to call
+	// reload() on an object that no longer exists. Pulled cleanup into
+	// its own function, called explicitly from EVERY place that pops
+	// this page (see MainPage.qml), not just the back button. Applies
+	// the same lesson to archivedThreadsLoaded too (same risk).
 	function cleanup() {
 		threadListPage._isActive = false
 		appStore.channelThreadsChanged.disconnect(threadListPage.reload)
@@ -120,26 +127,30 @@ Page {
 	}
 
 	function requestThreadsNow() {
-		// Fix: KHÔNG còn discordClient.requestThreadsForChannel() để gọi -
-		// hàm đó (REST cấp-channel) đã bị xoá vì Discord xác nhận từ chối
-		// nó với đúng lỗi "Only bots can use this endpoint." (code 20002),
-		// y hệt endpoint cấp-guild đã thử trước đó. Threads giờ đến hoàn
-		// toàn THỤ ĐỘNG qua gateway (event THREAD_LIST_SYNC, xử lý ở
-		// Client.cpp::onGatewayDispatch(), tự chảy vào khi guild được
-		// subscribe) - ở đây chỉ cần đọc lại cache hiện có, không có gì để
-		// "request" chủ động nữa. reload() cũng đã được gọi lại tự động
-		// mỗi khi appStore.channelThreadsChanged bắn (connect ở
-		// onCreationCompleted), nên danh sách sẽ tự cập nhật khi
-		// THREAD_LIST_SYNC tiếp theo về, kể cả sau lần gọi này.
+		// Fix: there's NO discordClient.requestThreadsForChannel() to
+		// call anymore - that function (channel-level REST) was
+		// removed since Discord confirmed rejecting it with the exact
+		// same "Only bots can use this endpoint." error (code 20002),
+		// same as the guild-level endpoint tried earlier. Threads now
+		// arrive entirely PASSIVELY through the gateway
+		// (THREAD_LIST_SYNC event, handled in
+		// Client.cpp::onGatewayDispatch(), flowing in automatically
+		// when the guild gets subscribed) - here it just needs to read
+		// the existing cache, there's nothing left to actively
+		// "request". reload() is also already called automatically
+		// every time appStore.channelThreadsChanged fires (connected in
+		// onCreationCompleted), so the list will self-update on the
+		// next THREAD_LIST_SYNC, even after this call.
 		reload()
 	}
 
-	// Khác active threads (thụ động qua gateway) - archived threads phải
-	// CHỦ ĐỘNG request qua REST (endpoint /channels/{id}/threads/archived/
-	// public, khác 2 endpoint "active threads" bot-only đã xác nhận trước
-	// đây). Gọi khi bấm nút "Load older threads", hoặc tự động lần đầu
-	// nếu channel chưa từng archive-fetch (archivedCursor rỗng và chưa
-	// loading).
+	// Unlike active threads (passive via gateway) - archived threads
+	// must be ACTIVELY requested via REST (endpoint
+	// /channels/{id}/threads/archived/public, different from the two
+	// bot-only "active threads" endpoints confirmed earlier). Called
+	// when tapping "Load older threads", or automatically the first
+	// time if the channel has never had an archive-fetch (archivedCursor
+	// empty and not currently loading).
 	function loadOlderThreads() {
 		if (threadListPage.archivedLoading || threadListPage.channelId === "") {
 			return
@@ -154,12 +165,13 @@ Page {
 		}
 		threadListPage.archivedLoading = false
 		threadListPage.archivedHasMore = hasMore
-		// Nối thẳng vào threadDataModel (cùng danh sách với active threads)
-		// thay vì 1 ListView/model riêng - đơn giản hơn nhiều so với dựng
-		// section header "Active"/"Archived" phân biệt trong Cascades
-		// (chưa có tiền lệ đáng tin cậy trong codebase này để làm đúng),
-		// và người dùng chỉ cần thấy TẤT CẢ bài viết, không nhất thiết
-		// phải phân biệt rạch ròi active/archived ở UI.
+		// Appended directly into threadDataModel (the same list as
+		// active threads) instead of a separate ListView/model - much
+		// simpler than building distinct "Active"/"Archived" section
+		// headers in Cascades (no reliable precedent in this codebase
+		// to do that correctly), and the user just needs to see ALL
+		// posts, without necessarily needing a strict active/archived
+		// split in the UI.
 		for (var i = 0; i < threads.length; ++i) {
 			threadDataModel.append(threads[i])
 		}
@@ -190,14 +202,15 @@ Page {
 			verticalAlignment: VerticalAlignment.Fill
 			visible: threadListPage.threadCount > 0
 
-			// Fix: "onTouch" không phải signal hợp lệ trên ListItemComponent
-			// (đó chỉ là 1 factory định nghĩa delegate, không phải bản thân
-			// 1 control nhận sự kiện chạm) - khai báo nó khiến file lỗi
-			// parse y hệt lỗi "onDestruction" đã gặp trước đó ("Cannot
-			// assign to non-existent property"), ThreadList.qml không tạo
-			// được. Toàn bộ codebase (ServerList.qml, ChatCard.qml,
-			// DmList.qml) đều dùng ListView.onTriggered để xử lý bấm vào 1
-			// item - theo đúng pattern đó thay vì onTouch trên delegate.
+			// Fix: "onTouch" isn't a valid signal on ListItemComponent
+			// (that's just a factory defining the delegate, not itself
+			// a control that receives touch events) - declaring it
+			// breaks parsing the same way the earlier "onDestruction"
+			// bug did ("Cannot assign to non-existent property"),
+			// ThreadList.qml fails to create. The whole codebase
+			// (ServerList.qml, ChatCard.qml, DmList.qml) uses
+			// ListView.onTriggered to handle tapping an item - follows
+			// that same pattern instead of onTouch on the delegate.
 			onTriggered: {
 				var item = threadDataModel.data(indexPath);
 				threadListPage.threadSelected(item.id, item.name);
@@ -237,21 +250,23 @@ Page {
 			]
 		}
 
-		// Bài viết cũ hơn thời hạn auto-archive (Discord tự archive, không
-		// còn nằm trong active threads/THREAD_LIST_SYNC nữa - xem comment
-		// requestArchivedThreads() ở Client.hpp) - bấm để chủ động fetch
-		// thêm qua REST, phân trang bằng archivedCursor.
+		// Posts older than the auto-archive window (Discord archives
+		// them automatically, no longer in active threads/
+		// THREAD_LIST_SYNC - see the requestArchivedThreads() comment
+		// in Client.hpp) - tap to actively fetch more via REST,
+		// paginated using archivedCursor.
 		Button {
 			text: threadListPage.archivedLoading ? qsTr("Loading...") : qsTr("Load older threads")
 			horizontalAlignment: HorizontalAlignment.Fill
 			topMargin: ui.du(1.0)
 			enabled: !threadListPage.archivedLoading
-			// Hiện ngay cả khi threadCount === 0 (channel có thể không còn
-			// active thread nào nhưng vẫn có archived) - chỉ ẩn hẳn sau khi
-			// đã xác nhận không còn trang nào nữa (archivedHasMore chuyển
-			// false, xem onArchivedThreadsResult()). archivedCursor === ""
-			// nghĩa là CHƯA từng bấm/tải lần nào - vẫn hiện nút để người
-			// dùng có thể chủ động bấm.
+			// Shown even when threadCount === 0 (a channel may have no
+			// active threads left but still have archived ones) - only
+			// fully hidden once confirmed there are no more pages
+			// (archivedHasMore turns false, see
+			// onArchivedThreadsResult()). archivedCursor === "" means
+			// NEVER tapped/loaded before - still shown so the user can
+			// tap it proactively.
 			visible: threadListPage.archivedCursor !== "" ? threadListPage.archivedHasMore : true
 
 			onClicked: {

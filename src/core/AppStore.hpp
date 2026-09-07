@@ -31,11 +31,12 @@ class AppStore : public QObject {
   Q_PROPERTY(QVariantList dmChannels READ dmChannels NOTIFY dmChannelsChanged)
   Q_PROPERTY(
       QVariantList guildChannels READ guildChannels NOTIFY guildChannelsChanged)
-  // Threads active của guild đang chọn, đã group theo channel cha (key =
-  // channelId cha, value = list thread item). QML tự tra map này bằng
-  // discordClient.threadsForChannel(channelId) thay vì bind trực tiếp
-  // Q_PROPERTY này — expose ở đây chủ yếu để phát tín hiệu thay đổi
-  // (channelThreadsChanged) cho ChatCard biết cần gọi lại threadsForChannel().
+  // Active threads for the currently selected guild, grouped by parent
+  // channel (key = parent channelId, value = list of thread items). QML
+  // reads this map via discordClient.threadsForChannel(channelId)
+  // instead of binding directly to this Q_PROPERTY — mainly exposed to
+  // fire the changed signal (channelThreadsChanged) so ChatCard knows
+  // to call threadsForChannel() again.
   Q_PROPERTY(QVariantMap channelThreadsByParentId READ channelThreadsByParentId
                  NOTIFY channelThreadsChanged)
   Q_PROPERTY(
@@ -96,31 +97,32 @@ public:
   Q_INVOKABLE QString newestChatMessageId(const QString &channelId) const;
   Q_INVOKABLE void clearSession();
 
-  // Role IDs của user hiện tại trong 1 guild cụ thể — nạp từ field
-  // "member" (self member object) của payload GUILD_CREATE, xem
-  // DiscordClient::onGatewayGuildCreate() (Guilds.cpp). Dùng để xác định
-  // 1 tin nhắn có role-mention (mention_roles) tới mình hay không, cho
-  // tính năng thông báo Hub. Trả về danh sách rỗng nếu chưa có dữ liệu
-  // cho guild đó (chưa nhận GUILD_CREATE, hoặc chưa đăng nhập).
+  // Current user's role IDs in a specific guild — loaded from the
+  // "member" field (self member object) of the GUILD_CREATE payload,
+  // see DiscordClient::onGatewayGuildCreate() (Guilds.cpp). Used to
+  // determine if a message's role-mention (mention_roles) targets us,
+  // for the Hub notification feature. Returns an empty list if there's
+  // no data for that guild yet (no GUILD_CREATE received, or not
+  // logged in).
   Q_INVOKABLE QStringList currentUserRoleIdsForGuild(const QString &guildId) const;
 
-  // Danh sách role đầy đủ (id/name/color/position/hoisted) của 1 guild,
-  // nạp từ field "roles" của payload GUILD_CREATE — xem
-  // DiscordClient::onGatewayGuildCreate() (Guilds.cpp). Mỗi phần tử là
-  // QVariantMap với các key: id, name, color ("#RRGGBB" hoặc rỗng),
-  // position, hoisted. Dùng cho ChannelMemberList.qml để hiển thị tên
-  // role/màu member. Trả về danh sách rỗng nếu chưa có dữ liệu cho guild
-  // đó.
+  // Full role list (id/name/color/position/hoisted) for a guild, loaded
+  // from the "roles" field of the GUILD_CREATE payload — see
+  // DiscordClient::onGatewayGuildCreate() (Guilds.cpp). Each item is a
+  // QVariantMap with keys: id, name, color ("#RRGGBB" or empty),
+  // position, hoisted. Used by ChannelMemberList.qml to show role
+  // name/color for members. Returns an empty list if there's no data
+  // for that guild yet.
   Q_INVOKABLE QVariantList guildRolesForGuild(const QString &guildId) const;
 
-  // Danh sách member đã được flatten (xem DiscordMember trong Models.hpp)
-  // của 1 channel, nạp từ opcode GUILD_MEMBER_LIST_UPDATE (op "SYNC") —
-  // xem DiscordClient::onGatewayDispatch() (Client.cpp). Key theo
-  // channelId (không phải guildId) vì Discord scope member list theo
-  // channel permission overwrite, không phải toàn guild. Mỗi phần tử là
-  // QVariantMap với key: userId, displayName, avatarUrl, status,
-  // primaryRoleId. Trả về danh sách rỗng nếu chưa có dữ liệu (sheet chưa
-  // mở lần nào, hoặc SYNC chưa về kịp).
+  // Flattened member list (see DiscordMember in Models.hpp) for a
+  // channel, loaded from the GUILD_MEMBER_LIST_UPDATE opcode ("SYNC"
+  // op) — see DiscordClient::onGatewayDispatch() (Client.cpp). Keyed by
+  // channelId (not guildId) since Discord scopes the member list by
+  // channel permission overwrites, not the whole guild. Each item is a
+  // QVariantMap with keys: userId, displayName, avatarUrl, status,
+  // primaryRoleId. Returns an empty list if there's no data yet (sheet
+  // never opened, or SYNC hasn't arrived).
   Q_INVOKABLE QVariantList memberListForChannel(const QString &channelId) const;
 
 public Q_SLOTS:
@@ -167,17 +169,18 @@ public Q_SLOTS:
   void setCurrentUserRoleIdsForGuild(const QString &guildId,
                                      const QStringList &roleIds);
 
-  // Ghi đè toàn bộ danh sách role của 1 guild (thay thế hoàn toàn, không
-  // patch từng phần tử — giống hành vi GUILD_CREATE của Discord: mỗi lần
-  // nhận event này coi như "state hiện tại" đầy đủ). Gọi từ
-  // DiscordClient khi nhận GUILD_CREATE.
+  // Overwrites the full role list for a guild (full replace, not a
+  // per-item patch — matching Discord's GUILD_CREATE behavior: each
+  // time this event arrives it's treated as the full current state).
+  // Called by DiscordClient on GUILD_CREATE.
   void setGuildRoles(const QString &guildId, const QVariantList &roles);
 
-  // Ghi đè toàn bộ member list của 1 channel — chỉ gọi cho op "SYNC" của
-  // GUILD_MEMBER_LIST_UPDATE (snapshot đầy đủ). Các op "INSERT"/"UPDATE"/
-  // "DELETE" (thay đổi tức thời khi sheet đang mở) hiện CHƯA được xử lý ở
-  // bản này — chấp nhận đánh đổi để giữ phạm vi thay đổi nhỏ, an toàn;
-  // xem lại nếu cần realtime presence trong sheet Members.
+  // Overwrites the full member list for a channel — only called for
+  // the "SYNC" op of GUILD_MEMBER_LIST_UPDATE (a full snapshot). The
+  // "INSERT"/"UPDATE"/"DELETE" ops (incremental changes while the sheet
+  // is open) are NOT handled in this version — accepted trade-off to
+  // keep the change scope small and safe; revisit if realtime presence
+  // in the Members sheet is needed.
   void setMemberListForChannel(const QString &channelId,
                                const QVariantList &members);
 

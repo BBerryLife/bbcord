@@ -76,22 +76,26 @@ Page {
 							orientation: LayoutOrientation.LeftToRight
 						}
 
-						// Fix: id bên ngoài (memberPage) KHÔNG resolve được từ
-						// trong scope riêng của ListItemComponent trong Cascades
-						// (xem comment ở đầu file) — "memberPage.controller" ném
-						// ReferenceError ngay tại onCreationCompleted(), khiến
-						// tryLoadAvatar() không bao giờ thực sự gọi
-						// cachedAvatarSource() và avatarCached không bao giờ
-						// được connect. Hệ quả quan sát được: avatar không tải
-						// lazy per-row như thiết kế, mà chỉ xuất hiện đồng loạt
-						// khi cả ListView được rebuild/re-render. Sửa bằng cách
-						// dùng đúng pattern đã ổn định ở nơi khác trong app
-						// (xem ChatCard.qml: loadAttachmentImage() khai báo trên
-						// ListView cha, delegate gọi ngược lên qua
-						// "ListItem.view.<function>" — API chuẩn Cascades cho
-						// delegate truy cập ListView chứa nó) thay vì cố truy
-						// cập context property qua 1 id cục bộ không nhìn thấy
-						// được từ scope này.
+						// Fix: the outer id (memberPage) does NOT resolve
+						// from within a ListItemComponent's own scope in
+						// Cascades (see comment at the top of the file) —
+						// "memberPage.controller" throws a ReferenceError
+						// right in onCreationCompleted(), so
+						// tryLoadAvatar() never actually calls
+						// cachedAvatarSource() and avatarCached never
+						// gets connected. Observed effect: avatars didn't
+						// load lazily per-row as designed, they only
+						// appeared all at once when the whole ListView
+						// got rebuilt/re-rendered. Fixed by using the
+						// same pattern already proven stable elsewhere in
+						// the app (see ChatCard.qml:
+						// loadAttachmentImage() declared on the parent
+						// ListView, the delegate calling back up via
+						// "ListItem.view.<function>" — the standard
+						// Cascades API for a delegate to reach its
+						// containing ListView) instead of trying to
+						// access a context property through a local id
+						// not visible from this scope.
 						function tryLoadAvatar() {
 							if (ListItemData.avatarUrl === "") {
 								return
@@ -172,11 +176,12 @@ Page {
 				return data.type
 			}
 
-			// Cầu nối cho delegate "member" gọi ngược lên qua
-			// ListItem.view.loadMemberAvatar()/connectAvatarCached() — xem
-			// comment tại tryLoadAvatar() trong ListItemComponent "member"
-			// phía trên để biết lý do không gọi thẳng memberListController
-			// (hay alias memberPage.controller) từ trong scope delegate.
+			// Bridge for the "member" delegate to call back up via
+			// ListItem.view.loadMemberAvatar()/connectAvatarCached() -
+			// see the comment at tryLoadAvatar() in the "member"
+			// ListItemComponent above for why memberListController (or
+			// the memberPage.controller alias) isn't called directly
+			// from inside the delegate scope.
 			function loadMemberAvatar(avatarUrl) {
 				return memberListController.cachedAvatarSource(avatarUrl)
 			}
@@ -187,18 +192,20 @@ Page {
 		}
 	}
 
-	// Lazy-load: chỉ gửi request/subscribe member list khi sheet này thực
-	// sự được mở (tương ứng lúc người dùng mở tab Members), không phải
-	// ngay khi mở channel — đúng yêu cầu tối ưu ban đầu. Xem
+	// Lazy-load: only sends a request/subscribes the member list when
+	// this sheet is actually opened (i.e. when the user opens the
+	// Members tab), not as soon as the channel is opened - per the
+	// original optimization requirement. See
 	// MemberListController::requestMemberList() (MemberListController.cpp)
-	// để biết chi tiết cơ chế subscribe qua Gateway.
+	// for the details of the Gateway subscribe mechanism.
 	//
-	// KHÔNG gọi trong onCreationCompleted: createObject() ở MainPage.qml
-	// kích hoạt onCreationCompleted() NGAY LẬP TỨC, đồng bộ, TRƯỚC khi
-	// channelId/guildId kịp được gán (property vẫn là "" mặc định lúc
-	// đó) — nên request sẽ luôn nhận tham số rỗng và bị bỏ qua. Thay vào
-	// đó, MainPage.qml gọi hàm này TƯỜNG MINH ngay sau khi đã gán xong
-	// channelId/guildId, đảm bảo dữ liệu đúng được dùng.
+	// NOT called in onCreationCompleted: createObject() in MainPage.qml
+	// fires onCreationCompleted() IMMEDIATELY, synchronously, BEFORE
+	// channelId/guildId get assigned (the properties are still the
+	// default "" at that point) — so the request would always get empty
+	// arguments and be skipped. Instead, MainPage.qml calls this
+	// function EXPLICITLY right after channelId/guildId have been
+	// assigned, ensuring the correct data is used.
 	function requestMemberListNow() {
 		memberListController.requestMemberList(memberPage.channelId, memberPage.guildId)
 	}

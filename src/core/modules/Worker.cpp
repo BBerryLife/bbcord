@@ -36,10 +36,10 @@ void DiscordClient::initializeManagers() {
     m_sortUtils = new SortUtils(this);
   }
   if (m_hubIntegration == 0) {
-    // Không gọi init() ngay tại đây — HubIntegration::init() tự lazy-init
-    // ở lần upsertThreadItem() đầu tiên (xem HubIntegration.cpp), tránh
-    // tốn IPC UDS lúc khởi động app khi user còn chưa đăng nhập/chưa có
-    // tin nhắn nào cần thông báo.
+    // Don't call init() here — HubIntegration::init() lazy-inits itself
+    // on the first upsertThreadItem() call (see HubIntegration.cpp), to
+    // avoid the IPC UDS cost at app startup when the user isn't logged
+    // in yet or has no messages to notify about.
     m_hubIntegration = new HubIntegration(this);
   }
 }

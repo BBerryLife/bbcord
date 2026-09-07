@@ -217,8 +217,8 @@ QByteArray DiscordJsonParser::buildMemberListSyncPayload(
   data["activities"] = true;
   data["threads"] = true;
 
-  // KHÔNG có "guild_subscriptions" — khác buildGuildSubscribePayload()
-  // (dành cho lazy-load message). Xem giải thích trong JsonParser.hpp.
+  // NO "guild_subscriptions" here — unlike buildGuildSubscribePayload()
+  // (used for message lazy-load). See explanation in JsonParser.hpp.
 
   QVariantMap root2;
   root2["op"] = 14;
@@ -250,12 +250,13 @@ QByteArray DiscordJsonParser::buildMemberListUnsubscribePayload(
   QVariantMap data;
   QString safeGuildId = guildId.trimmed();
   data["guild_id"] = safeGuildId;
-  // Cố tình KHÔNG có "channels" - đây là điểm khác biệt duy nhất so với
-  // buildMemberListSyncPayload(). Gửi payload này trước sẽ "bỏ subscribe"
-  // channel range đã đăng ký trước đó cho guild này, để lần gửi
-  // buildMemberListSyncPayload() ngay sau đó được server coi là một
-  // subscribe MỚI (thay vì trùng lặp) và trả lời bằng GUILD_MEMBER_LIST_
-  // UPDATE (SYNC) - xem DiscordGateway::sendMemberListSync().
+  // Deliberately NO "channels" here - the one difference from
+  // buildMemberListSyncPayload(). Sending this first "unsubscribes"
+  // the previously registered channel range for this guild, so the
+  // buildMemberListSyncPayload() call right after is treated by the
+  // server as a NEW subscribe (not a duplicate) and gets answered with
+  // GUILD_MEMBER_LIST_UPDATE (SYNC) - see
+  // DiscordGateway::sendMemberListSync().
   data["typing"] = true;
   data["activities"] = true;
   data["threads"] = true;

@@ -62,16 +62,16 @@ bool shouldParseDispatch(const QString &eventName) {
          eventName == "USER_SETTINGS_PROTO_UPDATE" ||
          eventName == "PRESENCE_UPDATE" ||
          eventName == "GUILD_MEMBER_LIST_UPDATE" ||
-         // Fix: THREAD_LIST_SYNC bị bỏ sót khỏi whitelist này khi thêm
-         // tính năng Threads - mọi message không nằm trong danh sách bị
-         // return sớm ở dòng shouldParseDispatch() check ngay đầu
-         // handleTextMessage(), KHÔNG BAO GIỜ tới được handleDispatch()/
-         // onGatewayDispatch() dù Discord có gửi event này hay không. Đây
-         // là lý do thật khiến GUILD_CREATE cũng có vẻ "không chạy" khi
-         // debug log không xuất hiện - nghi ngờ ban đầu, nhưng
-         // THREAD_LIST_SYNC mới là event thực sự managed bởi OP 14 lazy
-         // subscribe (đã dùng cho member list/channel list) và cần được
-         // parse.
+         // Fix: THREAD_LIST_SYNC was missing from this whitelist when
+         // Threads was added - any message not on this list gets
+         // returned early by the shouldParseDispatch() check at the top
+         // of handleTextMessage(), NEVER reaching handleDispatch()/
+         // onGatewayDispatch() regardless of whether Discord sent the
+         // event. This was the real reason GUILD_CREATE also seemed
+         // "not firing" when no debug log showed up — initial suspicion,
+         // but THREAD_LIST_SYNC is the event actually managed by the
+         // OP 14 lazy subscribe mechanism (already used for member
+         // list/channel list) and needs parsing.
          eventName == "THREAD_LIST_SYNC";
 }
 
@@ -193,17 +193,18 @@ QVariantMap buildLightReadyPayload(const QByteArray &bytes) {
     payload["settings"] = settings;
   }
 
-  // Fix: user-token gateway (khác hẳn bot protocol) KHÔNG gửi GUILD_CREATE
-  // riêng lẻ cho từng guild - đã xác nhận bằng debug log thực tế (0/140
-  // event nhận được là GUILD_CREATE trong cả phiên). Discord dồn toàn bộ
-  // guild data đầy đủ (channels, roles, threads...) NGAY TRONG chính
-  // payload READY này, ở field "guilds" cấp root của "d" - đây cũng là
-  // lý do payload READY nặng ~5MB dù chỉ có 49 guild. buildLightReadyPayload
-  // trước đây cố tình bỏ qua hẳn field này để tối ưu hiệu năng (không
-  // parse full JSON của payload khổng lồ) - giữ nguyên tinh thần đó,
-  // chỉ trích ra ĐÚNG mảng "guilds" thô bằng extractArrayField() (không
-  // parse sâu từng object bên trong ở đây), để Client.cpp tự parse riêng
-  // từng guild khi cần (threads) mà không phải parse toàn bộ payload.
+  // Fix: the user-token gateway (unlike the bot protocol) does NOT send
+  // individual GUILD_CREATE events per guild - confirmed via real debug
+  // logs (0/140 events received were GUILD_CREATE in a full session).
+  // Discord bundles all the full guild data (channels, roles,
+  // threads...) directly INSIDE this READY payload, in the root-level
+  // "guilds" field of "d" - this is also why the READY payload is
+  // ~5MB even with only 49 guilds. buildLightReadyPayload used to skip
+  // this field entirely for performance (avoiding a full JSON parse of
+  // the huge payload) - keeping that same idea, we only extract the raw
+  // "guilds" array via extractArrayField() (no deep parsing of the
+  // objects inside here), letting Client.cpp parse individual guilds
+  // separately when needed (threads) without parsing the whole payload.
   payload["guilds"] = DiscordJsonParser::extractArrayField(dataBytes, "guilds");
 
   return payload;
@@ -555,10 +556,11 @@ void DiscordGateway::handleDispatch(const QString &eventName,
     emit ready(m_sessionId);
     flushPendingLazyRequests();
 
-    // Nếu sheet Members đang mở lúc gateway bị đóng/reconnect (xem
-    // m_activeMemberListGuildId trong Gateway.hpp), Discord không nhớ
-    // subscription cũ sau khi socket đứt - phải gửi lại SYNC thủ công,
-    // nếu không sheet sẽ trống vĩnh viễn cho tới khi user tự đóng/mở lại.
+    // If the Members sheet was open when the gateway closed/reconnected
+    // (see m_activeMemberListGuildId in Gateway.hpp), Discord doesn't
+    // remember the old subscription after the socket drops - the SYNC
+    // must be manually re-sent, or the sheet stays empty until the
+    // user closes and reopens it.
     if (!m_activeMemberListGuildId.isEmpty()) {
       qDebug() << "[discord-gateway] re-sending member-list sync after "
                   "reconnect"

@@ -363,20 +363,21 @@ Page {
                     if (mainPage.navigationPane) {
                         mainPage.navigationPane.push(memberPage);
                     }
-                    // QUAN TRỌNG: createObject() kích hoạt
-                    // onCreationCompleted() của ChannelMemberList.qml
-                    // NGAY LẬP TỨC, đồng bộ, TRƯỚC các dòng gán property ở
-                    // trên (channelId/guildId lúc đó vẫn là giá trị mặc
-                    // định rỗng "") — nên requestMemberList() gọi từ bên
-                    // trong onCreationCompleted() luôn nhận 2 tham số
-                    // rỗng và bị early-return, sheet Members hiện trống
-                    // vĩnh viễn dù channelId/guildId đã được gán đúng
-                    // ngay sau đó (bug đã xác nhận qua log thực tế —
-                    // không có bất kỳ dòng qDebug nào của
-                    // MemberListController::requestMemberList() xuất
-                    // hiện). Gọi lại TƯỜNG MINH ở đây, sau khi property
-                    // đã có giá trị thật, để đảm bảo đúng dữ liệu được
-                    // dùng.
+                    // IMPORTANT: createObject() fires
+                    // ChannelMemberList.qml's onCreationCompleted()
+                    // IMMEDIATELY, synchronously, BEFORE the property
+                    // assignments above (channelId/guildId are still the
+                    // default empty "" at that point) — so
+                    // requestMemberList() called from inside
+                    // onCreationCompleted() always gets two empty
+                    // arguments and early-returns, leaving the Members
+                    // sheet permanently blank even though
+                    // channelId/guildId get assigned correctly right
+                    // after (confirmed bug via real logs — none of
+                    // MemberListController::requestMemberList()'s
+                    // qDebug lines ever showed up). Call it again
+                    // EXPLICITLY here, after the properties have real
+                    // values, to make sure the correct data gets used.
                     memberPage.requestMemberListNow();
                 } else {
                     console.log("Could not create ChannelMemberList.qml");
@@ -421,11 +422,11 @@ Page {
         }
     }
 
-    // Tách riêng từ bên trong openChat() (nơi trước đây chỉ mở được qua
-    // action "Threads" của 1 channel đã mở) để dùng chung được cho cả
-    // trường hợp bấm THẲNG vào 1 forum/media channel trong ServerList
-    // (channel loại này không mở qua ChatCard được — không có tin nhắn
-    // trực tiếp, mỗi "post" của nó thực chất LÀ 1 thread).
+    // Pulled out from inside openChat() (which previously could only be
+    // opened via a channel's "Threads" action) so it can be shared with
+    // tapping DIRECTLY on a forum/media channel in ServerList (channels
+    // of this type can't open via ChatCard - they have no messages of
+    // their own, each "post" IS a thread).
     function openThreadList(channelId, guildId, channelName) {
         var threadPage = threadListDefinition.createObject();
 
@@ -445,21 +446,22 @@ Page {
                 if (mainPage.navigationPane) {
                     mainPage.navigationPane.pop();
                 }
-                // Mở thread y hệt 1 channel thường: ChatController chỉ
-                // cần channelId hợp lệ, không quan tâm nó có nằm trong
-                // allGuildChannels/channelTree hay không (xem AppStore::
-                // selectChannel() - chỉ set m_selectedChannelId, không
-                // tra cứu gì thêm) - nên tái dùng thẳng openChat(),
-                // không cần luồng riêng cho thread.
+                // Opens a thread exactly like a regular channel:
+                // ChatController just needs a valid channelId, it
+                // doesn't care whether it's in
+                // allGuildChannels/channelTree (see AppStore::
+                // selectChannel() - only sets m_selectedChannelId, no
+                // extra lookup) - so openChat() is reused directly, no
+                // need for a separate flow for threads.
                 mainPage.openChat(threadId, guildId, threadName);
             });
             if (mainPage.navigationPane) {
                 mainPage.navigationPane.push(threadPage);
             }
-            // Cùng lưu ý như ChannelMemberList.qml: createObject() chạy
-            // onCreationCompleted() của ThreadList.qml TRƯỚC các dòng gán
-            // property ở trên, nên gọi lại tường minh sau khi channelId
-            // đã có giá trị thật.
+            // Same caveat as ChannelMemberList.qml: createObject() runs
+            // ThreadList.qml's onCreationCompleted() BEFORE the property
+            // assignments above, so it's called again explicitly after
+            // channelId has a real value.
             threadPage.requestThreadsNow();
         } else {
             console.log("Could not create ThreadList.qml");

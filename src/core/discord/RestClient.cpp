@@ -652,10 +652,10 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
     if (m_requestType == ActiveThreadsRequest) {
       qDebug() << "[discord-rest] active threads status" << status;
       if (status == 200) {
-        // GET .../threads/active trả về 1 OBJECT {threads: [...], members:
-        // [...], has_more: bool} - KHÁC với /guilds/{id}/channels (trả
-        // thẳng array) - nên parseObject() + lấy field "threads" ra,
-        // không dùng parseArray() như 3 request phía trên.
+        // GET .../threads/active returns a single OBJECT {threads: [...],
+        // members: [...], has_more: bool} - UNLIKE /guilds/{id}/channels
+        // (returns a plain array) - so use parseObject() + pull out the
+        // "threads" field, not parseArray() like the 3 requests above.
         QString parseError;
         QVariantMap responseObject =
             DiscordJsonParser::parseObject(body, &parseError);
@@ -680,10 +680,10 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
     if (m_requestType == ArchivedThreadsRequest) {
       qDebug() << "[discord-rest] archived threads status" << status;
       if (status == 200) {
-        // Cùng shape response {threads, members, has_more} như active
-        // threads - nhưng archivedThreadsLoaded cần thêm has_more để UI
-        // biết còn trang cũ hơn để tải tiếp hay không (active threads
-        // không phân trang, Discord luôn trả hết trong 1 lần).
+        // Same response shape {threads, members, has_more} as active
+        // threads - but archivedThreadsLoaded needs has_more too so the
+        // UI knows if there's an older page to load (active threads
+        // aren't paginated, Discord always returns them all at once).
         QString parseError;
         QVariantMap responseObject =
             DiscordJsonParser::parseObject(body, &parseError);

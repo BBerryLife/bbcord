@@ -78,20 +78,21 @@ public:
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
                           int limit, const QString &afterId);
-  // Threads không nằm trong response /guilds/{id}/channels thường
-  // (channel list REST của Discord chỉ trả channel top-level) - phải gọi
-  // riêng endpoint "active threads". LƯU Ý: dùng endpoint cấp-CHANNEL
-  // (/channels/{channel.id}/threads/active), KHÔNG dùng cấp-guild
-  // (/guilds/{id}/threads/active) - endpoint cấp-guild chỉ hoạt động với
-  // bot token, luôn trả 403 với user token (xem comment chi tiết ở
+  // Threads aren't in the usual /guilds/{id}/channels response
+  // (Discord's REST channel list only returns top-level channels) -
+  // need a separate call to the "active threads" endpoint. NOTE: uses
+  // the CHANNEL-level endpoint (/channels/{channel.id}/threads/active),
+  // NOT the guild-level one (/guilds/{id}/threads/active) - the
+  // guild-level endpoint only works with bot tokens, always returns 403
+  // for user tokens (see detailed comment in
   // Channel.cpp::fetchActiveThreads()).
   void fetchActiveThreads(const QString &token, const QString &channelId);
-  // Thread bị Discord tự động archive (không hoạt động quá
-  // auto_archive_duration) không còn nằm trong active threads nữa - gọi
-  // riêng endpoint này để xem lại. "beforeCursor" (rỗng = trang đầu) là
-  // id/timestamp của thread cũ nhất đã có, dùng để phân trang lấy tiếp
-  // các thread cũ hơn (xem activeThreadsLoaded's "hasMore" tương ứng
-  // qua archivedThreadsLoaded).
+  // Threads auto-archived by Discord (inactive past
+  // auto_archive_duration) no longer show up in active threads - call
+  // this endpoint separately to see them. "beforeCursor" (empty = first
+  // page) is the id/timestamp of the oldest thread already loaded, used
+  // for pagination to fetch older threads (see activeThreadsLoaded's
+  // "hasMore" counterpart via archivedThreadsLoaded).
   void fetchArchivedThreads(const QString &token, const QString &channelId,
                             const QString &beforeCursor);
   void fetchChannelMessages(const QString &token, const QString &channelId,
@@ -126,19 +127,21 @@ Q_SIGNALS:
   void dmChannelsLoaded(const QVariantList &channels);
   void guildChannelsLoaded(const QString &guildId,
                            const QVariantList &channels);
-  // Trả về đúng field "threads" của response GET .../threads/active (đã
-  // rút gọn từ object {threads, members, has_more} — xem xử lý ở
-  // RestClient.cpp) - mỗi item vẫn là channel object thô (type 10/11/12),
-  // đi qua ItemMapper::guildChannelToItem() giống channel thường trước
-  // khi lưu vào AppStore. Key theo channelId (channel cha vừa fetch),
-  // không phải guildId - từ khi đổi sang endpoint cấp-channel.
+  // Returns the "threads" field of the GET .../threads/active response
+  // as-is (trimmed down from the {threads, members, has_more} object —
+  // see handling in RestClient.cpp) - each item is still a raw channel
+  // object (type 10/11/12), going through ItemMapper::guildChannelToItem()
+  // like regular channels before being stored in AppStore. Keyed by
+  // channelId (the parent channel just fetched), not guildId - since
+  // switching to the channel-level endpoint.
   void activeThreadsLoaded(const QString &channelId,
                            const QVariantList &threads);
-  // Khác activeThreadsLoaded: mang thêm "hasMore" (từ field has_more của
-  // response) để UI biết còn trang cũ hơn để tải tiếp hay không, và
-  // "threads" ở đây KHÔNG merge vào cache active threads
-  // (m_channelThreadsByParentId) - archived threads hiển thị riêng, tách
-  // biệt khỏi danh sách active, tránh trộn lẫn 2 khái niệm khác nhau.
+  // Unlike activeThreadsLoaded: carries an extra "hasMore" (from the
+  // response's has_more field) so the UI knows whether there's an
+  // older page to load, and "threads" here does NOT get merged into
+  // the active threads cache (m_channelThreadsByParentId) - archived
+  // threads are shown separately from the active list, to avoid mixing
+  // the two concepts.
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
   void channelMessagesLoaded(const QString &channelId,

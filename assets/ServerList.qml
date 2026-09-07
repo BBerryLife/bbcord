@@ -8,10 +8,11 @@ Container {
     property string serverId: ""
 
     signal channelSelected(string channelId, string guildId, string channelName)
-    // Forum/Media channel không có tin nhắn trực tiếp để mở qua ChatCard -
-    // mỗi "post" của forum thực chất LÀ 1 thread (parentId trỏ về channel
-    // này). Phát signal riêng để MainPage.qml mở ThreadList.qml (xem danh
-    // sách post/thread) thay vì cố mở ChatCard như channel text thường.
+    // Forum/Media channels have no messages of their own to open via
+    // ChatCard - each forum "post" IS a thread (parentId points back to
+    // this channel). Fires a separate signal so MainPage.qml opens
+    // ThreadList.qml (showing the post/thread list) instead of trying
+    // ChatCard like a regular text channel.
     signal forumChannelSelected(string channelId, string guildId, string channelName)
 
     horizontalAlignment: HorizontalAlignment.Fill

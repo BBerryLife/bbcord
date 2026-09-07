@@ -14,26 +14,27 @@ class AttachmentImageCacheWorker;
 class DiscordClient;
 class QThread;
 
-// Controller đứng sau ChannelMemberList.qml. Không tự parse dữ liệu gì —
-// chỉ đọc kết quả đã được DiscordClient::onGatewayDispatch() (Client.cpp)
-// parse sẵn từ GUILD_MEMBER_LIST_UPDATE và lưu trong AppStore, rồi build
-// thành 1 ArrayDataModel phẳng (role heading + member) cho ListView.
+// Controller behind ChannelMemberList.qml. Doesn't parse data itself —
+// only reads results already parsed by DiscordClient::onGatewayDispatch()
+// (Client.cpp) from GUILD_MEMBER_LIST_UPDATE and stored in AppStore,
+// then builds a flat ArrayDataModel (role heading + member) for the
+// ListView.
 //
-// Lazy-load: requestMemberList() PHẢI được gọi tường minh từ QML khi
-// sheet Members được mở (không tự động subscribe khi mở channel như
-// tin nhắn) — đây là tối ưu băng thông/CPU đã được yêu cầu, tránh tải
-// avatar/role cho mọi channel mà người dùng có thể không bao giờ xem
-// danh sách member.
+// Lazy-load: requestMemberList() MUST be called explicitly from QML
+// when the Members sheet is opened (it doesn't auto-subscribe on
+// channel open like messages do) — this is a deliberate bandwidth/CPU
+// optimization, avoiding loading avatars/roles for every channel the
+// user might never open the member list for.
 //
-// Avatar cache: dùng CHUNG cơ chế AttachmentImageCacheWorker (generic
-// url->file cache) mà ChatController dùng cho ảnh đính kèm — KHÔNG dùng
-// AvatarManager, vì AvatarManager gắn chặt với queue 2-slot dùng chung
-// cho DM/current-user avatar (xem Client.hpp: m_loadingAvatarUserId,
-// m_loadingAvatarUserId2, m_pendingAvatars). Nếu member sheet dùng chung
-// queue đó, avatar của hàng chục member trong 1 guild lớn có thể làm
-// nghẽn/trễ avatar DM đang cần load song song. Cache riêng thư mục
-// "member-avatar-cache" để không đụng cache "chat-image-cache" của
-// ChatController.
+// Avatar cache: shares the SAME AttachmentImageCacheWorker mechanism
+// (generic url->file cache) that ChatController uses for attachments —
+// NOT AvatarManager, since AvatarManager is tightly coupled to a
+// 2-slot queue shared with DM/current-user avatars (see Client.hpp:
+// m_loadingAvatarUserId, m_loadingAvatarUserId2, m_pendingAvatars). If
+// the member sheet shared that queue, avatars for dozens of members in
+// a large guild could stall/delay DM avatars needing to load at the
+// same time. Uses its own "member-avatar-cache" folder to stay
+// separate from ChatController's "chat-image-cache".
 class MemberListController : public QObject {
   Q_OBJECT
   Q_PROPERTY(bb::cascades::DataModel *memberDataModel READ memberDataModel
@@ -48,24 +49,27 @@ public:
   bb::cascades::DataModel *memberDataModel() const;
   bool isLoading() const;
 
-  // Gọi khi sheet Members được mở. Gửi guild-subscribe request qua
-  // Gateway (nếu chưa gửi cho channel này) và bắt đầu lắng nghe
-  // AppStore::memberListChanged() để build lại model khi SYNC về.
+  // Called when the Members sheet is opened. Sends a guild-subscribe
+  // request through Gateway (if not already sent for this channel) and
+  // starts listening to AppStore::memberListChanged() to rebuild the
+  // model once SYNC comes back.
   Q_INVOKABLE void requestMemberList(const QString &channelId,
                                      const QString &guildId);
 
-  // Gọi khi sheet Members đóng — dừng lắng nghe để tránh build lại model
-  // không cần thiết cho 1 channel không còn hiển thị trên màn hình, và
-  // hủy các avatar còn đang tải dở (danh sách đã đóng thì không cần nữa).
+  // Called when the Members sheet closes — stops listening to avoid
+  // unnecessary model rebuilds for a channel no longer on screen, and
+  // cancels any avatars still loading (no longer needed once the list
+  // is closed).
   Q_INVOKABLE void releaseMemberList();
 
-  // Gọi từ QML (ListView.onCreationCompleted hoặc tương tự) khi 1 hàng
-  // member THỰC SỰ hiển thị trên màn hình — đây là điểm "chỉ tải khi mở
-  // tab member" mà yêu cầu ban đầu nhắc tới, áp dụng ở cấp độ TỪNG DÒNG
-  // để tránh tải avatar của member nằm ngoài viewport (danh sách dài,
-  // cuộn xuống mới cần). Trả về source ảnh cache sẵn có ngay (đồng bộ)
-  // nếu đã tải trước đó, hoặc chuỗi rỗng nếu cần tải — trong trường hợp
-  // rỗng, kết quả sẽ về sau qua signal avatarCached().
+  // Called from QML (ListView.onCreationCompleted or similar) when a
+  // member row is ACTUALLY shown on screen — this is the "only load
+  // when the member tab is open" behavior applied at the PER-ROW level,
+  // avoiding loading avatars for members outside the viewport (long
+  // list, only loads as the user scrolls down to them). Returns the
+  // already-cached image source synchronously if previously loaded, or
+  // an empty string if it needs loading — in the empty case, the result
+  // arrives later via the avatarCached() signal.
   Q_INVOKABLE QString cachedAvatarSource(const QString &avatarUrl);
 
 private Q_SLOTS:
@@ -76,9 +80,10 @@ private Q_SLOTS:
 
 Q_SIGNALS:
   void isLoadingChanged();
-  // Bắn khi 1 avatar tải xong — QML nên lắng nghe signal này để cập nhật
-  // lại hàng tương ứng trong ListView (ArrayDataModel không tự re-render
-  // khi mutate 1 QVariantMap đã append, phải replace() lại phần tử).
+  // Fired when an avatar finishes loading — QML should listen to this
+  // to refresh the matching row in the ListView (ArrayDataModel doesn't
+  // auto re-render when mutating an already-appended QVariantMap,
+  // needs a replace() instead).
   void avatarCached(const QString &avatarUrl, const QString &imageSource);
 
 private:
@@ -86,12 +91,12 @@ private:
   QString avatarCachePath(const QString &avatarUrl) const;
   QString filePreviewSource(const QString &filePath) const;
   void ensureAvatarImageWorker();
-  // Map raw status string từ Discord ("online"/"idle"/"dnd"/"" hoặc
-  // "offline") sang label đầy đủ, có bản dịch, để hiển thị dưới tên
-  // member trong sheet Members (vd. "dnd" -> "Do Not Disturb", khớp
-  // đúng cách Discord client chính chủ hiển thị). Là method thay vì hàm
-  // tự do trong namespace {} ẩn danh vì cần gọi tr() (chỉ khả dụng trên
-  // QObject-derived class).
+  // Maps Discord's raw status string ("online"/"idle"/"dnd"/"" or
+  // "offline") to a full, translated label, shown under a member's name
+  // in the Members sheet (e.g. "dnd" -> "Do Not Disturb", matching how
+  // the official Discord client displays it). A method instead of a
+  // free function in an anonymous namespace since it needs tr() (only
+  // available on a QObject-derived class).
   QString displayLabelForStatus(const QString &status) const;
 
   DiscordClient *m_client;
