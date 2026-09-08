@@ -1,7 +1,3 @@
-## Project Status
-
-Development is currently on hold and may become unmaintained because my BlackBerry Passport unexpectedly stopped working. Without a physical device, I can't properly develop or test new changes. Stay tuned!
-
 ![banner](./splash1280x720.png)
 
 # BBCord
