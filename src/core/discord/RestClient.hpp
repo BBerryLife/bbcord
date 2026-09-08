@@ -175,6 +175,7 @@ private:
   void startTimerIfNeeded();
   void stopTimerIfIdle();
   void finishRequest(bool keepConnectionAlive = false);
+  void requeueCurrentRequestForRetry();
   void failWithMessage(const QString &message);
   void failDataRequest(const QString &message);
   void failChatRequest(const QString &message);
@@ -210,6 +211,13 @@ private:
   int m_timerId;
   int m_pollTicks;
   int m_idleTicks;
+  // Remaining retry attempts for the current logical request before a
+  // "Discord REST timeout" is surfaced to the UI - reset only in
+  // enqueueRequest() (a genuinely new request), NOT in
+  // processNextRequest()/finishRequest(), since both of those also run
+  // on the internal retry path. See requeueCurrentRequestForRetry() and
+  // the timeout-retry block in checkTimeout()/timerEvent().
+  int m_timeoutRetriesLeft;
   RequestType m_requestType;
   QString m_token;
   QString m_requestPath;

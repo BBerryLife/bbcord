@@ -27,8 +27,8 @@ const int kGatewayDnsTimeoutMs = 10000;
 
 DiscordGateway::DiscordGateway(QObject *parent)
     : QObject(parent), m_connection(NULL), m_timerId(0), m_dnsRetriesLeft(0),
-      m_zstreamReady(false), m_sequence(-1), m_heartbeatIntervalMs(0),
-      m_nextHeartbeatMs(0), m_state(Disconnected) {
+      m_lastPollMs(0), m_zstreamReady(false), m_sequence(-1),
+      m_heartbeatIntervalMs(0), m_nextHeartbeatMs(0), m_state(Disconnected) {
   m_mgr = new mg_mgr;
   mg_mgr_init(m_mgr);
   m_mgr->dnstimeout = kGatewayDnsTimeoutMs;
@@ -241,7 +241,34 @@ void DiscordGateway::timerEvent(QTimerEvent *event) {
     return;
   }
 
-  mg_mgr_poll(m_mgr, 0);
+  // Diagnostic: on a real device, Qt's 10ms timer fires with fairly
+  // regular spacing. On the Simulator (QNX virtualized under
+  // VirtualBox), the host OS scheduler / VM pause-resume can coalesce
+  // or delay this timer, so several poll cycles' worth of TCP data can
+  // pile up in the socket buffer before a single mg_mgr_poll() call
+  // processes it all at once - a plausible cause for mongoose
+  // misreading a TLS/WS handshake boundary. Logging the actual gap
+  // between calls (only when abnormally large) to confirm or rule this
+  // out before changing behavior further.
+  qint64 nowMs = mg_millis();
+  if (m_lastPollMs != 0) {
+    qint64 gapMs = nowMs - m_lastPollMs;
+    if (gapMs > kGatewayPollIntervalMs * 3) {
+      qDebug() << "[discord-gateway] timer gap" << gapMs
+               << "ms (expected ~" << kGatewayPollIntervalMs << "ms) - "
+                  "poll may be processing coalesced data";
+    }
+  }
+  m_lastPollMs = nowMs;
+
+  // Increased from 0ms: a 0ms poll only drains whatever is already
+  // fully available right this instant and returns immediately. If a
+  // TLS/WS handshake response is still trickling in (e.g. delayed by
+  // VM scheduling), this gives mongoose a small window to read a
+  // complete chunk in one pass instead of being interrupted mid-frame
+  // by the poll returning early. Kept short so it doesn't stall other
+  // Qt event processing.
+  mg_mgr_poll(m_mgr, kGatewayPollWaitMs);
 
   if (m_connection != NULL && m_connection->is_websocket &&
       m_heartbeatIntervalMs > 0 && mg_millis() >= m_nextHeartbeatMs) {

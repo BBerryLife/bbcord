@@ -24,6 +24,20 @@ const int kPollIntervalMs = 10;
 const int kRequestTimeoutTicks = 600;
 const int kKeepAliveIdleTimeoutTicks = 300;
 
+// Diagnostic/tuning, same idea as Gateway.cpp's timer-gap logging: the
+// very first REST request after a fresh app/Simulator start has been
+// observed timing out repeatedly, with later attempts (after closing
+// and reopening the app) succeeding normally. This mirrors the WS
+// handshake timing issue investigated separately - possibly the same
+// underlying cause (Simulator network stack still "cold" right after
+// the app process starts). Retrying once, transparently, before
+// surfacing "Discord REST timeout" to the UI, gives the connection a
+// second chance without the user having to manually restart the app.
+// This only retries on this exact timeout path - a wrong
+// password/MFA code, or any other REST error, still fails immediately
+// as before.
+const int kMaxTimeoutRetries = 1;
+
 // Mongoose defaults to a 3-second DNS resolve timeout, which is too short on
 // mobile/carrier networks and BB10 Wi-Fi, where a lookup to its built-in
 // 8.8.8.8 resolver can legitimately take longer (or momentarily stall)
@@ -113,7 +127,8 @@ QString authErrorMessage(int status, const QVariantMap &parsedBody,
 
 DiscordRestClient::DiscordRestClient(QObject *parent)
     : QObject(parent), m_connection(NULL), m_timerId(0), m_pollTicks(0),
-      m_idleTicks(0), m_requestType(NoRequest), m_awaitingFingerprint(false),
+      m_idleTicks(0), m_timeoutRetriesLeft(kMaxTimeoutRetries),
+      m_requestType(NoRequest), m_awaitingFingerprint(false),
       m_hasPendingCaptchaRequest(false), m_isProcessing(false),
       m_requestSent(false), m_finished(true) {
   m_mgr = new mg_mgr;
@@ -215,6 +230,24 @@ void DiscordRestClient::timerEvent(QTimerEvent *event) {
       m_connection->fn_data = NULL;
       m_connection = NULL;
       m_connectionUrl.clear();
+
+      if (m_timeoutRetriesLeft > 0) {
+        // Retry the exact same request transparently instead of
+        // surfacing "Discord REST timeout" to the UI - see
+        // kMaxTimeoutRetries comment above. Must build the retry request
+        // from the current m_request*/m_login*/m_mfa* fields BEFORE
+        // calling finishRequest(), since finishRequest() clears all of
+        // them (including a secure-wipe of m_loginPassword) as part of
+        // its normal cleanup.
+        --m_timeoutRetriesLeft;
+        qDebug() << "[discord-rest] request timed out, retrying"
+                 << "(retries left after this:" << m_timeoutRetriesLeft << ")";
+        requeueCurrentRequestForRetry();
+        finishRequest(/*keepConnectionAlive=*/false);
+        processNextRequest();
+        return;
+      }
+
       failWithMessage("Discord REST timeout");
     }
   } else {
@@ -232,6 +265,16 @@ void DiscordRestClient::eventHandler(struct mg_connection *connection,
 }
 
 void DiscordRestClient::enqueueRequest(const RestRequest &request) {
+  // Reset the timeout-retry budget here, not in processNextRequest() or
+  // finishRequest() - both of those also run on the internal retry path
+  // (requeueCurrentRequestForRetry() -> finishRequest() ->
+  // processNextRequest()), and resetting there would refill the counter
+  // before it could ever reach zero, turning "retry once" into an
+  // infinite retry loop. This function is the one place a genuinely NEW
+  // request enters the queue (retries go straight into m_requestQueue
+  // via prepend(), bypassing enqueueRequest() entirely) - see
+  // kMaxTimeoutRetries comment.
+  m_timeoutRetriesLeft = kMaxTimeoutRetries;
   m_requestQueue.append(request);
   processNextRequest();
 }
@@ -915,6 +958,41 @@ bool DiscordRestClient::tryHandleCaptcha(bool keepConnectionAlive,
   emit captchaRequired(requestKind, sitekey, rqdata, rqtoken);
   processNextRequest();
   return true;
+}
+
+// Rebuilds a RestRequest from the currently in-flight request's
+// m_request*/m_login*/m_mfa* fields and pushes it to the FRONT of
+// m_requestQueue (not the back), so it's the very next thing
+// processNextRequest() picks up once this function returns - anything
+// else already queued behind the original request keeps its relative
+// order. Must be called BEFORE finishRequest(), since finishRequest()
+// clears every one of these fields as part of its normal cleanup - see
+// the timeout-retry block in checkTimeout()/timerEvent() above.
+void DiscordRestClient::requeueCurrentRequestForRetry() {
+  RestRequest retryRequest;
+  retryRequest.type = m_requestType;
+  retryRequest.requestPath = m_requestPath;
+  retryRequest.requestMethod = m_requestMethod;
+  retryRequest.requestBody = m_requestBody;
+  retryRequest.contentType = m_contentType;
+  retryRequest.token = m_token;
+  retryRequest.guildId = m_guildId;
+  retryRequest.channelId = m_channelId;
+  retryRequest.messageId = m_messageId;
+  retryRequest.beforeMessageId = m_beforeMessageId;
+  retryRequest.nonce = m_nonce;
+  retryRequest.avatarUserId = m_avatarUserId;
+  retryRequest.avatarHash = m_avatarHash;
+  retryRequest.iconGuildId = m_iconGuildId;
+  retryRequest.iconHash = m_iconHash;
+  retryRequest.outputPath = m_outputPath;
+  retryRequest.loginEmail = m_loginEmail;
+  retryRequest.loginPassword = m_loginPassword;
+  retryRequest.mfaTicket = m_mfaTicket;
+  retryRequest.mfaLoginInstanceId = m_mfaLoginInstanceId;
+  retryRequest.mfaCode = m_mfaCode;
+  retryRequest.captchaKey = m_captchaKey;
+  m_requestQueue.prepend(retryRequest);
 }
 
 void DiscordRestClient::finishRequest(bool keepConnectionAlive) {

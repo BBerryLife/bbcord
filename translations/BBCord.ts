@@ -156,37 +156,37 @@
 <context>
     <name>ChatCard</name>
     <message>
-        <location filename="../assets/ChatCard.qml" line="221"/>
+        <location filename="../assets/ChatCard.qml" line="222"/>
         <source>Loading more messages...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="276"/>
+        <location filename="../assets/ChatCard.qml" line="277"/>
         <source>Replying to </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="308"/>
+        <location filename="../assets/ChatCard.qml" line="309"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="375"/>
+        <location filename="../assets/ChatCard.qml" line="376"/>
         <source>File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="450"/>
+        <location filename="../assets/ChatCard.qml" line="451"/>
         <source>Message </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="503"/>
+        <location filename="../assets/ChatCard.qml" line="506"/>
         <source>Editing message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="529"/>
+        <location filename="../assets/ChatCard.qml" line="532"/>
         <source>Attach files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -195,22 +195,22 @@
     <name>ChatController</name>
     <message>
         <location filename="../src/ui/ChatController.cpp" line="307"/>
-        <location filename="../src/ui/ChatController.cpp" line="1284"/>
+        <location filename="../src/ui/ChatController.cpp" line="1289"/>
         <source>Maximum 10 attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1269"/>
+        <location filename="../src/ui/ChatController.cpp" line="1274"/>
         <source>Attachment file not found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1279"/>
+        <location filename="../src/ui/ChatController.cpp" line="1284"/>
         <source>Attachment is too large</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1318"/>
+        <location filename="../src/ui/ChatController.cpp" line="1323"/>
         <source>%1 files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -320,7 +320,7 @@
 <context>
     <name>MainPage</name>
     <message>
-        <location filename="../assets/MainPage.qml" line="436"/>
+        <location filename="../assets/MainPage.qml" line="437"/>
         <source>Threads #</source>
         <translation type="unfinished"></translation>
     </message>
@@ -328,24 +328,24 @@
 <context>
     <name>MemberListController</name>
     <message>
-        <location filename="../src/ui/MemberListController.cpp" line="277"/>
-        <location filename="../src/ui/MemberListController.cpp" line="318"/>
+        <location filename="../src/ui/MemberListController.cpp" line="282"/>
+        <location filename="../src/ui/MemberListController.cpp" line="323"/>
         <source>Online</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/MemberListController.cpp" line="280"/>
+        <location filename="../src/ui/MemberListController.cpp" line="285"/>
         <source>Idle</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/MemberListController.cpp" line="283"/>
+        <location filename="../src/ui/MemberListController.cpp" line="288"/>
         <source>Do Not Disturb</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/MemberListController.cpp" line="287"/>
-        <location filename="../src/ui/MemberListController.cpp" line="322"/>
+        <location filename="../src/ui/MemberListController.cpp" line="292"/>
+        <location filename="../src/ui/MemberListController.cpp" line="327"/>
         <source>Offline</source>
         <translation type="unfinished"></translation>
     </message>
@@ -643,22 +643,22 @@
 <context>
     <name>ThreadList</name>
     <message>
-        <location filename="../assets/ThreadList.qml" line="53"/>
+        <location filename="../assets/ThreadList.qml" line="57"/>
         <source>Threads #</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ThreadList.qml" line="179"/>
+        <location filename="../assets/ThreadList.qml" line="191"/>
         <source>No active threads in this channel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ThreadList.qml" line="245"/>
+        <location filename="../assets/ThreadList.qml" line="259"/>
         <source>Loading...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ThreadList.qml" line="245"/>
+        <location filename="../assets/ThreadList.qml" line="259"/>
         <source>Load older threads</source>
         <translation type="unfinished"></translation>
     </message>

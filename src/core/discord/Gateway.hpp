@@ -26,6 +26,14 @@ public:
   // surfacing "DNS timeout" to the user - see Gateway.cpp/GatewayEvents.cpp.
   static const int kMaxDnsRetries = 2;
 
+  // Diagnostic/tuning for the Simulator vs real-device timer behavior
+  // difference - see the comment in Gateway.cpp::timerEvent(). Not a
+  // confirmed fix, just a first attempt: gives mg_mgr_poll() a small
+  // window instead of a 0ms poll, in case a slow/coalesced Qt timer on
+  // the Simulator is causing mongoose to read a TLS/WS handshake
+  // response in a partial or misaligned chunk.
+  static const int kGatewayPollWaitMs = 5;
+
   explicit DiscordGateway(QObject *parent = 0);
   virtual ~DiscordGateway();
 
@@ -95,6 +103,7 @@ private:
   mg_connection *m_connection;
   int m_timerId;
   int m_dnsRetriesLeft;
+  qint64 m_lastPollMs; // for the timer-gap diagnostic in timerEvent()
   QString m_token;
   QString m_sessionId;
   QString m_resumeGatewayUrl;
