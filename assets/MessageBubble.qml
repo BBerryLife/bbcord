@@ -1,5 +1,6 @@
 import bb.cascades 1.4
 import bb.system 1.2
+import QtQuick 1.0
 
 Container {
     id: root
@@ -17,6 +18,15 @@ Container {
     property string replyAuthor: ""
     property string replyMessage: ""
     property string replyMessageHtml: ""
+    property string replyMessageId: ""
+    property bool mentionsCurrentUser: false
+    // Fix: transient flash state for "jump to original message" (tap
+    // a reply-quote box - see replyPreviewTapped below / ChatCard.qml's
+    // scrollToMessage()) - separate from mentionsCurrentUser
+    // (persistent ping highlight) since this one is set briefly by the
+    // parent then cleared, on ANY message regardless of whether it
+    // pings anyone.
+    property bool jumpHighlighted: false
     property string image: ""
     property int imageWidth: 0
     property int imageHeight: 0
@@ -47,6 +57,7 @@ Container {
     signal editRequested(string messageId, string message)
     signal deleteRequested(string messageId)
     signal replyRequested(string messageId, string author, string message)
+    signal replyPreviewTapped(string messageId)
     signal copyRequested(string text)
     signal attachmentOpenRequested(string url)
     signal imagePreviewRequested(string url, int imageWidth, int imageHeight)
@@ -58,6 +69,27 @@ Container {
     rightPadding: ui.du(2.0)
     topPadding: root.compactMessage ? ui.du(0.1) : (root.isGroupStart ? ui.du(1.5) : ui.du(0.1))
     bottomPadding: root.compactMessage ? ui.du(0.1) : (root.isGroupEnd ? ui.du(1.0) : ui.du(0.2))
+    // Fix: Discord highlights a message with a soft yellow tint over
+    // the dark theme background when it @mentions the current user
+    // (directly, via @everyone/@here, or via a role they have - see
+    // "mentionsCurrentUser" in ChatController::prepareMessageForModel())
+    // - this reproduces that. jumpHighlighted (the brief flash when
+    // jumping to a message via its reply-quote box) uses the exact same
+    // color, matching Discord's own behavior of using one highlight
+    // color for both cases. Fully transparent otherwise, so the
+    // background of the chat list itself shows through as normal.
+    background: (root.mentionsCurrentUser || root.jumpHighlighted) ? Color.create("#3A3427") : Color.Transparent
+
+    onJumpHighlightedChanged: {
+        if (jumpHighlighted) {
+            // Fix: QtQuick 1.0's Timer (Cascades 10 / QML1) may not have
+            // a restart() method (that's a QML2/Qt5 addition) - toggling
+            // running off then on is the safe QML1-compatible way to
+            // reset interval + re-trigger.
+            jumpHighlightTimer.running = false;
+            jumpHighlightTimer.running = true;
+        }
+    }
 
     layout: StackLayout {
         orientation: LayoutOrientation.LeftToRight
@@ -120,6 +152,14 @@ Container {
     attachedObjects: [
         ArrayDataModel {
             id: attachmentModel
+        },
+        Timer {
+            id: jumpHighlightTimer
+            interval: 1500
+            repeat: false
+            onTriggered: {
+                root.jumpHighlighted = false;
+            }
         },
         SystemDialog {
             id: deleteMessageDialog
@@ -239,6 +279,16 @@ Container {
             layout: StackLayout {
                 orientation: LayoutOrientation.LeftToRight
             }
+
+            gestureHandlers: [
+                TapHandler {
+                    onTapped: {
+                        if (root.replyMessageId !== "") {
+                            root.replyPreviewTapped(root.replyMessageId);
+                        }
+                    }
+                }
+            ]
 
             Container {
                 preferredWidth: ui.du(0.5)

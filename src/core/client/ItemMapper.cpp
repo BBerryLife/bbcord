@@ -187,7 +187,19 @@ QVariantMap ItemMapper::guildChannelToItem(const QVariantMap &channel) const {
   item["parentId"] = channel.value("parent_id").toString();
   item["unread"] = channel.value("unread").toBool();
   item["mentionCount"] = channel.value("mention_count").toInt();
-  item["accessible"] =
-      !channel.contains("accessible") || channel.value("accessible").toBool();
+  // Fix: GET /guilds/{id}/channels returns every channel in the guild
+  // regardless of whether the current user can actually see it - there
+  // is no "accessible" field in Discord's real payload (that was
+  // dead/always-true code here before: channel.contains("accessible")
+  // was never true, so the fallback of "true" always won and every
+  // channel showed up as visible, even ones the account has no
+  // VIEW_CHANNEL permission for - confirmed via a real BBCord log
+  // where the channel showed in the list but its "channel messages"
+  // REST call came back 403). permission_overwrites is carried through
+  // here unmodified so DiscordClient::onGuildChannelsLoaded() can
+  // compute real per-channel visibility (see PermissionUtils) once it
+  // also has the guild's roles and the current user's role ids - this
+  // mapper has neither, so it can't do that computation itself.
+  item["permissionOverwrites"] = channel.value("permission_overwrites");
   return item;
 }

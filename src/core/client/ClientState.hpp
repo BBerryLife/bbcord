@@ -29,6 +29,16 @@ public:
   QVariantList allDmChannels;
   QVariantList dmChannels;
   QVariantList allGuildChannels;
+  // Fix: raw mapped channel items (permissionOverwrites intact, before
+  // the "accessible" pass) for the currently selected guild - kept
+  // separately from allGuildChannels (which IS the post-filter/sort
+  // result) so PermissionUtils::canViewChannel() can be re-run without
+  // re-fetching from Discord once the current user's real roles come
+  // back from fetchSelfGuildMember() (see onSelfGuildMemberLoaded() in
+  // GuildChannels.cpp - READY has no "members" field on this gateway,
+  // so roles for the selected guild are usually still unknown/empty
+  // when onGuildChannelsLoaded() first runs and does its own pass).
+  QVariantList rawSelectedGuildChannels;
   QVariantList visibleGuildChannels;
   // Threads are NOT stored in allGuildChannels/visibleGuildChannels:
   // SortUtils::sortedAccessibleGuildChannels() only nests a channel

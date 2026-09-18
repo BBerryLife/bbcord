@@ -154,6 +154,13 @@ private Q_SLOTS:
   void onDmChannelsLoaded(const QVariantList &channels);
   void onGuildChannelsLoaded(const QString &guildId,
                              const QVariantList &channels);
+  // Fix: needed because READY.guilds[i] has no "members" field on this
+  // user-token gateway - see fetchSelfGuildMember()/
+  // mergeGuildRolesIntoCache() comments. Re-derives accessible channels
+  // once the real role list is in, same as onGuildChannelsLoaded() does
+  // after a fresh channel fetch (see GuildChannels.cpp).
+  void onSelfGuildMemberLoaded(const QString &guildId,
+                               const QStringList &roleIds);
   void onArchivedThreadsLoaded(const QString &channelId,
                                const QVariantList &threads, bool hasMore);
   void onChannelMessagesLoaded(const QString &channelId,
@@ -217,6 +224,14 @@ private:
   bool updateGuildChannelMentionCount(const QString &channelId,
                                       int mentionCount);
   void appendVisibleGuildChannels();
+  // Fix: re-runs PermissionUtils::canViewChannel() over
+  // m_rawSelectedGuildChannels (the unfiltered, already-mapped channel
+  // items for m_selectedGuildId) and rebuilds m_allGuildChannels from
+  // that - shared between onGuildChannelsLoaded() (fresh channel data)
+  // and onSelfGuildMemberLoaded() (fresh role data only, channels
+  // unchanged) since either one arriving can change which channels are
+  // accessible. No-ops if guildId isn't the currently selected guild.
+  void recomputeAccessibleGuildChannels(const QString &guildId);
   // Shared between GUILD_CREATE (payload.threads - threads already
   // present as soon as a guild becomes available, per official Discord
   // docs) and THREAD_LIST_SYNC (fires on "gains access to a channel",
@@ -225,6 +240,18 @@ private:
   // combined in one place, see Client.cpp::onGatewayDispatch().
   void mergeThreadsIntoCache(const QVariantList &rawThreads,
                              const QVariantList &channelIdsToClear);
+  // Shared between READY (payload.guilds[i] - the real source of guild
+  // roles/self-member-roles on this user-token gateway, since
+  // GUILD_CREATE never fires on initial load - see the comment above
+  // the "READY" handling in onGatewayDispatch()) and GUILD_CREATE
+  // (kept as a fallback for the join-a-new-guild-while-running case,
+  // where GUILD_CREATE genuinely is sent per Discord's docs). Parses
+  // "roles" and the current user's entry in "members" out of one raw
+  // guild object and writes them to m_store, same roleMap/roleIds
+  // shape either caller used to build inline before this was factored
+  // out.
+  void mergeGuildRolesIntoCache(const QString &guildId,
+                                const QVariantMap &guildRaw);
   void scheduleGuildsCacheSave();
   void scheduleDmChannelsCacheSave();
   void updateDataLoading();
@@ -286,6 +313,7 @@ private:
   QVariantList &m_allDmChannels;
   QVariantList &m_dmChannels;
   QVariantList &m_allGuildChannels;
+  QVariantList &m_rawSelectedGuildChannels;
   QVariantList &m_visibleGuildChannels;
   QVariantMap &m_channelThreadsByParentId;
   QString &m_activeThreadChannelId;

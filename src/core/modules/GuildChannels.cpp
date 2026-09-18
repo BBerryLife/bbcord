@@ -4,6 +4,7 @@
 #include "../Client.hpp"
 #include "../HubIntegration.hpp"
 #include "../client/ItemMapper.hpp"
+#include "../client/PermissionUtils.hpp"
 #include "../client/SortUtils.hpp"
 #include "../discord/GatewayWorker.hpp"
 #include "../discord/NetworkWorker.hpp"
@@ -19,11 +20,30 @@ void DiscordClient::loadGuildChannels(const QString &guildId) {
     return;
   }
 
-  if (guildId.trimmed() == m_selectedGuildId && !m_allGuildChannels.isEmpty()) {
+  QString safeGuildId = guildId.trimmed();
+  QString currentUserId = m_store ? m_store->currentUserId() : QString();
+
+  if (safeGuildId == m_selectedGuildId && !m_allGuildChannels.isEmpty()) {
+    // Fix: still re-fetch the current user's own roles for this guild
+    // even on the "already have this guild's channels cached, skip the
+    // channel refetch" path below - reported bug: granting a role to a
+    // user while BBCord has that guild open (or previously opened, then
+    // reselected without closing the app) never revealed the newly
+    // unlocked channel, even after a full app restart, because
+    // fetchSelfGuildMember() was only ever called from the "cold" path
+    // past this early return. Roles CAN change without a channel list
+    // change, so this needs its own unconditional refresh every time
+    // the guild is (re)selected, not just on the first load.
+    if (m_networkWorker != 0 && !currentUserId.isEmpty()) {
+      QMetaObject::invokeMethod(m_networkWorker, "fetchSelfGuildMember",
+                                Qt::QueuedConnection, Q_ARG(QString, m_token),
+                                Q_ARG(QString, safeGuildId),
+                                Q_ARG(QString, currentUserId));
+    }
     return;
   }
 
-  m_selectedGuildId = guildId.trimmed();
+  m_selectedGuildId = safeGuildId;
   m_allGuildChannels.clear();
   m_visibleGuildChannels.clear();
   m_visibleGuildChannelCount = 0;
@@ -40,6 +60,22 @@ void DiscordClient::loadGuildChannels(const QString &guildId) {
                               Qt::QueuedConnection, Q_ARG(QString, m_token),
                               Q_ARG(QString, m_selectedGuildId),
                               Q_ARG(int, kPageSize), Q_ARG(QString, QString()));
+    // Fix: READY.guilds[i] has no "members" field on this user-token
+    // gateway (confirmed via real debug logs - only "roles"/"threads"
+    // are present per guild), so the current user's own roles in this
+    // guild are unknown until this REST call comes back - fetched
+    // every time a guild is opened/reopened (not cached indefinitely)
+    // so a role granted while the app was closed is picked up as soon
+    // as the guild is selected again, without needing a restart.
+    // onSelfGuildMemberLoaded() re-runs the channel accessibility pass
+    // once this returns, since onGuildChannelsLoaded() above may well
+    // have already run (and filtered) with stale/empty role data.
+    if (!currentUserId.isEmpty()) {
+      QMetaObject::invokeMethod(m_networkWorker, "fetchSelfGuildMember",
+                                Qt::QueuedConnection, Q_ARG(QString, m_token),
+                                Q_ARG(QString, m_selectedGuildId),
+                                Q_ARG(QString, currentUserId));
+    }
   }
 }
 
@@ -101,17 +137,29 @@ void DiscordClient::onGuildChannelsLoaded(const QString &guildId,
 
   m_loadingGuildChannels = false;
   updateDataLoading();
-  m_allGuildChannels.clear();
-  QVariantList rawChannels;
+
+  // Fix: GET /guilds/{id}/channels returns every channel in the guild
+  // regardless of real per-user visibility - Discord expects the
+  // client to compute that itself from the guild's roles + each
+  // channel's permission_overwrites (see PermissionUtils.hpp for why,
+  // and the "accessible" comment removed from ItemMapper.cpp). Compute
+  // it here rather than in ItemMapper, since that mapper is stateless
+  // and doesn't have access to m_store (roles / current user id).
+  // The mapped-but-unfiltered items are kept in
+  // m_rawSelectedGuildChannels so recomputeAccessibleGuildChannels()
+  // can redo just the accessibility pass later (e.g. once
+  // onSelfGuildMemberLoaded() brings in the real role list) without
+  // needing to re-fetch channels from Discord.
+  m_rawSelectedGuildChannels.clear();
   for (int i = 0; i < channels.size(); ++i) {
     QVariantMap item = m_itemMapper->guildChannelToItem(channels.at(i).toMap());
-    if (!item.value("id").toString().isEmpty()) {
-      rawChannels.append(item);
+    if (item.value("id").toString().isEmpty()) {
+      continue;
     }
+    m_rawSelectedGuildChannels.append(item);
   }
-  m_allGuildChannels = m_sortUtils->sortedAccessibleGuildChannels(rawChannels);
 
-  appendVisibleGuildChannels();
+  recomputeAccessibleGuildChannels(guildId);
   setStatusText("Connected");
 
   // Fix: Threads are NOT fetched via REST here (or anywhere else).
@@ -126,6 +174,65 @@ void DiscordClient::onGuildChannelsLoaded(const QString &guildId,
   // buildGuildSubscribePayload(), see JsonParser.cpp) - handled in
   // Client.cpp::onGatewayDispatch(), written straight into
   // m_channelThreadsByParentId, no intermediate layer needed here.
+}
+
+void DiscordClient::onSelfGuildMemberLoaded(const QString &guildId,
+                                            const QStringList &roleIds) {
+  if (m_store) {
+    m_store->setCurrentUserRoleIdsForGuild(guildId, roleIds);
+  }
+
+  // Fix: this REST call (fetchSelfGuildMember(), fired alongside
+  // fetchGuildChannels() in loadGuildChannels()) is what actually
+  // supplies the current user's roles for a guild on this gateway
+  // (READY.guilds[i] has no "members" field - see the comment above).
+  // It very often lands AFTER onGuildChannelsLoaded() already ran its
+  // accessibility pass with an empty/stale role list, so that pass has
+  // to be redone here with the roles that just came in - otherwise a
+  // role granted to the user (while the app was closed OR while it was
+  // open, since this fetch also fires on every fresh loadGuildChannels()
+  // call) would never actually reveal the channel, even after a
+  // restart, exactly as reported.
+  recomputeAccessibleGuildChannels(guildId);
+}
+
+void DiscordClient::recomputeAccessibleGuildChannels(const QString &guildId) {
+  if (guildId != m_selectedGuildId) {
+    return;
+  }
+
+  QString currentUserId = m_store ? m_store->currentUserId() : QString();
+  QVariantList guildRoles =
+      m_store ? m_store->guildRolesForGuild(guildId) : QVariantList();
+  QStringList currentUserRoleIds =
+      m_store ? m_store->currentUserRoleIdsForGuild(guildId) : QStringList();
+
+  QVariantList rawChannels;
+  for (int i = 0; i < m_rawSelectedGuildChannels.size(); ++i) {
+    QVariantMap item = m_rawSelectedGuildChannels.at(i).toMap();
+    bool accessible = PermissionUtils::canViewChannel(
+        guildId, currentUserId, guildRoles, currentUserRoleIds,
+        item.value("permissionOverwrites").toList());
+    item["accessible"] = accessible;
+    rawChannels.append(item);
+  }
+
+  m_allGuildChannels = m_sortUtils->sortedAccessibleGuildChannels(rawChannels);
+  m_visibleGuildChannels.clear();
+  m_visibleGuildChannelCount = 0;
+  // Fix: appendVisibleGuildChannels() below re-appends the ENTIRE
+  // rebuilt m_allGuildChannels into m_store (since
+  // m_visibleGuildChannelCount was just reset to 0) - if the store
+  // still has the previous pass's channels in it (from an earlier
+  // onGuildChannelsLoaded() or recomputeAccessibleGuildChannels() call
+  // for this same guild), that would duplicate every channel in the
+  // QML-bound list instead of replacing it. Clear the store's copy
+  // first, same as loadGuildChannels() does before the very first
+  // fetch, so this stays a full rebuild rather than an accumulation.
+  if (m_store) {
+    m_store->setGuildChannels(QVariantList());
+  }
+  appendVisibleGuildChannels();
 }
 
 QVariantList DiscordClient::threadsForChannel(const QString &channelId) const {

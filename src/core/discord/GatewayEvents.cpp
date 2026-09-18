@@ -62,6 +62,13 @@ bool shouldParseDispatch(const QString &eventName) {
          eventName == "USER_SETTINGS_PROTO_UPDATE" ||
          eventName == "PRESENCE_UPDATE" ||
          eventName == "GUILD_MEMBER_LIST_UPDATE" ||
+         // Fix: needed so a role change reaches the client in
+         // real time (see the GUILD_MEMBER_UPDATE handling block in
+         // Client.cpp::onGatewayDispatch()) - without this, the event
+         // is silently dropped right here, before it ever reaches
+         // onGatewayDispatch(), exactly like THREAD_LIST_SYNC was
+         // below before it got added to this same whitelist.
+         eventName == "GUILD_MEMBER_UPDATE" ||
          // Fix: THREAD_LIST_SYNC was missing from this whitelist when
          // Threads was added - any message not on this list gets
          // returned early by the shouldParseDispatch() check at the top
@@ -158,11 +165,41 @@ QVariantMap buildLightMessageCreatePayload(const QByteArray &bytes,
       DiscordJsonParser::extractStringField(dataBytes, "guild_id");
   payload["mention_everyone"] =
       DiscordJsonParser::extractBoolField(dataBytes, "mention_everyone", false);
+  // Fix: this "light" payload (used for a message in a channel that
+  // ISN'T currently open - see the shouldBuildFullMessage branch above)
+  // used to stop here, without "content" or the full "mentions"/
+  // "mention_roles" arrays - fine for unread/mention-count bookkeeping,
+  // but this SAME payload also feeds Hub notifications
+  // (GatewayHandler::buildMentionNotification()) and
+  // DiscordMessage::fromVariantMap() (for mention-name resolution) -
+  // both need actual message content, confirmed via a real log showing
+  // the Hub notification body falling back to "New message" because
+  // "content" was one of the fields missing here. content/mentions/
+  // mention_roles/mention_channels are still just flat string/array
+  // extractions (no full nested-object parsing of e.g. embeds or
+  // attachments), so this stays cheap - the whole point of the "light"
+  // path is avoiding a full JSON parse of the entire message object,
+  // not avoiding these specific fields.
+  payload["content"] =
+      DiscordJsonParser::extractStringField(dataBytes, "content");
+  payload["mentions"] = DiscordJsonParser::extractArrayField(dataBytes, "mentions");
+  payload["mention_roles"] =
+      DiscordJsonParser::extractArrayField(dataBytes, "mention_roles");
+  payload["mention_channels"] =
+      DiscordJsonParser::extractArrayField(dataBytes, "mention_channels");
 
   QByteArray authorBytes =
       DiscordJsonParser::extractObjectField(dataBytes, "author");
   QVariantMap author;
   author["id"] = DiscordJsonParser::extractStringField(authorBytes, "id");
+  // Fix: needed for the Hub notification's "AuthorName: message" title
+  // (authorDisplayNameFromPayload() reads these) - without them, the
+  // author side of that string falls back to an id too, same class of
+  // bug as the missing "content" above.
+  author["username"] =
+      DiscordJsonParser::extractStringField(authorBytes, "username");
+  author["global_name"] =
+      DiscordJsonParser::extractStringField(authorBytes, "global_name");
   payload["author"] = author;
 
   if (!payload.value("mention_everyone").toBool() &&

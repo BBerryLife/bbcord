@@ -326,7 +326,19 @@ MentionNotification GatewayHandler::buildMentionNotification(
 
   QString channelId = payload.value("channel_id").toString().trimmed();
   QString guildId = payload.value("guild_id").toString().trimmed();
-  QString content = payload.value("content").toString();
+  // Fix: resolve <@id>/<@&id>/<#id> tokens to "@name"/"@role"/"#name"
+  // before building the notification preview - otherwise a ping shows
+  // its raw numeric id in the Hub notification body (confirmed via a
+  // real screenshot: "<@921017648869957654>" instead of a name).
+  // mentionRoles isn't resolved to real names here either (same
+  // limitation as DiscordMessage::resolveMentions() itself - Discord's
+  // "mention_roles" is a bare id array with no name attached, and
+  // resolving it needs the guild's role list) - falls back to the
+  // same generic "@role" DiscordMessage::resolveMentions() uses.
+  QString content = DiscordMessage::resolveMentions(
+      payload.value("content").toString(), payload.value("mentions").toList(),
+      payload.value("mention_roles").toList(),
+      payload.value("mention_channels").toList());
   if (channelId.isEmpty()) {
     return result;
   }

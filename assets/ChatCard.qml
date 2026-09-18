@@ -1,5 +1,6 @@
 import bb.cascades 1.4
 import bb.cascades.pickers 1.0
+import QtQuick 1.0
 import "media"
 
 Page {
@@ -11,6 +12,12 @@ Page {
     property string replyMessageId: ""
     property string replyAuthor: ""
     property string replyMessage: ""
+    // Fix: id of the message to flash-highlight after a
+    // scrollToMessage() jump (tapping a reply-quote box) - read
+    // directly by each MessageBubble delegate (bound via
+    // jumpHighlighted below) rather than something Cascades'
+    // ListView exposes an "item at index" API for, which it doesn't.
+    property string highlightedMessageId: ""
     property string editingMessageId: ""
     property bool active: true
     property bool olderLoadRequested: false
@@ -95,6 +102,8 @@ Page {
                             replyAuthor: ListItemData.replyAuthor
                             replyMessage: ListItemData.replyMessage
                             replyMessageHtml: ListItemData.replyMessageHtml
+                            replyMessageId: ListItemData.replyMessageId
+                            mentionsCurrentUser: ListItemData.mentionsCurrentUser === true
                             image: ListItemData.image
                             imageLoading: ListItemData.imageLoading
                             imageLoadFailed: ListItemData.imageLoadFailed
@@ -116,6 +125,27 @@ Page {
                             ownMessage: ListItemData.ownMessage === true
                             deleteAllowed: ListItemData.deleteAllowed === true
 
+                            // Fix: Connections (a QtQuick/non-visual
+                            // type) can't be a direct child of a
+                            // Cascades Container like MessageBubble -
+                            // confirmed via a real "Cannot assign
+                            // object to list" QML load error. Cascades
+                            // containers only accept VisualNode/Control
+                            // children in their default content list;
+                            // non-visual attached objects belong in
+                            // attachedObjects instead, same place Timer
+                            // lives inside MessageBubble.qml itself.
+                            attachedObjects: [
+                                Connections {
+                                    target: chatPage
+                                    onHighlightedMessageIdChanged: {
+                                        if (chatPage.highlightedMessageId !== "" && chatPage.highlightedMessageId === messageId) {
+                                            jumpHighlighted = true;
+                                        }
+                                    }
+                                }
+                            ]
+
                             onEditRequested: {
                                 ListItem.view.startEdit(messageId, message);
                             }
@@ -126,6 +156,10 @@ Page {
 
                             onReplyRequested: {
                                 ListItem.view.setReply(messageId, author, message);
+                            }
+
+                            onReplyPreviewTapped: {
+                                ListItem.view.scrollToMessage(messageId);
                             }
 
                             onCopyRequested: {
@@ -157,6 +191,10 @@ Page {
 
                 function setReply(messageId, author, message) {
                     chatPage.setReply(messageId, author, message);
+                }
+
+                function scrollToMessage(messageId) {
+                    chatPage.scrollToMessage(messageId);
                 }
 
                 function loadAttachmentImage(url) {
@@ -613,6 +651,30 @@ Page {
         messageList.scrollToItem([ count - 1 ], ScrollAnimation.Default);
     }
 
+    function scrollToMessage(messageId) {
+        // Fix: jump to a message's original position when its
+        // reply-quote box is tapped (see MessageBubble.qml's
+        // replyPreviewTapped / onReplyPreviewTapped above).
+        // indexForMessage() returns -1 if the message isn't currently
+        // loaded in chatDataModel (scrolled further back than what's
+        // been fetched) - nothing to scroll to in that case, so this
+        // just does nothing rather than erroring.
+        var index = chatController.indexForMessage(messageId);
+        if (index < 0) {
+            return;
+        }
+
+        messageList.scrollToItem([ index ], ScrollAnimation.Default);
+        // Fix: cleared and reset so the SAME message can be
+        // highlighted again on a second tap in a row - a plain
+        // assignment wouldn't re-fire onHighlightedMessageIdChanged
+        // for delegates if the value doesn't actually change (already
+        // set to this same id from a previous tap), so it's cleared
+        // first.
+        highlightedMessageId = "";
+        highlightedMessageId = messageId;
+    }
+
     function clearForChannelSwitch() {
         replyMessageId = "";
         replyAuthor = "";
@@ -620,6 +682,12 @@ Page {
         editingMessageId = "";
         olderLoadRequested = false;
         olderScrollReady = false;
+        // Fix: a message id from the PREVIOUS channel should never
+        // carry over - since ids are per-channel, this could otherwise
+        // coincidentally match a different message in the new channel
+        // (or just never clear on its own, leaking the old highlight
+        // state around).
+        highlightedMessageId = "";
     }
 
     function deactivatePage() {

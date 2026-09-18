@@ -28,7 +28,8 @@ enum RequestType {
   EditMessageRequest,
   DeleteMessageRequest,
   AvatarRequest,
-  GuildIconRequest
+  GuildIconRequest,
+  SelfGuildMemberRequest
 };
 
 struct RestRequest {
@@ -78,6 +79,25 @@ public:
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
                           int limit, const QString &afterId);
+  // Fix: READY.guilds[i] does NOT include a "members" field on this
+  // user-token gateway (confirmed via real debug logs - "roles" is
+  // present per guild, "members" is not, even though the old
+  // GUILD_CREATE-based code assumed both would be there together).
+  // Without "members" there's no way to know the current user's OWN
+  // roles in a guild from the gateway alone, which PermissionUtils
+  // needs to compute channel visibility - so fetch it directly via
+  // REST instead. Called once per guild right after loadGuildChannels()
+  // (see GuildChannels.cpp), and again whenever GUILD_MEMBER_UPDATE
+  // fires for the current user (role was changed while the app is
+  // running - see onGatewayDispatch()).
+  // Fix: userId is the CALLER'S OWN numeric snowflake id (from
+  // AppStore::currentUserId()), NOT the literal string "@me" - Discord
+  // rejects "@me" on this route with a 400 "Invalid Form Body" /
+  // NUMBER_TYPE_COERCE error (confirmed via a real response body: this
+  // route needs an actual snowflake, unlike some other "current user"
+  // endpoints that do accept "@me" as a special value).
+  void fetchSelfGuildMember(const QString &token, const QString &guildId,
+                            const QString &userId);
   // Threads aren't in the usual /guilds/{id}/channels response
   // (Discord's REST channel list only returns top-level channels) -
   // need a separate call to the "active threads" endpoint. NOTE: uses
@@ -127,6 +147,10 @@ Q_SIGNALS:
   void dmChannelsLoaded(const QVariantList &channels);
   void guildChannelsLoaded(const QString &guildId,
                            const QVariantList &channels);
+  // "roles" is the member's current role-id array in this guild (raw
+  // Discord strings) - see fetchSelfGuildMember()/PermissionUtils.
+  void selfGuildMemberLoaded(const QString &guildId,
+                             const QStringList &roleIds);
   // Returns the "threads" field of the GET .../threads/active response
   // as-is (trimmed down from the {threads, members, has_more} object —
   // see handling in RestClient.cpp) - each item is still a raw channel

@@ -255,6 +255,10 @@ QString ChatController::newestMessageId() const {
                  : QString();
 }
 
+int ChatController::indexForMessage(const QString &messageId) const {
+  return chatDataModelIndexForMessage(messageId);
+}
+
 void ChatController::requestInitialMessages() {
   QString channelId = safeCurrentChannelId();
   if (channelId.isEmpty() || !m_store) {
@@ -1089,6 +1093,47 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
   item["showAvatar"] = item.value("showAvatar", true).toBool();
   item["showUsername"] = item.value("showUsername", true).toBool();
   item["showTimestamp"] = item.value("showTimestamp", true).toBool();
+
+  // Fix: whether THIS message pings the current user - @everyone/@here,
+  // a direct @mention, or a role they hold - mirrors the same check
+  // GatewayHandler::gatewayMessageMentionsCurrentUser() does for
+  // notifications, but computed here (with access to m_store) from the
+  // raw mention fields DiscordMessage::toVariantMap() exposes, since
+  // that struct has no AppStore access itself. Drives the yellow
+  // highlight in MessageBubble.qml (own_message excluded - Discord
+  // doesn't highlight your own messages even if they happen to
+  // @mention yourself/@everyone).
+  bool mentionsCurrentUser = false;
+  if (m_store != 0 && authorId != m_store->currentUserId()) {
+    if (item.value("mentionEveryone").toBool()) {
+      mentionsCurrentUser = true;
+    } else {
+      QString currentUserId = m_store->currentUserId();
+      QVariantList mentions = item.value("mentions").toList();
+      for (int i = 0; i < mentions.size() && !mentionsCurrentUser; ++i) {
+        if (mentions.at(i).toMap().value("id").toString() == currentUserId) {
+          mentionsCurrentUser = true;
+        }
+      }
+      if (!mentionsCurrentUser) {
+        QString guildId = item.value("guildId").toString();
+        QStringList mentionRoleIds =
+            item.value("mentionRoleIds").toStringList();
+        if (!guildId.isEmpty() && !mentionRoleIds.isEmpty()) {
+          QStringList myRoleIds =
+              m_store->currentUserRoleIdsForGuild(guildId);
+          for (int i = 0; i < mentionRoleIds.size() && !mentionsCurrentUser;
+               ++i) {
+            if (myRoleIds.contains(mentionRoleIds.at(i))) {
+              mentionsCurrentUser = true;
+            }
+          }
+        }
+      }
+    }
+  }
+  item["mentionsCurrentUser"] = mentionsCurrentUser;
+
   return item;
 }
 

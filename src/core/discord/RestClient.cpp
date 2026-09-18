@@ -430,6 +430,8 @@ void DiscordRestClient::processNextRequest() {
       message = "Could not create Discord DM connection";
     } else if (m_requestType == GuildChannelsRequest) {
       message = "Could not create Discord channel connection";
+    } else if (m_requestType == SelfGuildMemberRequest) {
+      message = "Could not create Discord member connection";
     } else if (m_requestType == ActiveThreadsRequest) {
       message = "Could not create Discord threads connection";
     } else if (m_requestType == ArchivedThreadsRequest) {
@@ -689,6 +691,45 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
       }
 
       failDataRequest(dataErrorMessage(requestName, status));
+      break;
+    }
+
+    if (m_requestType == SelfGuildMemberRequest) {
+      qDebug() << "[discord-rest] self guild member status" << status;
+      if (status == 200) {
+        QString parseError;
+        QVariantMap member = DiscordJsonParser::parseObject(body, &parseError);
+        if (!parseError.isEmpty()) {
+          failDataRequest(
+              QString("Discord REST JSON error: %1").arg(parseError));
+          break;
+        }
+
+        QString guildId = m_guildId;
+        finishRequest(keepConnectionAlive);
+        QVariantList roleVariants = member.value("roles").toList();
+        QStringList roleIds;
+        for (int i = 0; i < roleVariants.size(); ++i) {
+          QString roleId = roleVariants.at(i).toString().trimmed();
+          if (!roleId.isEmpty()) {
+            roleIds.append(roleId);
+          }
+        }
+        emit selfGuildMemberLoaded(guildId, roleIds);
+        processNextRequest();
+        break;
+      }
+
+      failDataRequest(dataErrorMessage("self guild member", status));
+      // Fix: dataErrorMessage() only surfaces a generic "Discord self
+      // guild member error 400" - not enough to tell whether this is a
+      // route Discord genuinely rejects for user tokens (like the
+      // guild-level active-threads endpoint - see
+      // fetchActiveThreads()'s comment) vs. a malformed request on
+      // BBCord's end. Logging the raw body here, same as
+      // "password login failure body" does, to see Discord's actual
+      // {"message":..., "code":...} the next time this 400 happens.
+      qDebug() << "[discord-rest] self guild member failure body" << body;
       break;
     }
 

@@ -107,6 +107,7 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/core/client/GatewayHandler.cpp) \
         $$quote($$BASEDIR/src/core/client/ItemMapper.cpp) \
         $$quote($$BASEDIR/src/core/client/MessageCache.cpp) \
+        $$quote($$BASEDIR/src/core/client/PermissionUtils.cpp) \
         $$quote($$BASEDIR/src/core/client/SortUtils.cpp) \
         $$quote($$BASEDIR/src/core/discord/DiscordUtils.cpp) \
         $$quote($$BASEDIR/src/core/discord/Gateway.cpp) \
@@ -154,6 +155,7 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/core/client/GatewayHandler.hpp) \
         $$quote($$BASEDIR/src/core/client/ItemMapper.hpp) \
         $$quote($$BASEDIR/src/core/client/MessageCache.hpp) \
+        $$quote($$BASEDIR/src/core/client/PermissionUtils.hpp) \
         $$quote($$BASEDIR/src/core/client/SortUtils.hpp) \
         $$quote($$BASEDIR/src/core/discord/DiscordUtils.hpp) \
         $$quote($$BASEDIR/src/core/discord/Gateway.hpp) \

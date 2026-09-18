@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QSettings>
 #include <QStringList>
+#include <QTimer>
 
 // account icon (the BBCord tab in Hub) — a fixed "brand" icon, doesn't
 // change with read/unread state. Must live in the PUBLIC asset folder
@@ -85,7 +86,8 @@ static QString udsErrorName(int rc)
 
 HubIntegration::HubIntegration(QObject *parent)
     : QObject(parent), m_udsHandle(0), m_ready(false),
-      m_initAttemptCount(0), m_lastInitAttemptMs(0), m_pingPlayer(0)
+      m_initAttemptCount(0), m_lastInitAttemptMs(0), m_pingPlayer(0),
+      m_pingPlayerSourceSet(false)
 {
 }
 
@@ -469,6 +471,9 @@ void HubIntegration::playPingSound()
     // permission, rc=501) to also take down the sound.
     if (!m_pingPlayer) {
         m_pingPlayer = new bb::multimedia::MediaPlayer(this);
+    }
+
+    if (!m_pingPlayerSourceSet) {
         // "audio/ping.m4a" (not "assets/audio/ping.m4a"): the "assets"
         // folder declared in bar-descriptor.xml
         // (<asset path="assets">assets</asset>) is the root of the
@@ -478,6 +483,49 @@ void HubIntegration::playPingSound()
         // assets/images/icons/first.png, see
         // MainPageController.cpp/ItemMapper.cpp).
         m_pingPlayer->setSourceUrl(QUrl("asset:///audio/ping.m4a"));
+        m_pingPlayer->prepare();
+        m_pingPlayerSourceSet = true;
+        // Fix: bb::multimedia::MediaPlayer::setSourceUrl()/prepare()
+        // are async on BB10 (talk to the mm-renderer service over
+        // IPC) - calling play() immediately after them, as this
+        // method used to do (both when lazily creating the player
+        // here AND in an earlier, reverted attempt at creating it
+        // eagerly in the constructor), raced against that attach
+        // actually completing, confirmed via real logs:
+        // "MediaPlayerPrivate::attachInput: Failed to attach input"
+        // followed by a play() "error=Internal" on the very first
+        // ping of a session specifically (subsequent pings worked
+        // fine once the player was already attached) - deferring this
+        // FIRST play() by a short delay gives the async attach time
+        // to finish. bb::multimedia::MediaState's exact enum values
+        // aren't something this codebase can currently verify against
+        // a local SDK header, so a short timer is used here instead
+        // of a mediaStateChanged() signal connection, to avoid
+        // depending on enum names that can't be confirmed - simpler
+        // and more conservative than it looks, not a workaround
+        // avoiding the "real" fix.
+        QTimer::singleShot(300, this, SLOT(onPingPlayerReadyRetry()));
+        return;
+    }
+
+    bb::multimedia::MediaError::Type err = m_pingPlayer->play();
+    if (err != bb::multimedia::MediaError::None) {
+        qDebug() << "[Hub] playPingSound failed, mediaError=" << err;
+    }
+}
+
+void HubIntegration::onPingPlayerReadyRetry()
+{
+    // Fix: this is the deferred first play() from playPingSound()'s
+    // "just set the source" branch above - by now (300ms later) the
+    // async setSourceUrl()/prepare() from that call should have
+    // finished attaching. If a message arrived once but no ping was
+    // actually queued (shouldn't happen given playPingSound() always
+    // reaches this either directly or via this retry), this still
+    // degrades gracefully: play() just plays silence/nothing rather
+    // than erroring.
+    if (!m_pingPlayer) {
+        return;
     }
     bb::multimedia::MediaError::Type err = m_pingPlayer->play();
     if (err != bb::multimedia::MediaError::None) {

@@ -39,6 +39,32 @@ void DiscordRestClient::fetchGuildChannels(const QString &token,
   enqueueRequest(request);
 }
 
+void DiscordRestClient::fetchSelfGuildMember(const QString &token,
+                                             const QString &guildId,
+                                             const QString &userId) {
+  RestRequest request;
+  request.token = token.trimmed();
+  request.guildId = guildId.trimmed();
+  QString safeUserId = userId.trimmed();
+  if (request.token.isEmpty() || request.guildId.isEmpty() ||
+      safeUserId.isEmpty()) {
+    emit requestFailed("Self member request is empty");
+    return;
+  }
+
+  // Fix: "@me" is NOT accepted here - confirmed via a real 400 response
+  // ({"errors":{"user_id":{"_errors":[{"code":"NUMBER_TYPE_COERCE",
+  // "message":"Value \"@me\" is not snowflake."}]}}}) - this route
+  // needs the caller's actual numeric user id.
+  request.requestPath = QString("/api/v9/guilds/%1/members/%2")
+                            .arg(request.guildId)
+                            .arg(safeUserId);
+
+  request.type = SelfGuildMemberRequest;
+  enqueueRequest(request);
+}
+
+
 void DiscordRestClient::fetchActiveThreads(const QString &token,
                                            const QString &channelId) {
   // Fix: GET /guilds/{id}/threads/active (used previously) always

@@ -3,6 +3,8 @@
 #include "../../utils/MarkdownParser.hpp"
 
 #include <QDateTime>
+#include <QRegExp>
+#include <QStringList>
 
 namespace {
 QDateTime parseDiscordTimestamp(const QString &timestamp) {
@@ -144,6 +146,74 @@ QString DiscordMessage::authorInitials() const {
   return name.left(1).toUpper();
 }
 
+QString DiscordMessage::resolveMentions(const QString &rawContent,
+                                        const QVariantList &mentions,
+                                        const QVariantList &mentionRoles,
+                                        const QVariantList &mentionChannels) {
+  Q_UNUSED(mentionRoles);
+  if (rawContent.isEmpty()) {
+    return rawContent;
+  }
+
+  QString result = rawContent;
+
+  // User mentions: "<@id>" or "<@!id>" (the "!" form means "display
+  // nickname if the member has one" - Discord's real client shows the
+  // same "@name" for both, so both patterns resolve the same way
+  // here). displayName() prefers a server nickname/global name over
+  // the bare username, matching what the official client shows.
+  for (int i = 0; i < mentions.size(); ++i) {
+    QVariantMap mention = mentions.at(i).toMap();
+    QString userId = mention.value("id").toString().trimmed();
+    if (userId.isEmpty()) {
+      continue;
+    }
+    DiscordUser user;
+    user.id = userId;
+    user.username = mention.value("username").toString();
+    user.globalName =
+        mention.value("global_name", mention.value("globalName")).toString();
+    QString displayName = user.displayName();
+    if (displayName.isEmpty()) {
+      continue;
+    }
+    result.replace(QString("<@!%1>").arg(userId), "@" + displayName);
+    result.replace(QString("<@%1>").arg(userId), "@" + displayName);
+  }
+
+  // Channel mentions: "<#id>" - mention_channels entries carry "name"
+  // directly (unlike role mentions, which are just a bare id array -
+  // see the mention_roles fallback below).
+  for (int i = 0; i < mentionChannels.size(); ++i) {
+    QVariantMap channel = mentionChannels.at(i).toMap();
+    QString channelId = channel.value("id").toString().trimmed();
+    QString channelName = channel.value("name").toString();
+    if (channelId.isEmpty() || channelName.isEmpty()) {
+      continue;
+    }
+    result.replace(QString("<#%1>").arg(channelId), "#" + channelName);
+  }
+
+  // Role mentions: "<@&id>" - Discord's "mention_roles" field is only
+  // a bare array of role id strings (no name attached), and resolving
+  // the real name needs the guild's role list (AppStore), which this
+  // static method has no access to - falling back to a generic "@role"
+  // rather than leaving the raw numeric id visible, same spirit as
+  // what's being fixed here for user mentions. mentionRoles is kept as
+  // a parameter (each entry already normalized to {"id": ...} in
+  // fromVariantMap()) so a future caller with role-name access can
+  // pass real names in without changing this method's signature again.
+  QRegExp roleMentionPattern("<@&(\\d+)>");
+  int searchIndex = 0;
+  while ((searchIndex = roleMentionPattern.indexIn(result, searchIndex)) !=
+         -1) {
+    result.replace(searchIndex, roleMentionPattern.matchedLength(), "@role");
+    searchIndex += QString("@role").length();
+  }
+
+  return result;
+}
+
 QVariantMap DiscordMessage::toVariantMap() const {
   QVariantMap data;
   data["id"] = id;
@@ -156,7 +226,37 @@ QVariantMap DiscordMessage::toVariantMap() const {
   data["initials"] = authorInitials();
   data["nonce"] = nonce;
   data["message"] = content;
-  data["messageHtml"] = MarkdownParser::toHtml(content);
+  // Fix: resolve <@id>/<@&id>/<#id> tokens to "@name"/"#name"/"@role"
+  // BEFORE markdown/HTML conversion, not after - MarkdownParser::toHtml()
+  // escapes/wraps raw text, so running resolveMentions() on its output
+  // would risk mangling tags it already inserted. content itself (and
+  // "message"/"content" below) is left untouched - those are the raw
+  // form, still needed for editing this message later.
+  QString resolvedContent =
+      resolveMentions(content, mentions, mentionRoles, mentionChannels);
+  data["messageHtml"] = MarkdownParser::toHtml(resolvedContent);
+  // Fix: raw mention data, needed by
+  // ChatController::prepareMessageForModel() to compute
+  // "mentionsCurrentUser" (this message pings @everyone/@here, the
+  // current user directly, or a role they have) - that computation
+  // needs AppStore (current user id + their roles in this guild),
+  // which this const method has no access to, so it's done one layer
+  // up instead, using these raw fields. mentionRoles here is already
+  // normalized to [{"id": ...}, ...] (see fromVariantMap()) - re-flatten
+  // back to a bare id list since that's the shape
+  // gatewayMessageMentionsCurrentUser()'s logic (mirrored in
+  // prepareMessageForModel()) expects, matching Discord's own
+  // "mention_roles" shape.
+  QStringList mentionRoleIds;
+  for (int i = 0; i < mentionRoles.size(); ++i) {
+    QString roleId = mentionRoles.at(i).toMap().value("id").toString();
+    if (!roleId.isEmpty()) {
+      mentionRoleIds.append(roleId);
+    }
+  }
+  data["mentions"] = mentions;
+  data["mentionRoleIds"] = mentionRoleIds;
+  data["mentionEveryone"] = mentionEveryone;
   data["content"] = content;
   data["timestamp"] = timestamp;
   data["timestampMs"] = timestampMs();
@@ -166,7 +266,9 @@ QVariantMap DiscordMessage::toVariantMap() const {
   data["replyMessageId"] = replyMessageId;
   data["replyAuthor"] = replyAuthor;
   data["replyMessage"] = replyContent;
-  data["replyMessageHtml"] = MarkdownParser::toHtml(replyContent);
+  QString resolvedReplyContent = resolveMentions(
+      replyContent, replyMentions, replyMentionRoles, replyMentionChannels);
+  data["replyMessageHtml"] = MarkdownParser::toHtml(resolvedReplyContent);
   data["pending"] = pending;
   data["failed"] = failed;
   data["isGroupStart"] = isGroupStart;
@@ -215,6 +317,24 @@ DiscordMessage DiscordMessage::fromVariantMap(const QVariantMap &data) {
       data.value("channel_id", data.value("channelId")).toString();
   message.guildId = data.value("guild_id", data.value("guildId")).toString();
   message.content = data.value("content", data.value("message")).toString();
+  // Fix: raw Discord arrays needed to resolve <@id>/<@&id>/<#id> tokens
+  // in content into display names - see resolveMentions() and its call
+  // site in toVariantMap(). "mention_roles" is just an array of role id
+  // strings (not {id,...} objects like the other two), normalized to
+  // the same {"id": ...} shape here so resolveMentions() can treat all
+  // three arrays uniformly.
+  message.mentions = data.value("mentions").toList();
+  message.mentionChannels = data.value("mention_channels").toList();
+  message.mentionEveryone =
+      data.value("mention_everyone", data.value("mentionEveryone")).toBool();
+  QVariantList rawMentionRoleIds = data.value("mention_roles").toList();
+  QVariantList mentionRoles;
+  for (int i = 0; i < rawMentionRoleIds.size(); ++i) {
+    QVariantMap roleEntry;
+    roleEntry["id"] = rawMentionRoleIds.at(i).toString();
+    mentionRoles.append(roleEntry);
+  }
+  message.mentionRoles = mentionRoles;
   message.nonce = data.value("nonce").toString();
   message.timestamp = data.value("timestamp").toString();
   message.editedTimestamp =
@@ -252,6 +372,17 @@ DiscordMessage DiscordMessage::fromVariantMap(const QVariantMap &data) {
             .toString();
     message.replyAuthor = user.displayName();
     message.replyContent = reference.value("content").toString();
+    message.replyMentions = reference.value("mentions").toList();
+    message.replyMentionChannels = reference.value("mention_channels").toList();
+    QVariantList rawReplyMentionRoleIds =
+        reference.value("mention_roles").toList();
+    QVariantList replyMentionRoles;
+    for (int i = 0; i < rawReplyMentionRoleIds.size(); ++i) {
+      QVariantMap roleEntry;
+      roleEntry["id"] = rawReplyMentionRoleIds.at(i).toString();
+      replyMentionRoles.append(roleEntry);
+    }
+    message.replyMentionRoles = replyMentionRoles;
   } else {
     QVariantMap messageReference = data.value("message_reference").toMap();
     message.replyMessageId =

@@ -26,6 +26,8 @@ public Q_SLOTS:
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
                           int limit, const QString &afterId);
+  void fetchSelfGuildMember(const QString &token, const QString &guildId,
+                            const QString &userId);
   void fetchActiveThreads(const QString &token, const QString &channelId);
   void fetchArchivedThreads(const QString &token, const QString &channelId,
                             const QString &beforeCursor);
@@ -59,6 +61,8 @@ Q_SIGNALS:
   void dmChannelsLoaded(const QVariantList &channels);
   void guildChannelsLoaded(const QString &guildId,
                            const QVariantList &channels);
+  void selfGuildMemberLoaded(const QString &guildId,
+                             const QStringList &roleIds);
   void activeThreadsLoaded(const QString &channelId,
                            const QVariantList &threads);
   void archivedThreadsLoaded(const QString &channelId,

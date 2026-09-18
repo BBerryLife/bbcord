@@ -134,6 +134,16 @@ Container {
                             text: ListItemData.name
                             horizontalAlignment: HorizontalAlignment.Fill
                             textStyle.fontSize: FontSize.Medium
+                            // Fix: unread channels get a bright white
+                            // name (Discord's own unread-channel color),
+                            // read channels fall back to Discord's own
+                            // muted channel-name gray (#949BA4) - both
+                            // set explicitly rather than trying to
+                            // "unset" back to a theme default, since
+                            // Cascades' textStyle.color expects an
+                            // actual Color, not an empty/undefined
+                            // value.
+                            textStyle.color: (ListItemData.unread || ListItemData.mentionCount > 0) ? Color.create("#FFFFFF") : Color.create("#949BA4")
                             opacity: (ListItemData.unread || ListItemData.mentionCount > 0) ? 1.0 : 0.45
                         }
 

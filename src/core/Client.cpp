@@ -56,6 +56,7 @@ DiscordClient::DiscordClient(QObject *parent)
       m_selectedGuildId(m_state.selectedGuildId), m_guilds(m_state.guilds),
       m_allDmChannels(m_state.allDmChannels), m_dmChannels(m_state.dmChannels),
       m_allGuildChannels(m_state.allGuildChannels),
+      m_rawSelectedGuildChannels(m_state.rawSelectedGuildChannels),
       m_visibleGuildChannels(m_state.visibleGuildChannels),
       m_channelThreadsByParentId(m_state.channelThreadsByParentId),
       m_activeThreadChannelId(m_state.activeThreadChannelId),
@@ -120,6 +121,7 @@ DiscordClient::DiscordClient(AppStore *store, QObject *parent)
       m_selectedGuildId(m_state.selectedGuildId), m_guilds(m_state.guilds),
       m_allDmChannels(m_state.allDmChannels), m_dmChannels(m_state.dmChannels),
       m_allGuildChannels(m_state.allGuildChannels),
+      m_rawSelectedGuildChannels(m_state.rawSelectedGuildChannels),
       m_visibleGuildChannels(m_state.visibleGuildChannels),
       m_channelThreadsByParentId(m_state.channelThreadsByParentId),
       m_activeThreadChannelId(m_state.activeThreadChannelId),
@@ -716,97 +718,53 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       // Fix: the user-token gateway does NOT send individual
       // GUILD_CREATE events per guild on initial load (confirmed via
       // real debug logs: 0/140 events in a full session) - unlike the
-      // traditional bot protocol. All full guild data (channels,
-      // threads, roles, members...) is bundled by Discord straight into
-      // the "guilds" field of the READY payload itself - this is also
-      // why the READY payload is ~5MB even with only 49 guilds.
+      // traditional bot protocol. Most full guild data (channels,
+      // threads, roles...) is bundled by Discord straight into the
+      // "guilds" field of the READY payload itself - this is also why
+      // the READY payload is ~5MB even with only 49 guilds.
       // buildLightReadyPayload() (GatewayEvents.cpp) was updated to
       // extract this raw "guilds" array (without parsing the full JSON
       // payload, keeping the fast-path optimization) - loop through it
-      // here to get each guild's threads, sharing
-      // mergeThreadsIntoCache() with THREAD_LIST_SYNC.
+      // here to get each guild's threads AND roles.
+      // Fix: role parsing used to live ONLY in the GUILD_CREATE branch
+      // below, which (per the comment above) never actually fires on
+      // initial load - so m_store's role data for every guild stayed
+      // empty for the whole session, which made
+      // PermissionUtils::canViewChannel() treat every channel as
+      // inaccessible (base permissions computed from zero roles = 0)
+      // and the channel list came back empty for every guild. Confirmed
+      // via a real BBCord log: "guild channels" REST calls returned 200
+      // with data, but the channel list rendered empty - the filtering
+      // pass throwing everything away, not the fetch. Parsing roles
+      // here, from the data READY actually carries, is the fix.
+      //
+      // Fix: unlike "roles"/"threads", each guild object in
+      // READY.guilds[] does NOT include a "members" field on this
+      // gateway - directly confirmed via a debug qDebug() dump of a
+      // real guild object's keys (temporarily added, then removed once
+      // this was settled). So the current user's OWN roles in a guild
+      // can't be derived from READY at all - see
+      // fetchSelfGuildMember()/onSelfGuildMemberLoaded()
+      // (GuildChannels.cpp) for where that's fetched instead, and the
+      // GUILD_MEMBER_UPDATE handling further below in this function for
+      // how a role change is picked up in real time afterwards.
       QVariantList readyGuilds = payload.value("guilds").toList();
       for (int i = 0; i < readyGuilds.size(); ++i) {
         QVariantMap guildRaw = readyGuilds.at(i).toMap();
+        QString readyGuildId = guildRaw.value("id").toString().trimmed();
         mergeThreadsIntoCache(guildRaw.value("threads").toList(),
                               QVariantList());
+        if (!readyGuildId.isEmpty()) {
+          mergeGuildRolesIntoCache(readyGuildId, guildRaw);
+        }
       }
     }
   }
 
   if (eventName == "GUILD_CREATE") {
     QString guildId = payload.value("id").toString().trimmed();
-    QString currentUserId = m_store ? m_store->currentUserId() : QString();
-    if (!guildId.isEmpty() && !currentUserId.isEmpty()) {
-      // GUILD_CREATE carries "members": the full array of guild member
-      // objects (not a single "member" field for self — that's a
-      // restricted-intent bot gateway behavior, NOT applicable to the
-      // user-account gateway BBCord uses). Find the entry whose
-      // user.id matches ourselves to get our roles, used for the Hub
-      // notification feature when pinged via a role.
-      QVariantList members = payload.value("members").toList();
-      for (int i = 0; i < members.size(); ++i) {
-        QVariantMap member = members.at(i).toMap();
-        if (member.value("user").toMap().value("id").toString() ==
-            currentUserId) {
-          QVariantList roleVariants = member.value("roles").toList();
-          QStringList roleIds;
-          for (int j = 0; j < roleVariants.size(); ++j) {
-            QString roleId = roleVariants.at(j).toString().trimmed();
-            if (!roleId.isEmpty()) {
-              roleIds.append(roleId);
-            }
-          }
-          if (m_store) {
-            m_store->setCurrentUserRoleIdsForGuild(guildId, roleIds);
-          }
-          break;
-        }
-      }
-    }
-
-    if (!guildId.isEmpty() && m_store) {
-      // "roles": the guild's full array of role objects (id/name/color/
-      // position/hoist/...), entirely separate from "members" above.
-      // color == 0 means the role has no custom color — the real
-      // Discord client doesn't show black for this case, it uses the
-      // default text color, so we leave color empty instead of
-      // "#000000".
-      QVariantList roleVariants = payload.value("roles").toList();
-      QVariantList parsedRoles;
-      for (int i = 0; i < roleVariants.size(); ++i) {
-        QVariantMap roleRaw = roleVariants.at(i).toMap();
-        QString roleId = roleRaw.value("id").toString().trimmed();
-        if (roleId.isEmpty()) {
-          continue;
-        }
-
-        DiscordRole role;
-        role.id = roleId;
-        role.guildId = guildId;
-        role.name = roleRaw.value("name").toString();
-        role.position = roleRaw.value("position").toInt();
-        role.hoisted = roleRaw.value("hoist").toBool();
-
-        bool colorOk = false;
-        qint64 colorValue = roleRaw.value("color").toLongLong(&colorOk);
-        if (colorOk && colorValue > 0) {
-          role.color =
-              "#" + QString("%1")
-                        .arg(colorValue, 6, 16, QLatin1Char('0'))
-                        .toUpper();
-        }
-
-        QVariantMap roleMap;
-        roleMap["id"] = role.id;
-        roleMap["guildId"] = role.guildId;
-        roleMap["name"] = role.name;
-        roleMap["color"] = role.color;
-        roleMap["position"] = role.position;
-        roleMap["hoisted"] = role.hoisted;
-        parsedRoles.append(roleMap);
-      }
-      m_store->setGuildRoles(guildId, parsedRoles);
+    if (!guildId.isEmpty()) {
+      mergeGuildRolesIntoCache(guildId, payload);
     }
 
     // GUILD_CREATE doesn't fire on the user-token gateway during
@@ -818,6 +776,7 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
     // this as one of three reasons GUILD_CREATE is sent).
     mergeThreadsIntoCache(payload.value("threads").toList(), QVariantList());
   }
+
 
   if (eventName == "GUILD_MEMBER_LIST_UPDATE") {
     // Standard Discord payload (not restricted-intent bot-gateway):
@@ -833,6 +792,10 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
     // Members sheet is open) are NOT handled yet — see comment at
     // AppStore::setMemberListForChannel().
     QString guildId = payload.value("guild_id").toString().trimmed();
+    // Fix: needed for the self-role fallback further below (see the
+    // "opportunistically pick up the CURRENT USER's own role list"
+    // comment inside the member-parsing loop).
+    QString currentUserId = m_store ? m_store->currentUserId() : QString();
     // The standard op:14/GUILD_MEMBER_LIST_UPDATE payload (an
     // unofficial protocol, not in Discord's official bot docs) has no
     // root-level "channel_id" field - that field only exists for
@@ -966,6 +929,31 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
           }
 
           QVariantList memberRoleIds = memberRaw.value("roles").toList();
+          // Fix: opportunistically pick up the CURRENT USER's own role
+          // list whenever they happen to appear in a member-list SYNC
+          // (which does include a full "roles" array per member,
+          // confirmed working in real logs) - this is a fallback path,
+          // separate from fetchSelfGuildMember()/GUILD_MEMBER_UPDATE
+          // (see GuildChannels.cpp), for whenever that REST endpoint
+          // isn't usable for user tokens. Only updates if this SYNC's
+          // roles differ from what's cached, to avoid redundant
+          // recomputeAccessibleGuildChannels() calls on every channel
+          // open (a SYNC fires each time a channel is opened, not just
+          // when roles actually change).
+          if (userId == currentUserId && !guildId.isEmpty() && m_store) {
+            QStringList newRoleIds;
+            for (int j = 0; j < memberRoleIds.size(); ++j) {
+              QString roleId = memberRoleIds.at(j).toString().trimmed();
+              if (!roleId.isEmpty()) {
+                newRoleIds.append(roleId);
+              }
+            }
+            if (m_store->currentUserRoleIdsForGuild(guildId) != newRoleIds) {
+              m_store->setCurrentUserRoleIdsForGuild(guildId, newRoleIds);
+              recomputeAccessibleGuildChannels(guildId);
+            }
+          }
+
           int bestPosition = -1;
           for (int j = 0; j < memberRoleIds.size(); ++j) {
             QString roleId = memberRoleIds.at(j).toString();
@@ -1018,6 +1006,36 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
              << rawThreads.size();
   }
 
+  if (eventName == "GUILD_MEMBER_UPDATE") {
+    // Fix: real-time counterpart to fetchSelfGuildMember() (see
+    // GuildChannels.cpp) - Discord sends this to every gateway
+    // connection a member (or an admin acting on them) has open
+    // whenever that member's roles change, INCLUDING when it's the
+    // current user's own roles. Without handling it, a role granted
+    // while BBCord is sitting on the affected guild wouldn't reveal
+    // the newly-unlocked channel until the guild was closed and
+    // reselected (which is what triggers the REST fetch). Standard
+    // Discord payload: guild_id, user.id, roles (the member's full new
+    // role-id array, not a delta).
+    QString guildId = payload.value("guild_id").toString().trimmed();
+    QString userId = payload.value("user").toMap().value("id").toString();
+    QString currentUserId = m_store ? m_store->currentUserId() : QString();
+    if (!guildId.isEmpty() && !userId.isEmpty() && userId == currentUserId) {
+      QVariantList roleVariants = payload.value("roles").toList();
+      QStringList roleIds;
+      for (int i = 0; i < roleVariants.size(); ++i) {
+        QString roleId = roleVariants.at(i).toString().trimmed();
+        if (!roleId.isEmpty()) {
+          roleIds.append(roleId);
+        }
+      }
+      if (m_store) {
+        m_store->setCurrentUserRoleIdsForGuild(guildId, roleIds);
+      }
+      recomputeAccessibleGuildChannels(guildId);
+    }
+  }
+
   if (eventName == "MESSAGE_CREATE" || eventName == "MESSAGE_UPDATE" ||
       eventName == "MESSAGE_DELETE") {
     QString channelId = payload.value("channel_id").toString().trimmed();
@@ -1056,6 +1074,98 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       eventName, payload, m_pendingUnreadGuildIds,
       m_pendingMentionCountsByGuildId, m_pendingMentionCountsByChannelId,
       m_pendingUnreadChannelIds, m_pendingDmUiUpdate, m_gatewayUiUpdateQueued);
+}
+
+void DiscordClient::mergeGuildRolesIntoCache(const QString &guildId,
+                                             const QVariantMap &guildRaw) {
+  if (!m_store) {
+    return;
+  }
+
+  // "roles": the guild's full array of role objects (id/name/color/
+  // position/hoist/permissions/...). Present the same way whether
+  // guildRaw came from READY's "guilds" array or a genuine
+  // GUILD_CREATE payload - both are "a guild object" per Discord's
+  // docs. color == 0 means the role has no custom color — the real
+  // Discord client doesn't show black for this case, it uses the
+  // default text color, so we leave color empty instead of "#000000".
+  QVariantList roleVariants = guildRaw.value("roles").toList();
+  QVariantList parsedRoles;
+  for (int i = 0; i < roleVariants.size(); ++i) {
+    QVariantMap roleRaw = roleVariants.at(i).toMap();
+    QString roleId = roleRaw.value("id").toString().trimmed();
+    if (roleId.isEmpty()) {
+      continue;
+    }
+
+    DiscordRole role;
+    role.id = roleId;
+    role.guildId = guildId;
+    role.name = roleRaw.value("name").toString();
+    role.position = roleRaw.value("position").toInt();
+    role.hoisted = roleRaw.value("hoist").toBool();
+    // "permissions" arrives as a stringified int64 in the Discord
+    // payload (values exceed int32 range) - toLongLong() parses the
+    // numeric string directly, no manual conversion needed.
+    role.permissions = roleRaw.value("permissions").toLongLong();
+
+    bool colorOk = false;
+    qint64 colorValue = roleRaw.value("color").toLongLong(&colorOk);
+    if (colorOk && colorValue > 0) {
+      role.color = "#" +
+                   QString("%1").arg(colorValue, 6, 16, QLatin1Char('0'))
+                       .toUpper();
+    }
+
+    QVariantMap roleMap;
+    roleMap["id"] = role.id;
+    roleMap["guildId"] = role.guildId;
+    roleMap["name"] = role.name;
+    roleMap["color"] = role.color;
+    roleMap["position"] = role.position;
+    roleMap["hoisted"] = role.hoisted;
+    roleMap["permissions"] = role.permissions;
+    parsedRoles.append(roleMap);
+  }
+  m_store->setGuildRoles(guildId, parsedRoles);
+
+  // "members": the full array of guild member objects (not a single
+  // "member" field for self — that's a restricted-intent bot gateway
+  // behavior, NOT applicable to the user-account gateway BBCord uses).
+  // Find the entry whose user.id matches ourselves to get our roles -
+  // used for the Hub notification feature when pinged via a role, and
+  // for PermissionUtils::canViewChannel() (GuildChannels.cpp).
+  // Fix: confirmed this "members" field is NEVER present when this
+  // function is called from the READY branch above - only real
+  // GUILD_CREATE payloads (the join-a-new-guild-while-running case)
+  // actually carry it, so this loop is effectively dead code on the
+  // READY path and only fires there in practice. The real source of
+  // the current user's own roles on initial load is
+  // fetchSelfGuildMember() (GuildChannels.cpp) - kept here anyway since
+  // it's harmless (empty "members" -> loop just does nothing) and
+  // covers the genuine GUILD_CREATE case for free.
+  QString currentUserId = m_store->currentUserId();
+  if (currentUserId.isEmpty()) {
+    return;
+  }
+  QVariantList members = guildRaw.value("members").toList();
+  for (int i = 0; i < members.size(); ++i) {
+    QVariantMap member = members.at(i).toMap();
+    if (member.value("user").toMap().value("id").toString() !=
+        currentUserId) {
+      continue;
+    }
+    QVariantList roleVariantsForMember = member.value("roles").toList();
+    QStringList roleIds;
+    for (int j = 0; j < roleVariantsForMember.size(); ++j) {
+      QString roleId = roleVariantsForMember.at(j).toString().trimmed();
+      if (!roleId.isEmpty()) {
+        roleIds.append(roleId);
+      }
+    }
+    m_store->setCurrentUserRoleIdsForGuild(guildId, roleIds);
+    break;
+  }
 }
 
 void DiscordClient::mergeThreadsIntoCache(

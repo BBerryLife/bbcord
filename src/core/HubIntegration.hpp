@@ -103,6 +103,14 @@ public:
     // icon folder.
     static QString publicAssetPath();
 
+private slots:
+    // Fix: deferred retry for the FIRST ping's play() call - see the
+    // long comment in playPingSound() for why a short delay (rather
+    // than a mediaStateChanged() signal connection, whose exact enum
+    // values this codebase can't currently verify) is used to work
+    // around setSourceUrl()/prepare() being asynchronous.
+    void onPingPlayerReadyRetry();
+
 private:
     Q_DISABLE_COPY(HubIntegration)
 
@@ -150,12 +158,19 @@ private:
     // Hub state, independent of the app, not cleared by reinstall).
     static const long long ACCOUNT_ID = 5313230001LL;
 
-    // Created lazily in playPingSound() (not pre-created in the
-    // constructor — if HubIntegration is created but no session ever
-    // has a notify-worthy message, there's no reason to claim OS audio
-    // resources earlier than needed). Parent = this so it self-destructs
-    // via QObject, no manual cleanup needed in the destructor.
+    // Fix: created (and its source set) in the constructor now, not
+    // lazily in playPingSound() - confirmed via real logs that
+    // creating it AND calling play() back-to-back in the same call (as
+    // playPingSound() used to do) raced against
+    // MediaPlayer::setSourceUrl()'s async nature, surfacing as an
+    // "attach input" failure followed by a play() error on the actual
+    // first ping. Parent = this so it self-destructs via QObject, no
+    // manual cleanup needed in the destructor.
     bb::multimedia::MediaPlayer *m_pingPlayer;
+    // Fix: true once m_pingPlayer's source has been set at least once -
+    // guards the one-time setSourceUrl()+prepare() setup in
+    // playPingSound() from re-running on every ping.
+    bool m_pingPlayerSourceSet;
 };
 
 #endif // HUBINTEGRATION_HPP

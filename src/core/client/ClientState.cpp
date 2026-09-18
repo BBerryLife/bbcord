@@ -30,6 +30,7 @@ void ClientState::resetSession() {
 
 void ClientState::resetGuildChannels() {
   allGuildChannels.clear();
+  rawSelectedGuildChannels.clear();
   visibleGuildChannels.clear();
   channelThreadsByParentId.clear();
   activeThreadChannelId.clear();

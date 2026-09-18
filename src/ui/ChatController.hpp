@@ -67,6 +67,16 @@ public:
   Q_INVOKABLE bool hasMoreBefore() const;
   Q_INVOKABLE QString oldestMessageId() const;
   Q_INVOKABLE QString newestMessageId() const;
+  // Fix: for "jump to the original message" when tapping a reply-quote
+  // box (see MessageBubble.qml's replyBox tap handling / ChatCard.qml's
+  // scrollToMessage()) - thin public wrapper around the existing
+  // private chatDataModelIndexForMessage(), which was already used
+  // internally for message updates/edits but had no QML-callable
+  // entry point. Returns -1 if the message isn't currently loaded in
+  // chatDataModel (e.g. it's further back than what's been fetched) -
+  // callers should treat that as "can't jump there yet" rather than an
+  // error.
+  Q_INVOKABLE int indexForMessage(const QString &messageId) const;
 
   Q_INVOKABLE void requestInitialMessages();
   Q_INVOKABLE void requestOlderMessages();

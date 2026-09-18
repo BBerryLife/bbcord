@@ -29,6 +29,8 @@ DiscordNetworkWorker::DiscordNetworkWorker(QObject *parent)
           SIGNAL(dmChannelsLoaded(QVariantList)));
   connect(&m_dataClient, SIGNAL(guildChannelsLoaded(QString, QVariantList)),
           this, SIGNAL(guildChannelsLoaded(QString, QVariantList)));
+  connect(&m_dataClient, SIGNAL(selfGuildMemberLoaded(QString, QStringList)),
+          this, SIGNAL(selfGuildMemberLoaded(QString, QStringList)));
   connect(&m_dataClient, SIGNAL(activeThreadsLoaded(QString, QVariantList)),
           this, SIGNAL(activeThreadsLoaded(QString, QVariantList)));
   connect(&m_dataClient,
@@ -158,6 +160,20 @@ void DiscordNetworkWorker::fetchGuildChannels(const QString &token,
   }
 
   m_dataClient.fetchGuildChannels(token, guildId, limit, afterId);
+}
+
+void DiscordNetworkWorker::fetchSelfGuildMember(const QString &token,
+                                                const QString &guildId,
+                                                const QString &userId) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "fetchSelfGuildMember",
+                              Qt::QueuedConnection, Q_ARG(QString, token),
+                              Q_ARG(QString, guildId),
+                              Q_ARG(QString, userId));
+    return;
+  }
+
+  m_dataClient.fetchSelfGuildMember(token, guildId, userId);
 }
 
 void DiscordNetworkWorker::fetchActiveThreads(const QString &token,
