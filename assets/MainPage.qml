@@ -285,7 +285,16 @@ Page {
                                 horizontalAlignment: HorizontalAlignment.Left
                                 verticalAlignment: VerticalAlignment.Center
                                 background: Color.create("#FFFFFF")
-                                visible: (ListItemData.type == "server" || ListItemData.type == "folder") && ListItemData.unread == true
+                                // Fix: white bar for ANY new message in
+                                // the server, mention or not - unread
+                                // (a plain new message) OR mentionCount
+                                // > 0 (a ping) both show it. The red
+                                // badge below is separate and layered
+                                // on TOP of this bar for pings
+                                // specifically, not a replacement for
+                                // it - a plain unread message gets only
+                                // the white bar, a ping gets both.
+                                visible: (ListItemData.type == "server" || ListItemData.type == "folder") && (ListItemData.unread == true || ListItemData.mentionCount > 0)
                             }
 
                             Container {
@@ -294,6 +303,13 @@ Page {
                                 horizontalAlignment: HorizontalAlignment.Right
                                 verticalAlignment: VerticalAlignment.Top
                                 background: Color.create("#ED4245")
+                                // Fix: pings specifically (not every
+                                // unread message) still get this red
+                                // count badge, shown together with the
+                                // white bar above rather than instead
+                                // of it - both clear the same way, when
+                                // the user reads the pinging message
+                                // (mentionCount drops to 0).
                                 visible: ListItemData.mentionCount > 0
 
                                 layout: DockLayout {}

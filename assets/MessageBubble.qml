@@ -306,6 +306,17 @@ Container {
                 topPadding: ui.du(0.6)
                 bottomPadding: ui.du(0.6)
                 background: Color.create('#151617')
+                // Fix: reply boxes longer than ~2 lines stopped
+                // responding to taps - the tap handler itself was
+                // fine (short replies worked), the multiline HTML
+                // Label below was intercepting the touch once it grew
+                // past a couple of lines instead of letting it reach
+                // the TapHandler on the outer reply Container.
+                // PassThrough here and on the Label makes both act as
+                // transparent to touch, so the tap always reaches the
+                // outer Container regardless of how many lines the
+                // reply preview wraps to.
+                touchPropagationMode: TouchPropagationMode.PassThrough
 
                 Label {
                     text: root.replyAuthor
@@ -318,10 +329,19 @@ Container {
                     text: root.replyMessageHtml
                     topMargin: ui.du(-0.3)
                     multiline: true
+                    // Fix: Cascades' Label has no line-count-limiting
+                    // property (confirmed via a real "Cannot assign to
+                    // non-existent property \"maxLineCount\"" QML load
+                    // error - that's a QtQuick2 Text property, not
+                    // available here) - reply previews just wrap fully
+                    // now, relying on touchPropagationMode below to
+                    // keep the tap working regardless of how many
+                    // lines that ends up being.
                     textFormat: TextFormat.Html
                     opacity: 0.85
                     textStyle.fontSize: FontSize.XXSmall
                     textStyle.color: Color.create("#B5BAC1")
+                    touchPropagationMode: TouchPropagationMode.PassThrough
                 }
             }
         }

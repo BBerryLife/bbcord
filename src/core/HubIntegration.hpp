@@ -104,15 +104,27 @@ public:
     static QString publicAssetPath();
 
 private slots:
+    // Fix: deferred entry point for playPingSound() - see the long
+    // comment there for why the whole call (not just the final
+    // play()) is pushed to a separate event-loop turn.
+    void onPlayPingSoundDeferred();
     // Fix: deferred retry for the FIRST ping's play() call - see the
-    // long comment in playPingSound() for why a short delay (rather
-    // than a mediaStateChanged() signal connection, whose exact enum
-    // values this codebase can't currently verify) is used to work
-    // around setSourceUrl()/prepare() being asynchronous.
+    // long comment in onPlayPingSoundDeferred() for why a short delay
+    // (rather than a mediaStateChanged() signal connection, whose
+    // exact enum values this codebase can't currently verify) is used
+    // to work around setSourceUrl()/prepare() being asynchronous.
     void onPingPlayerReadyRetry();
 
 private:
     Q_DISABLE_COPY(HubIntegration)
+
+    // Fix: shared by onPlayPingSoundDeferred() (first play attempt
+    // once source is set) and onPingPlayerReadyRetry() (deferred first
+    // play) - calls play() and, on failure, discards m_pingPlayer so
+    // the NEXT ping constructs a fresh one instead of repeating calls
+    // on a connection already known to be broken. See the long
+    // comment on its definition in HubIntegration.cpp.
+    void playOnPingPlayerOrResetForRetry();
 
     // uds_item_updated() does NOT patch individual fields — it REPLACES
     // THE WHOLE record with exactly what's set in that call; any field

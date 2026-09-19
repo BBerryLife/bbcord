@@ -1442,6 +1442,19 @@ void DiscordClient::flushGatewayUiUpdates() {
   }
   for (int i = 0; i < channelIds.size(); ++i) {
     updateGuildChannelUnread(channelIds.at(i), true);
+    // Fix: updateGuildChannelUnread() above only takes effect if this
+    // channel is already present in m_allGuildChannels/
+    // m_visibleGuildChannels - i.e. only if its guild is the one
+    // currently open. A message in a channel belonging to some OTHER
+    // guild would silently do nothing there, so that channel would
+    // never show up white/unread once its guild finally gets opened
+    // later. markChannelUnread() records the fact independently of
+    // what's currently loaded; recomputeAccessibleGuildChannels() (via
+    // onGuildChannelsLoaded()) applies it once that guild's channels
+    // actually load - see AppStore.hpp for the full explanation.
+    if (m_store) {
+      m_store->markChannelUnread(channelIds.at(i));
+    }
   }
   QStringList mentionChannelIds = channelMentionCounts.keys();
   for (int i = 0; i < mentionChannelIds.size(); ++i) {

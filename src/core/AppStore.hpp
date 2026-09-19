@@ -2,6 +2,7 @@
 #define AppStore_HPP_
 
 #include <QMap>
+#include <QSet>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -105,6 +106,16 @@ public:
   // no data for that guild yet (no GUILD_CREATE received, or not
   // logged in).
   Q_INVOKABLE QStringList currentUserRoleIdsForGuild(const QString &guildId) const;
+  // Fix: whether channelId has a message that arrived while some OTHER
+  // guild was open (or before any guild was ever opened this session)
+  // - updateGuildChannelUnread() in GuildChannels.cpp can only mark a
+  // channel unread if it's already present in the currently-loaded
+  // m_allGuildChannels/m_visibleGuildChannels, which isn't the case
+  // for a channel in a guild the user hasn't opened yet. This tracks
+  // that fact independently so onGuildChannelsLoaded() can apply it
+  // once the channel's guild actually gets loaded - see
+  // markChannelUnread()/clearChannelUnread() below.
+  Q_INVOKABLE bool isChannelMarkedUnread(const QString &channelId) const;
 
   // Full role list (id/name/color/position/hoisted) for a guild, loaded
   // from the "roles" field of the GUILD_CREATE payload — see
@@ -168,6 +179,12 @@ public Q_SLOTS:
   void clearChatCache();
   void setCurrentUserRoleIdsForGuild(const QString &guildId,
                                      const QStringList &roleIds);
+  // Fix: mark/clear a channel's "has an unseen message from a guild
+  // that wasn't open when it arrived" state - see
+  // isChannelMarkedUnread() above for why this exists separately from
+  // the unread flag directly on the channel's own QVariantMap entry.
+  void markChannelUnread(const QString &channelId);
+  void clearChannelUnread(const QString &channelId);
 
   // Overwrites the full role list for a guild (full replace, not a
   // per-item patch — matching Discord's GUILD_CREATE behavior: each
@@ -237,6 +254,9 @@ private:
   QMap<QString, QStringList> m_currentUserRoleIdsByGuildId;
   QMap<QString, QVariantList> m_guildRolesByGuildId;
   QMap<QString, QVariantList> m_memberListByChannelId;
+  // Fix: see isChannelMarkedUnread()/markChannelUnread()/
+  // clearChannelUnread() in this header for why this exists.
+  QSet<QString> m_unreadChannelIds;
 };
 
 #endif /* AppStore_HPP_ */

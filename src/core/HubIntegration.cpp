@@ -469,8 +469,17 @@ void HubIntegration::playPingSound()
     // and sound are two independent paths, no reason for a UDS failure
     // (as has happened before: missing _sys_access_pim_unified
     // permission, rc=501) to also take down the sound.
+    qDebug() << "[Hub] playPingSound() called";
+    QTimer::singleShot(0, this, SLOT(onPlayPingSoundDeferred()));
+}
+
+void HubIntegration::onPlayPingSoundDeferred()
+{
+    qDebug() << "[Hub] onPlayPingSoundDeferred() running, m_pingPlayer="
+             << (void *) m_pingPlayer << "sourceSet=" << m_pingPlayerSourceSet;
     if (!m_pingPlayer) {
         m_pingPlayer = new bb::multimedia::MediaPlayer(this);
+        qDebug() << "[Hub] created new MediaPlayer" << (void *) m_pingPlayer;
     }
 
     if (!m_pingPlayerSourceSet) {
@@ -485,51 +494,47 @@ void HubIntegration::playPingSound()
         m_pingPlayer->setSourceUrl(QUrl("asset:///audio/ping.m4a"));
         m_pingPlayer->prepare();
         m_pingPlayerSourceSet = true;
-        // Fix: bb::multimedia::MediaPlayer::setSourceUrl()/prepare()
-        // are async on BB10 (talk to the mm-renderer service over
-        // IPC) - calling play() immediately after them, as this
-        // method used to do (both when lazily creating the player
-        // here AND in an earlier, reverted attempt at creating it
-        // eagerly in the constructor), raced against that attach
-        // actually completing, confirmed via real logs:
-        // "MediaPlayerPrivate::attachInput: Failed to attach input"
-        // followed by a play() "error=Internal" on the very first
-        // ping of a session specifically (subsequent pings worked
-        // fine once the player was already attached) - deferring this
-        // FIRST play() by a short delay gives the async attach time
-        // to finish. bb::multimedia::MediaState's exact enum values
-        // aren't something this codebase can currently verify against
-        // a local SDK header, so a short timer is used here instead
-        // of a mediaStateChanged() signal connection, to avoid
-        // depending on enum names that can't be confirmed - simpler
-        // and more conservative than it looks, not a workaround
-        // avoiding the "real" fix.
+        qDebug() << "[Hub] source set + prepare() called, will retry play() in 300ms";
         QTimer::singleShot(300, this, SLOT(onPingPlayerReadyRetry()));
         return;
     }
 
-    bb::multimedia::MediaError::Type err = m_pingPlayer->play();
-    if (err != bb::multimedia::MediaError::None) {
-        qDebug() << "[Hub] playPingSound failed, mediaError=" << err;
-    }
+    playOnPingPlayerOrResetForRetry();
 }
 
 void HubIntegration::onPingPlayerReadyRetry()
 {
-    // Fix: this is the deferred first play() from playPingSound()'s
-    // "just set the source" branch above - by now (300ms later) the
-    // async setSourceUrl()/prepare() from that call should have
-    // finished attaching. If a message arrived once but no ping was
-    // actually queued (shouldn't happen given playPingSound() always
-    // reaches this either directly or via this retry), this still
-    // degrades gracefully: play() just plays silence/nothing rather
-    // than erroring.
+    qDebug() << "[Hub] onPingPlayerReadyRetry() running, m_pingPlayer="
+             << (void *) m_pingPlayer;
     if (!m_pingPlayer) {
         return;
     }
-    bb::multimedia::MediaError::Type err = m_pingPlayer->play();
-    if (err != bb::multimedia::MediaError::None) {
-        qDebug() << "[Hub] playPingSound failed, mediaError=" << err;
-    }
+    playOnPingPlayerOrResetForRetry();
 }
 
+void HubIntegration::playOnPingPlayerOrResetForRetry()
+{
+    bb::multimedia::MediaError::Type err = m_pingPlayer->play();
+    qDebug() << "[Hub] play() called, mediaError=" << err;
+    if (err == bb::multimedia::MediaError::None) {
+        return;
+    }
+
+    qDebug() << "[Hub] playPingSound failed, mediaError=" << err;
+    // Fix: confirmed via real logs that once MediaPlayer's constructor
+    // fails to connect to mm-renderer, every subsequent call on that
+    // SAME instance (setSourceUrl/prepare/play) keeps failing with
+    // "MMR context is null" too - a player that failed to connect at
+    // construction time doesn't appear to recover on its own.
+    // Discarding it and clearing m_pingPlayerSourceSet means the NEXT
+    // ping (whenever the next notify-worthy message arrives) goes
+    // through onPlayPingSoundDeferred()'s "no player yet" branch again,
+    // constructing a genuinely new MediaPlayer - a fresh attempt at
+    // connecting to mm-renderer, rather than repeating calls on one
+    // that's already known to be broken. deleteLater() rather than
+    // delete since this may be running from within a slot invoked on
+    // m_pingPlayer's own connections.
+    m_pingPlayer->deleteLater();
+    m_pingPlayer = 0;
+    m_pingPlayerSourceSet = false;
+}

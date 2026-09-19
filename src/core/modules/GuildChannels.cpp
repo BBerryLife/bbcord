@@ -100,12 +100,60 @@ void DiscordClient::selectChannel(const QString &channelId) {
   bool channelStatusChanged = updateGuildChannelUnread(safeChannelId, false);
   channelStatusChanged =
       updateGuildChannelMentionCount(safeChannelId, 0) || channelStatusChanged;
+  qDebug() << "[discord-chat] selectChannel" << safeChannelId
+           << "channelStatusChanged=" << channelStatusChanged;
   if (channelStatusChanged && m_store) {
     m_store->setGuildChannels(m_visibleGuildChannels);
   }
   if (m_store) {
+    // Fix: clears the independent "marked unread while some other
+    // guild was open" record from AppStore too (see markChannelUnread()
+    // in flushGatewayUiUpdates()/recomputeAccessibleGuildChannels()) -
+    // without this, reopening this channel's guild later would keep
+    // re-marking it unread even after the user has already read it
+    // here.
+    m_store->clearChannelUnread(safeChannelId);
     m_store->selectChannel(safeChannelId);
     syncGatewayMessageFilterStateToWorker();
+  }
+
+  // Fix: updateGuildUnread(guildId, true)/updateGuildMentionCount()
+  // (Client.cpp/Guilds.cpp) are what light up the server's white bar
+  // and red mention badge in the first place, but nothing ever called
+  // them again to clear those - confirmed as a real bug: the white
+  // bar stayed on (and, separately, the badge was reported as always
+  // gone even when it shouldn't be, from an earlier fix that removed
+  // it from the UI entirely rather than just adjusting when it shows)
+  // even after every channel in that guild had been read. Re-derive
+  // both from the guild's channels every time one of them is opened:
+  // the white bar should reflect ANY channel still unread/mentioned;
+  // the red badge should reflect the SUM of mentions still
+  // outstanding across the guild's channels (m_allGuildChannels
+  // already reflects safeChannelId's own just-cleared state above).
+  if (channelStatusChanged) {
+    QString ownerGuildId = m_chatGuildByChannelId.value(safeChannelId).trimmed();
+    if (ownerGuildId.isEmpty()) {
+      ownerGuildId = m_selectedGuildId.trimmed();
+    }
+    qDebug() << "[discord-chat] recompute guild badges for" << ownerGuildId
+             << "from" << m_allGuildChannels.size() << "channels";
+    if (!ownerGuildId.isEmpty()) {
+      bool anyChannelStillUnread = false;
+      int totalMentionCount = 0;
+      for (int i = 0; i < m_allGuildChannels.size(); ++i) {
+        QVariantMap channel = m_allGuildChannels.at(i).toMap();
+        int channelMentionCount = channel.value("mentionCount").toInt();
+        totalMentionCount += channelMentionCount;
+        if (channel.value("unread").toBool() || channelMentionCount > 0) {
+          anyChannelStillUnread = true;
+        }
+      }
+      qDebug() << "[discord-chat] result anyChannelStillUnread="
+               << anyChannelStillUnread
+               << "totalMentionCount=" << totalMentionCount;
+      updateGuildUnread(ownerGuildId, anyChannelStillUnread);
+      updateGuildMentionCount(ownerGuildId, totalMentionCount);
+    }
   }
 
   QString guildId = m_chatGuildByChannelId.value(safeChannelId).trimmed();
@@ -214,6 +262,17 @@ void DiscordClient::recomputeAccessibleGuildChannels(const QString &guildId) {
         guildId, currentUserId, guildRoles, currentUserRoleIds,
         item.value("permissionOverwrites").toList());
     item["accessible"] = accessible;
+    // Fix: a message can arrive (via gateway) for this channel while
+    // some OTHER guild is open, in which case updateGuildChannelUnread()
+    // (Client.cpp) had nothing to update yet - AppStore recorded it
+    // separately via markChannelUnread() instead (see
+    // flushGatewayUiUpdates()/AppStore.hpp). Apply that recorded state
+    // now that this channel is actually being (re)loaded, so it shows
+    // up white/unread immediately rather than only after the NEXT
+    // message arrives while this guild happens to be open.
+    if (m_store && m_store->isChannelMarkedUnread(item.value("id").toString())) {
+      item["unread"] = true;
+    }
     rawChannels.append(item);
   }
 

@@ -320,7 +320,7 @@
 <context>
     <name>MainPage</name>
     <message>
-        <location filename="../assets/MainPage.qml" line="437"/>
+        <location filename="../assets/MainPage.qml" line="453"/>
         <source>Threads #</source>
         <translation type="unfinished"></translation>
     </message>
@@ -409,16 +409,16 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="383"/>
-        <location filename="../assets/MessageBubble.qml" line="449"/>
-        <location filename="../assets/MessageBubble.qml" line="893"/>
+        <location filename="../assets/MessageBubble.qml" line="403"/>
+        <location filename="../assets/MessageBubble.qml" line="469"/>
+        <location filename="../assets/MessageBubble.qml" line="913"/>
         <source>Open attachment: </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="383"/>
-        <location filename="../assets/MessageBubble.qml" line="449"/>
-        <location filename="../assets/MessageBubble.qml" line="893"/>
+        <location filename="../assets/MessageBubble.qml" line="403"/>
+        <location filename="../assets/MessageBubble.qml" line="469"/>
+        <location filename="../assets/MessageBubble.qml" line="913"/>
         <source>Open image: </source>
         <translation type="unfinished"></translation>
     </message>
@@ -644,7 +644,7 @@
     <name>ThreadList</name>
     <message>
         <location filename="../assets/ThreadList.qml" line="57"/>
-        <source>Threads #</source>
+        <source>Forums #</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

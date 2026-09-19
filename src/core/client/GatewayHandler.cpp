@@ -186,33 +186,53 @@ void GatewayHandler::applyGatewayOrderingEvent(
     } else if (!guildId.isEmpty() &&
                payload.value("author").toMap().value("id").toString() !=
                    (m_store ? m_store->currentUserId() : QString())) {
-      if (!pendingUnreadGuildIds.contains(guildId)) {
-        pendingUnreadGuildIds.append(guildId);
+      // Fix: confirmed as a real bug - a message arriving in the
+      // channel/guild the user is CURRENTLY looking at was still
+      // unconditionally marked unread here, same as a message in any
+      // other channel. selectChannel() only clears that mark when
+      // it's actually called (i.e. when the user switches INTO a
+      // channel) - it never re-runs just because a new message
+      // arrived while already sitting in that channel, so the
+      // unread/mention badges would light up and then never turn
+      // off until the user left and came back. Skip marking anything
+      // unread for the channel currently open (m_store's
+      // selectedChannelId) - the user is looking right at the
+      // message, there is nothing to catch up on.
+      bool isCurrentlyOpenChannel =
+          m_store != 0 && !channelId.isEmpty() &&
+          m_store->selectedChannelId() == channelId;
+
+      if (!isCurrentlyOpenChannel) {
+        if (!pendingUnreadGuildIds.contains(guildId)) {
+          pendingUnreadGuildIds.append(guildId);
+        }
       }
       bool mentionsCurrentUser = gatewayMessageMentionsCurrentUser(payload);
-      if (payload.contains("mention_count")) {
-        pendingMentionCountsByGuildId.insert(
-            guildId, payload.value("mention_count").toInt());
-      } else if (mentionsCurrentUser) {
-        int mentionCount = 0;
-        if (pendingMentionCountsByGuildId.contains(guildId)) {
-          mentionCount = pendingMentionCountsByGuildId.value(guildId).toInt();
-        } else {
-          QMetaObject::invokeMethod(
-              m_client, "guildMentionCount", Qt::DirectConnection,
-              Q_RETURN_ARG(int, mentionCount), Q_ARG(QString, guildId));
+      if (!isCurrentlyOpenChannel) {
+        if (payload.contains("mention_count")) {
+          pendingMentionCountsByGuildId.insert(
+              guildId, payload.value("mention_count").toInt());
+        } else if (mentionsCurrentUser) {
+          int mentionCount = 0;
+          if (pendingMentionCountsByGuildId.contains(guildId)) {
+            mentionCount = pendingMentionCountsByGuildId.value(guildId).toInt();
+          } else {
+            QMetaObject::invokeMethod(
+                m_client, "guildMentionCount", Qt::DirectConnection,
+                Q_RETURN_ARG(int, mentionCount), Q_ARG(QString, guildId));
+          }
+          pendingMentionCountsByGuildId.insert(guildId, mentionCount + 1);
         }
-        pendingMentionCountsByGuildId.insert(guildId, mentionCount + 1);
-      }
-      if (mentionsCurrentUser && !channelId.isEmpty()) {
-        int channelMentionCount =
-            pendingMentionCountsByChannelId.value(channelId).toInt();
-        pendingMentionCountsByChannelId.insert(channelId,
-                                               channelMentionCount + 1);
-      }
-      if (!channelId.isEmpty() &&
-          !pendingUnreadChannelIds.contains(channelId)) {
-        pendingUnreadChannelIds.append(channelId);
+        if (mentionsCurrentUser && !channelId.isEmpty()) {
+          int channelMentionCount =
+              pendingMentionCountsByChannelId.value(channelId).toInt();
+          pendingMentionCountsByChannelId.insert(channelId,
+                                                 channelMentionCount + 1);
+        }
+        if (!channelId.isEmpty() &&
+            !pendingUnreadChannelIds.contains(channelId)) {
+          pendingUnreadChannelIds.append(channelId);
+        }
       }
     }
     if (!gatewayUiUpdateQueued) {

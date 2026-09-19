@@ -142,6 +142,21 @@ QVariantList AppStore::memberListForChannel(const QString &channelId) const {
   return m_memberListByChannelId.value(channelId.trimmed());
 }
 
+bool AppStore::isChannelMarkedUnread(const QString &channelId) const {
+  return m_unreadChannelIds.contains(channelId.trimmed());
+}
+
+void AppStore::markChannelUnread(const QString &channelId) {
+  QString safeChannelId = channelId.trimmed();
+  if (!safeChannelId.isEmpty()) {
+    m_unreadChannelIds.insert(safeChannelId);
+  }
+}
+
+void AppStore::clearChannelUnread(const QString &channelId) {
+  m_unreadChannelIds.remove(channelId.trimmed());
+}
+
 void AppStore::selectHome() {
   if (m_selectedGuildId.isEmpty() && m_selectedChannelId.isEmpty()) {
     return;

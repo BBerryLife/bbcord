@@ -54,7 +54,7 @@ Page {
 
 	titleBar: TitleBar {
 		id: titleBar
-		title: qsTr("Threads #") + threadListPage.channelName
+		title: qsTr("Forums #") + threadListPage.channelName
 		visibility: ChromeVisibility.Visible
 
 		dismissAction: ActionItem {
@@ -259,6 +259,13 @@ Page {
 			text: threadListPage.archivedLoading ? qsTr("Loading...") : qsTr("Load older threads")
 			horizontalAlignment: HorizontalAlignment.Fill
 			topMargin: ui.du(1.0)
+			// Fix: was sitting flush against the screen edges (left,
+			// right, bottom) with only topMargin set - added matching
+			// side/bottom margins so it has breathing room on all
+			// sides like the rest of the app's buttons.
+			leftMargin: ui.du(2.0)
+			rightMargin: ui.du(2.0)
+			bottomMargin: ui.du(1.5)
 			enabled: !threadListPage.archivedLoading
 			// Shown even when threadCount === 0 (a channel may have no
 			// active threads left but still have archived ones) - only
