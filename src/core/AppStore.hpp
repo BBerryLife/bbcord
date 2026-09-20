@@ -88,6 +88,21 @@ public:
   Q_INVOKABLE void selectHome();
   Q_INVOKABLE void selectGuild(const QString &guildId);
   Q_INVOKABLE void selectChannel(const QString &channelId);
+  // Fix: clears ONLY the channel selection, keeping the guild selection
+  // intact - needed for backRequested on the chat page (see
+  // ChatController::closeChannel()/MainPage.qml's openChat()): the
+  // user backed out of the channel but is still sitting inside that
+  // guild's channel list, so selectGuild()/selectHome() (which also
+  // clear/change the guild) are the wrong tool here. Before this
+  // existed, backing out of a channel left m_selectedChannelId
+  // pointing at the channel the user just left, so every
+  // "is the user currently looking at this channel" check elsewhere
+  // (the guild-badge recompute, GatewayHandler's isCurrentlyOpenChannel
+  // guard, etc.) kept treating a non-mention message that arrived
+  // AFTER the user left as if they were still reading it live - no
+  // unread mark, so the channel/server badge never lit up for it,
+  // confirmed as a real bug via logs.
+  Q_INVOKABLE void clearChannelSelection();
   Q_INVOKABLE QVariantList messagesForChannel(const QString &channelId) const;
   Q_INVOKABLE bool isChatInitialLoaded(const QString &channelId) const;
   Q_INVOKABLE bool isChatLoadingInitial(const QString &channelId) const;

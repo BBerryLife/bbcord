@@ -207,9 +207,30 @@ void DiscordClient::updateGuildMentionCount(const QString &guildId,
       guild["mentionCount"] = mentionCount < 0 ? 0 : mentionCount;
       m_guilds.replace(i, guild);
       syncStateToNetworkWorker();
+      // Fix: confirmed as a real bug - m_guilds (this class's own
+      // working copy of the guild list) was updated above, but that
+      // alone doesn't reach the UI. m_store->setGuilds() is only ever
+      // called from loadMainData()/onGuildsLoaded() (the initial
+      // load), so a badge/mention-count change made here after that
+      // point never propagated to AppStore, and therefore never
+      // reached the sidebar's badge/white-bar in QML - the server
+      // list kept showing whatever it last had, even though m_guilds
+      // (and any debug log built from it) already had the corrected
+      // value. Push the updated list to the store here too, exactly
+      // like the initial load does.
+      if (m_store) {
+        m_store->setGuilds(m_guilds);
+      }
       return;
     }
   }
+  // Fix: temporary diagnostic logging - if guildId is never found in
+  // m_guilds here, this function silently does nothing (no badge
+  // update, no log) - needed to pin down a reported bug where a
+  // non-mention message's guild badge only seems to "take" after the
+  // FIRST mention of a session has been read/cleared, never before.
+  qDebug() << "[discord-chat] updateGuildMentionCount: guild" << safeGuildId
+           << "not found in m_guilds (size=" << m_guilds.size() << ")";
 }
 
 void DiscordClient::updateGuildUnread(const QString &guildId, bool unread) {
@@ -224,7 +245,17 @@ void DiscordClient::updateGuildUnread(const QString &guildId, bool unread) {
       guild["unread"] = unread;
       m_guilds.replace(i, guild);
       syncStateToNetworkWorker();
+      // Fix: see the matching comment in updateGuildMentionCount()
+      // just above - same missing propagation to AppStore/QML, same
+      // fix.
+      if (m_store) {
+        m_store->setGuilds(m_guilds);
+      }
       return;
     }
   }
+  // Fix: temporary diagnostic logging - see the matching comment in
+  // updateGuildMentionCount() just above.
+  qDebug() << "[discord-chat] updateGuildUnread: guild" << safeGuildId
+           << "not found in m_guilds (size=" << m_guilds.size() << ")";
 }

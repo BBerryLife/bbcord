@@ -202,6 +202,18 @@ void GatewayHandler::applyGatewayOrderingEvent(
           m_store != 0 && !channelId.isEmpty() &&
           m_store->selectedChannelId() == channelId;
 
+      // Fix: temporary diagnostic logging - needed to pin down a
+      // reported bug where a non-mention message's guild badge only
+      // seems to "take" after the FIRST mention of a session has been
+      // read/cleared, never before. Without this, there was no way to
+      // tell from a log whether a given non-mention MESSAGE_CREATE
+      // even reached this branch, or what isCurrentlyOpenChannel
+      // evaluated to for it.
+      qDebug() << "[discord-chat] non-own MESSAGE_CREATE guild" << guildId
+               << "channel" << channelId << "selectedChannelId"
+               << (m_store ? m_store->selectedChannelId() : QString("<no store>"))
+               << "isCurrentlyOpenChannel" << isCurrentlyOpenChannel;
+
       if (!isCurrentlyOpenChannel) {
         if (!pendingUnreadGuildIds.contains(guildId)) {
           pendingUnreadGuildIds.append(guildId);

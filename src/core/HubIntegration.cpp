@@ -65,6 +65,18 @@ static const long long HUB_CATEGORY_ID = 1;
 const int HubIntegration::MAX_INIT_ATTEMPTS = 5;
 const qint64 HubIntegration::INIT_RETRY_INTERVAL_MS = 3000;
 
+// Same rationale as MAX_INIT_ATTEMPTS/INIT_RETRY_INTERVAL_MS above, but
+// for mm-renderer (the simulator/device audio service) instead of Hub's
+// UDS service: MediaPlayer's constructor has been observed failing to
+// connect to it ("Unable to connect to MMR") for a stretch right after
+// app startup, with every subsequent call on that same instance then
+// failing too ("MMR context is null" on setSourceUrl/prepare/play).
+// Rather than silently giving up on the ping that happened to trigger
+// this and only trying again whenever the next message arrives, retry
+// the SAME ping a few times a short interval apart.
+const int HubIntegration::MAX_PING_RETRIES = 4;
+const int HubIntegration::PING_RETRY_DELAY_MS = 500;
+
 // Maps uds_error_code_t (unified_data_source.h) to a readable name in
 // the log — a raw numeric rc isn't enough to know what went wrong when
 // reading logs on-device without the header on hand.
@@ -87,7 +99,7 @@ static QString udsErrorName(int rc)
 HubIntegration::HubIntegration(QObject *parent)
     : QObject(parent), m_udsHandle(0), m_ready(false),
       m_initAttemptCount(0), m_lastInitAttemptMs(0), m_pingPlayer(0),
-      m_pingPlayerSourceSet(false)
+      m_pingPlayerSourceSet(false), m_pingRetryCount(0)
 {
 }
 
@@ -470,6 +482,13 @@ void HubIntegration::playPingSound()
     // (as has happened before: missing _sys_access_pim_unified
     // permission, rc=501) to also take down the sound.
     qDebug() << "[Hub] playPingSound() called";
+    // Fix: reset the retry budget for THIS ping - m_pingRetryCount is
+    // shared state consumed by playOnPingPlayerOrResetForRetry() below,
+    // so without resetting it here, a later ping arriving before the
+    // previous one exhausted its retries (or right after it did) would
+    // inherit however many retries were left over, rather than getting
+    // its own full budget.
+    m_pingRetryCount = 0;
     QTimer::singleShot(0, this, SLOT(onPlayPingSoundDeferred()));
 }
 
@@ -517,6 +536,7 @@ void HubIntegration::playOnPingPlayerOrResetForRetry()
     bb::multimedia::MediaError::Type err = m_pingPlayer->play();
     qDebug() << "[Hub] play() called, mediaError=" << err;
     if (err == bb::multimedia::MediaError::None) {
+        m_pingRetryCount = 0;
         return;
     }
 
@@ -527,14 +547,33 @@ void HubIntegration::playOnPingPlayerOrResetForRetry()
     // "MMR context is null" too - a player that failed to connect at
     // construction time doesn't appear to recover on its own.
     // Discarding it and clearing m_pingPlayerSourceSet means the NEXT
-    // ping (whenever the next notify-worthy message arrives) goes
-    // through onPlayPingSoundDeferred()'s "no player yet" branch again,
-    // constructing a genuinely new MediaPlayer - a fresh attempt at
-    // connecting to mm-renderer, rather than repeating calls on one
-    // that's already known to be broken. deleteLater() rather than
-    // delete since this may be running from within a slot invoked on
-    // m_pingPlayer's own connections.
+    // attempt (either the retry scheduled below, or the next ping
+    // whenever it arrives) goes through onPlayPingSoundDeferred()'s
+    // "no player yet" branch again, constructing a genuinely new
+    // MediaPlayer - a fresh attempt at connecting to mm-renderer,
+    // rather than repeating calls on one that's already known to be
+    // broken. deleteLater() rather than delete since this may be
+    // running from within a slot invoked on m_pingPlayer's own
+    // connections.
     m_pingPlayer->deleteLater();
     m_pingPlayer = 0;
     m_pingPlayerSourceSet = false;
+
+    // Fix: previously this just gave up on the ping that triggered it -
+    // real logs confirmed mm-renderer can be unreachable for a couple
+    // of seconds right after app/Hub startup, then recover on its own,
+    // so a fixed number of short-interval retries on the SAME ping
+    // gives it a real chance to play once mm-renderer comes up, instead
+    // of staying silent until whatever message happens to arrive next.
+    if (m_pingRetryCount < MAX_PING_RETRIES) {
+        m_pingRetryCount++;
+        qDebug() << "[Hub] retrying playPingSound, attempt" << m_pingRetryCount
+                 << "/" << MAX_PING_RETRIES;
+        QTimer::singleShot(PING_RETRY_DELAY_MS, this,
+                           SLOT(onPlayPingSoundDeferred()));
+    } else {
+        qDebug() << "[Hub] Exhausted" << MAX_PING_RETRIES
+                 << "ping retries, giving up until the next notify-worthy message";
+        m_pingRetryCount = 0;
+    }
 }

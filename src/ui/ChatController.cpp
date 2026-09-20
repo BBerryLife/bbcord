@@ -215,6 +215,19 @@ void ChatController::closeChannel() {
   m_currentGuildId.clear();
   m_currentChannelName.clear();
   m_chatDataModel->clear();
+  // Fix: confirmed as a real bug via logs - closeChannel() cleared this
+  // controller's own idea of the current channel, but never told
+  // AppStore the user actually left it. AppStore's selectedChannelId()
+  // is what every "is the user currently looking at this channel"
+  // check elsewhere reads (the guild-badge recompute in
+  // GuildChannels.cpp, GatewayHandler's isCurrentlyOpenChannel guard),
+  // so leaving it pointing at the just-closed channel made a
+  // non-mention message arriving after the user backed out still look
+  // like it arrived while they were reading it live - no unread mark,
+  // channel/server badge never lit up for it.
+  if (m_store) {
+    m_store->clearChannelSelection();
+  }
   emit chatDataModelChanged();
   emit currentChannelChanged();
 }

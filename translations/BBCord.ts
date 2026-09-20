@@ -194,23 +194,23 @@
 <context>
     <name>ChatController</name>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="311"/>
-        <location filename="../src/ui/ChatController.cpp" line="1334"/>
+        <location filename="../src/ui/ChatController.cpp" line="324"/>
+        <location filename="../src/ui/ChatController.cpp" line="1347"/>
         <source>Maximum 10 attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1319"/>
+        <location filename="../src/ui/ChatController.cpp" line="1332"/>
         <source>Attachment file not found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1329"/>
+        <location filename="../src/ui/ChatController.cpp" line="1342"/>
         <source>Attachment is too large</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1368"/>
+        <location filename="../src/ui/ChatController.cpp" line="1381"/>
         <source>%1 files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -320,7 +320,7 @@
 <context>
     <name>MainPage</name>
     <message>
-        <location filename="../assets/MainPage.qml" line="453"/>
+        <location filename="../assets/MainPage.qml" line="461"/>
         <source>Threads #</source>
         <translation type="unfinished"></translation>
     </message>

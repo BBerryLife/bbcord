@@ -392,6 +392,41 @@ void DiscordClient::onRestLoginSucceeded(const QVariantMap &user,
     rebuildDmChannelIndexes();
   }
 
+  // Fix: Discord's gateway only pushes MESSAGE_CREATE (including
+  // plain, non-mention messages) for a channel once it's been
+  // subscribed via OP 14 (sendLazyRequest()/GatewayHandler.cpp) -
+  // that only used to happen once the user actually opened a
+  // channel's chat view this session. So on a cold app start, sitting
+  // on the DM tab, a non-mention message sent to whatever channel the
+  // user had open last time produced no gateway event at all - no way
+  // to light up its badge - until the user opened that channel once
+  // in the new session. loadBootstrapCache() above already restores
+  // m_store's selectedGuildId/selectedChannelId from the last session
+  // (see CacheManager::loadBootstrapCache()), so proactively subscribe
+  // that same channel here too - this only sends the OP 14 request
+  // (via m_pendingLazyRequests, flushed once the gateway reaches
+  // Ready - see DiscordGateway::handleDispatch()'s READY case), it
+  // does NOT open the chat view or change what the user sees, so it's
+  // safe to do unconditionally on every cold start. This does NOT
+  // survive fully closing and reopening the app a second time in the
+  // sense of "the channel stays subscribed forever" - each gateway
+  // reconnect is a fresh session requiring its own subscribe, but that
+  // reconnect always re-runs this same startup path, so the
+  // last-known channel keeps getting re-subscribed every time the app
+  // starts.
+  if (m_store) {
+    QString cachedGuildId = m_store->selectedGuildId().trimmed();
+    QString cachedChannelId = m_store->selectedChannelId().trimmed();
+    if (!cachedGuildId.isEmpty() && !cachedChannelId.isEmpty() &&
+        m_gatewayWorker != 0) {
+      m_chatGuildByChannelId.insert(cachedChannelId, cachedGuildId);
+      QMetaObject::invokeMethod(m_gatewayWorker, "sendLazyRequest",
+                                Qt::QueuedConnection,
+                                Q_ARG(QString, cachedGuildId),
+                                Q_ARG(QString, cachedChannelId));
+    }
+  }
+
   setStatusText("Connecting gateway...");
   if (m_gatewayWorker != 0) {
     syncGatewayOrderingStateToWorker();
@@ -1039,13 +1074,28 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
   if (eventName == "MESSAGE_CREATE" || eventName == "MESSAGE_UPDATE" ||
       eventName == "MESSAGE_DELETE") {
     QString channelId = payload.value("channel_id").toString().trimmed();
+    bool isSelectedChannel = m_store != 0 && m_store->selectedChannelId() == channelId;
     bool selectedOrLoaded =
-        m_store != 0 && (m_store->selectedChannelId() == channelId ||
-                         m_store->isChatInitialLoaded(channelId));
+        isSelectedChannel ||
+        (m_store != 0 && m_store->isChatInitialLoaded(channelId));
     if (selectedOrLoaded || payload.value("guild_id").toString().isEmpty()) {
       qDebug() << "[discord-client] gateway dispatch" << eventName << "guild"
                << payload.value("guild_id").toString() << "channel" << channelId
                << "message" << payload.value("id").toString();
+    }
+
+    // Fix: a mention arriving in the channel the user already has open
+    // was never clearing that channel's guild-level unread/mention
+    // state (only selectChannel() did, i.e. cold-opening a channel) -
+    // reported bug: server's white bar / red badge stayed on even
+    // after reading the mention live in an already-open channel. Not
+    // needed for MESSAGE_DELETE (nothing new became unread) and
+    // MESSAGE_UPDATE (edits don't create new unread state), so only
+    // for MESSAGE_CREATE; only when this is genuinely the channel the
+    // user is looking at right now.
+    if (eventName == "MESSAGE_CREATE" && isSelectedChannel &&
+        !channelId.isEmpty()) {
+      clearChannelUnreadStateAndRecomputeGuildBadge(channelId);
     }
   }
 
@@ -1430,6 +1480,17 @@ void DiscordClient::flushGatewayUiUpdates() {
   m_pendingMentionCountsByGuildId.clear();
   m_pendingMentionCountsByChannelId.clear();
   m_pendingDmUiUpdate = false;
+
+  // Fix: temporary diagnostic logging - flushGatewayUiUpdates() had no
+  // qDebug() output at all before this, making it impossible to tell
+  // from a log alone whether it actually ran, and with what pending
+  // guild/channel ids, for a given non-mention message. Needed to
+  // pin down a reported bug where a non-mention message's badge only
+  // seems to "take" after the FIRST mention of a session has been
+  // read/cleared, never before.
+  qDebug() << "[discord-chat] flushGatewayUiUpdates guildIds=" << guildIds
+           << "channelIds=" << channelIds
+           << "mentionCounts=" << mentionCounts;
 
   applyPendingDmPresences();
 

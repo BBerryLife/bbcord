@@ -223,6 +223,15 @@ private:
   bool updateGuildChannelUnread(const QString &channelId, bool unread);
   bool updateGuildChannelMentionCount(const QString &channelId,
                                       int mentionCount);
+  // Clears channelId's own unread/mention flags, then re-derives the
+  // owning guild's white-bar/red-badge state from every channel in
+  // that guild (see the "Fix:" comment on its definition in
+  // GuildChannels.cpp for why the guild-level recompute is needed).
+  // Shared between selectChannel() (cold-open path) and
+  // onGatewayDispatch()'s MESSAGE_CREATE handling (live-message path,
+  // for a mention arriving in the channel the user already has open).
+  void clearChannelUnreadStateAndRecomputeGuildBadge(
+      const QString &channelId);
   void appendVisibleGuildChannels();
   // Fix: re-runs PermissionUtils::canViewChannel() over
   // m_rawSelectedGuildChannels (the unfiltered, already-mapped channel

@@ -97,14 +97,8 @@ void DiscordClient::selectChannel(const QString &channelId) {
     return;
   }
 
-  bool channelStatusChanged = updateGuildChannelUnread(safeChannelId, false);
-  channelStatusChanged =
-      updateGuildChannelMentionCount(safeChannelId, 0) || channelStatusChanged;
-  qDebug() << "[discord-chat] selectChannel" << safeChannelId
-           << "channelStatusChanged=" << channelStatusChanged;
-  if (channelStatusChanged && m_store) {
-    m_store->setGuildChannels(m_visibleGuildChannels);
-  }
+  clearChannelUnreadStateAndRecomputeGuildBadge(safeChannelId);
+
   if (m_store) {
     // Fix: clears the independent "marked unread while some other
     // guild was open" record from AppStore too (see markChannelUnread()
@@ -117,6 +111,38 @@ void DiscordClient::selectChannel(const QString &channelId) {
     syncGatewayMessageFilterStateToWorker();
   }
 
+  QString guildId = m_chatGuildByChannelId.value(safeChannelId).trimmed();
+  if (guildId.isEmpty()) {
+    guildId = m_selectedGuildId.trimmed();
+  }
+  if (!guildId.isEmpty()) {
+    m_chatGuildByChannelId.insert(safeChannelId, guildId);
+    if (m_gatewayWorker != 0) {
+      QMetaObject::invokeMethod(m_gatewayWorker, "sendLazyRequest",
+                                Qt::QueuedConnection, Q_ARG(QString, guildId),
+                                Q_ARG(QString, safeChannelId));
+    }
+  }
+
+  if (m_hubIntegration != 0) {
+    m_hubIntegration->markThreadRead(safeChannelId);
+  }
+
+  scheduleGuildsCacheSave();
+  scheduleDmChannelsCacheSave();
+}
+
+void DiscordClient::clearChannelUnreadStateAndRecomputeGuildBadge(
+    const QString &channelId) {
+  bool channelStatusChanged = updateGuildChannelUnread(channelId, false);
+  channelStatusChanged =
+      updateGuildChannelMentionCount(channelId, 0) || channelStatusChanged;
+  qDebug() << "[discord-chat] clear channel unread" << channelId
+           << "channelStatusChanged=" << channelStatusChanged;
+  if (channelStatusChanged && m_store) {
+    m_store->setGuildChannels(m_visibleGuildChannels);
+  }
+
   // Fix: updateGuildUnread(guildId, true)/updateGuildMentionCount()
   // (Client.cpp/Guilds.cpp) are what light up the server's white bar
   // and red mention badge in the first place, but nothing ever called
@@ -125,13 +151,18 @@ void DiscordClient::selectChannel(const QString &channelId) {
   // gone even when it shouldn't be, from an earlier fix that removed
   // it from the UI entirely rather than just adjusting when it shows)
   // even after every channel in that guild had been read. Re-derive
-  // both from the guild's channels every time one of them is opened:
-  // the white bar should reflect ANY channel still unread/mentioned;
-  // the red badge should reflect the SUM of mentions still
-  // outstanding across the guild's channels (m_allGuildChannels
-  // already reflects safeChannelId's own just-cleared state above).
+  // both from the guild's channels every time one of them is caught up
+  // (either by opening it, or by a mention arriving in the channel
+  // that's already open - see the MESSAGE_CREATE handling in
+  // Client.cpp::onGatewayDispatch(), added because reading a mention
+  // live in an already-open channel never called this before, so the
+  // server's badge/white bar stayed on even though the channel itself
+  // showed as read): the white bar should reflect ANY channel still
+  // unread/mentioned; the red badge should reflect the SUM of mentions
+  // still outstanding across the guild's channels (m_allGuildChannels
+  // already reflects channelId's own just-cleared state above).
   if (channelStatusChanged) {
-    QString ownerGuildId = m_chatGuildByChannelId.value(safeChannelId).trimmed();
+    QString ownerGuildId = m_chatGuildByChannelId.value(channelId).trimmed();
     if (ownerGuildId.isEmpty()) {
       ownerGuildId = m_selectedGuildId.trimmed();
     }
@@ -155,26 +186,6 @@ void DiscordClient::selectChannel(const QString &channelId) {
       updateGuildMentionCount(ownerGuildId, totalMentionCount);
     }
   }
-
-  QString guildId = m_chatGuildByChannelId.value(safeChannelId).trimmed();
-  if (guildId.isEmpty()) {
-    guildId = m_selectedGuildId.trimmed();
-  }
-  if (!guildId.isEmpty()) {
-    m_chatGuildByChannelId.insert(safeChannelId, guildId);
-    if (m_gatewayWorker != 0) {
-      QMetaObject::invokeMethod(m_gatewayWorker, "sendLazyRequest",
-                                Qt::QueuedConnection, Q_ARG(QString, guildId),
-                                Q_ARG(QString, safeChannelId));
-    }
-  }
-
-  if (m_hubIntegration != 0) {
-    m_hubIntegration->markThreadRead(safeChannelId);
-  }
-
-  scheduleGuildsCacheSave();
-  scheduleDmChannelsCacheSave();
 }
 
 void DiscordClient::onGuildChannelsLoaded(const QString &guildId,

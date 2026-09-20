@@ -359,6 +359,14 @@ Page {
                 page.compactMessageEnabled = enabled;
             });
             page.backRequested.connect(function () {
+                // Fix: tell the C++ side the user actually left this
+                // channel, not just that the UI page went away - see
+                // ChatController::closeChannel()/AppStore::
+                // clearChannelSelection() for why this matters (a
+                // non-mention message arriving after backing out was
+                // still being treated as "user is reading it live",
+                // confirmed bug via logs).
+                chatController.closeChannel();
                 if (mainPage.navigationPane) {
                     mainPage.navigationPane.pop();
                 }

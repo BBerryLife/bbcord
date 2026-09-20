@@ -183,6 +183,22 @@ private:
     // guards the one-time setSourceUrl()+prepare() setup in
     // playPingSound() from re-running on every ping.
     bool m_pingPlayerSourceSet;
+
+    // Fix: confirmed via real logs that MediaPlayer's constructor can
+    // fail to connect to mm-renderer (the simulator's audio service)
+    // for a stretch right after app/Hub startup - "Unable to connect
+    // to MMR", every call on that instance then fails with "MMR
+    // context is null". Previously this meant total silence for the
+    // rest of the ping that triggered it (discard, wait for the NEXT
+    // notify-worthy message to try again) - if mm-renderer just wasn't
+    // ready yet at startup, that could mean no ping sound at all until
+    // some later message happened to arrive after it recovered.
+    // Instead, retry the SAME failed ping a few times with a short
+    // backoff, giving mm-renderer a chance to come up, before finally
+    // giving up on it.
+    int m_pingRetryCount;
+    static const int MAX_PING_RETRIES;
+    static const int PING_RETRY_DELAY_MS;
 };
 
 #endif // HUBINTEGRATION_HPP
