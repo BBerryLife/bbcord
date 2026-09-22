@@ -26,6 +26,27 @@ NavigationPane {
     property variant currentUserSheet: null
     property variant aboutDialog: null
     property variant currentSettingsSheet: null
+    // Fix: short-tap/long-press on a Hub item wasn't navigating into
+    // the actual chat, only opening the app to the main server/DM list
+    // - selectChannel() (called from ApplicationUI::onInvoked() in
+    // applicationui.cpp) only updates backend state, it never pushes
+    // any QML page itself. Stashed here instead of acting immediately
+    // because hubOpenChannelRequested can arrive before currentMainPage
+    // exists yet (a cold start still has to finish login first) - see
+    // tryOpenPendingHubChannel(), called both from the signal handler
+    // below AND from openMainPage() itself for whichever order actually
+    // happens first.
+    property string pendingHubChannelId: ""
+    property string pendingHubGuildId: ""
+
+    function tryOpenPendingHubChannel() {
+        if (pendingHubChannelId === "" || !currentMainPage) {
+            return;
+        }
+        currentMainPage.openChat(pendingHubChannelId, pendingHubGuildId, "");
+        pendingHubChannelId = "";
+        pendingHubGuildId = "";
+    }
 
     function playSfx(player) {
         if (!settingsController.sfxEnabled) {
@@ -77,6 +98,16 @@ NavigationPane {
         discordClient.loginFailed.connect(playErrorSfx)
         settingsController.sfxEnabledChanged.connect(updateConnectingSfx)
         appStore.busyChanged.connect(updateConnectingSfx)
+        // Fix: see pendingHubChannelId's doc comment above -
+        // applicationUI (the C++ ApplicationUI object, already exposed
+        // as a context property for openLink()) emits this after a Hub
+        // short-tap/long-press invoke, whether or not the main page
+        // exists yet.
+        applicationUI.hubOpenChannelRequested.connect(function (channelId, guildId) {
+            pendingHubChannelId = channelId
+            pendingHubGuildId = guildId
+            tryOpenPendingHubChannel()
+        })
         discordClient.autoLogin()
     }
 
@@ -95,6 +126,13 @@ NavigationPane {
                 currentLoginPage.destroy()
                 currentLoginPage = null
             }
+            // Fix: handles the cold-start ordering - if
+            // hubOpenChannelRequested arrived while the app was still
+            // logging in (pendingHubChannelId got set before
+            // currentMainPage existed), apply it now that the main
+            // page is finally here. A no-op (pendingHubChannelId is
+            // "") on every normal, non-Hub launch.
+            tryOpenPendingHubChannel()
         }
     }
 

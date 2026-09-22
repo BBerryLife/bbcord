@@ -41,6 +41,7 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/ChannelMemberList.qml) \
         $$quote($$BASEDIR/assets/ChatCard.qml) \
         $$quote($$BASEDIR/assets/DmList.qml) \
+        $$quote($$BASEDIR/assets/HubPreviewCard.qml) \
         $$quote($$BASEDIR/assets/LoginPage.qml) \
         $$quote($$BASEDIR/assets/MainPage.qml) \
         $$quote($$BASEDIR/assets/MessageBubble.qml) \

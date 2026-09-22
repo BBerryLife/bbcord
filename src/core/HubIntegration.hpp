@@ -25,18 +25,29 @@ namespace bb { namespace multimedia { class MediaPlayer; } }
 // — not repeated in full here to avoid duplication, only keeping what's
 // directly relevant to BBCord/Discord.
 //
-// IMPORTANT NOTE inherited from Zalo10: at the time of this port,
-// "single-tap a Hub item to open the app directly" was NOT confirmed
-// working on Zalo10 (see the "Fix Attempt 1..11" history in
+// IMPORTANT NOTE inherited from Zalo10, UPDATED: at the time of this
+// port, "single-tap a Hub item to open the app directly" was NOT
+// confirmed working on Zalo10 (see the "Fix Attempt 1..11" history in
 // HubIntegration.cpp) — long-press "Open in ..." (item context action)
-// worked reliably, but short-tap stayed completely silent across
-// repeated real-device testing. BBCord inherits the UDS config used
-// there AS-IS (including "attempt 5 hypothesis" experiments like
-// UDS_PLACEMENT_FIXED, mime type "plain/message", context_state) since
-// it's the closest/best config available so far, but this should NOT
-// be treated as confirmed fixed until tested on real BB10 hardware with
-// BBCord. If single-tap is still silent after build/deploy, this is a
-// known pre-existing issue, not a new bug introduced by the port.
+// worked reliably, but short-tap stayed completely silent. Root cause
+// found and fixed in this file's init(): the account was registered
+// with uds_account_data_set_target_name(account, HUB_APP_ID) — the
+// app's bar-descriptor.xml <id> — instead of HUB_INVOKE_TARGET, the
+// actual <invoke-target id> declared there. Per the target_name doc
+// comment in unified_data_source.h, that field is "the generic target
+// for all invocation framework actions related to this account",
+// i.e. exactly what a plain short-tap resolves against when the tapped
+// item has no action-specific target of its own — so short-tap was
+// invoking a target that was never registered and the Hub silently
+// dropped it. Long-press worked because the "Open in BBCord" item
+// context action sets its own target explicitly (also
+// HUB_INVOKE_TARGET), bypassing the broken account-level fallback.
+// Fixed by pointing target_name at HUB_INVOKE_TARGET instead. Still
+// worth a real-device check after the next build, since Hub behavior
+// on real hardware can differ from what's inferable from the header
+// docs alone — but this is a config bug with a clear, header-documented
+// mechanism, not one of the unresolved "attempt N hypothesis" items
+// from the earlier Zalo10 investigation.
 class HubIntegration : public QObject
 {
     Q_OBJECT

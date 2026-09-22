@@ -107,33 +107,49 @@
          that share that prefix with the already-declared "assets" rule. -->
     <asset path="hub-icons" public="true">hub-icons</asset>
 
-    <!-- Invoke target cho BlackBerry Hub "Open in BBCord" (long-press item
-         action đăng ký bằng uds_register_item_context_action trong
-         HubIntegration.cpp, target="ch.michioxd.bbcord.invoke",
-         type="service"). 4 filter action/mime-type kết hợp — kế thừa
-         nguyên bộ filter đã dùng bên Zalo10's HubIntegration (cùng tác
-         giả, cùng kiến trúc UDS) vì action Hub thực tế gửi khi tap/
-         long-press 1 item chưa được xác nhận chắc chắn là OPEN hay VIEW,
-         và mime type item vs mime type action-registration cũng khác
-         nhau (plain/message cho item, text/plain cho action) — giữ cả 4
-         tổ hợp để không bỏ sót trường hợp nào. -->
+    <!-- Fix (short-tap on a Hub item doesn't open the app): rebuilt
+         after directly inspecting Beeper10 (github search found no
+         source, but its built .bar - Beeper10-build384 - was shared
+         and decompiled: `strings` on its binary plus its own
+         bar-descriptor.xml, both extracted from the .bar itself).
+         Beeper10 is a live, working reference: same device, same OS
+         10.3.1, confirmed short-tap-opens-the-app behavior, and
+         `strings` on its binary shows it uses ONLY
+         uds_account_data_*/uds_inbox_item_data_* - there is NO
+         uds_register_item_context_action, no uds_item_action_data_*
+         ANYWHERE in its binary. It relies entirely on Hub's own
+         default-tap brokering via invoke-target filter matching - no
+         registered action at all.
+         The one concrete difference its bar-descriptor.xml has that
+         ours never tried: an APP-SPECIFIC vendor mime type
+         ("application/vnd.beeper10.hub.chat", not a generic
+         "text/plain"/"plain/message" shared across many apps) AND a
+         <property var="uris" value="pim:..."/> tag inside the filter -
+         neither of which appears anywhere in the official
+         unified_data_source.h header or any BlackBerry sample we
+         found, so this was never going to be discovered by reading
+         docs alone. Mirroring both exactly: BBCord's own vendor mime
+         type on the item (HubIntegration.cpp's
+         uds_inbox_item_data_set_mime_type - updated to match) and
+         here on the single invoke-target's filter, plus the same
+         <property var="uris"> tag with BBCord's own mime type in the
+         pim: URI. Long-press ("Open in BBCord") keeps using this same
+         target explicitly via its own target= (HubIntegration.cpp) -
+         Beeper10 has no long-press menu at all, so this part is
+         BBCord's own addition, kept because it already worked and
+         costs nothing extra. The separate card.previewer target tried
+         previously is removed - Beeper10 proves a card is not required
+         when the mime type is vendor-specific and the filter carries
+         the pim: uris property. -->
     <invoke-target id="ch.michioxd.bbcord.invoke">
-        <invoke-target-type>application</invoke-target-type>
+        <invoke-target-name>BBCord</invoke-target-name>
+        <icon><image>icon.png</image></icon>
+        <type>application</type>
         <filter>
             <action>bb.action.OPEN</action>
-            <mime-type>text/plain</mime-type>
-        </filter>
-        <filter>
             <action>bb.action.VIEW</action>
-            <mime-type>text/plain</mime-type>
-        </filter>
-        <filter>
-            <action>bb.action.OPEN</action>
-            <mime-type>plain/message</mime-type>
-        </filter>
-        <filter>
-            <action>bb.action.VIEW</action>
-            <mime-type>plain/message</mime-type>
+            <mime-type>application/vnd.bbcord.hub.chat</mime-type>
+            <property var="uris" value="pim:application/vnd.bbcord.hub.chat"/>
         </filter>
     </invoke-target>
 

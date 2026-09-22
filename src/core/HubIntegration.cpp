@@ -28,18 +28,37 @@ static const char *HUB_ICON_UNREAD_FILE = "HubItemUnread.png";
 static const char *HUB_ICON_READ_FILE   = "HubItemRead.png";
 static const char *HUB_SERVICE_URL = "ch.michioxd.bbcord.hub";
 
-// Mime type used for inbox items — "plain/message" (not "text/plain")
-// per the official sample code in unified_data_source.h
-// (uds_inbox_item_data_set_mime_type). Kept as-is from the investigation
-// findings in Zalo10's HubIntegration.cpp (see the "SINGLE-TAP DOESN'T
-// OPEN APP" history there) — at the time of this port, this was the
-// best hypothesis available, NOT confirmed to fix the single-tap issue
-// on real hardware. The item action (long-press "Open in BBCord") still
-// uses "text/plain", kept as-is from Zalo10 since that part IS
-// confirmed working correctly.
+// Fix (short-tap on a Hub item doesn't open the app): changed from
+// "plain/message" to an app-specific vendor mime type. Found by
+// decompiling Beeper10 (build384) - a live, confirmed-working
+// reference app on the exact same device/OS - after extracting its
+// own bar-descriptor.xml and running `strings` on its binary: it uses
+// "application/vnd.beeper10.hub.chat", not a generic type shared
+// across many apps. `strings` also showed it registers NO item
+// action at all (no uds_register_item_context_action anywhere in its
+// binary) - Hub opens it purely via its own default-tap filter
+// matching, driven entirely by this mime type + the matching
+// <property var="uris" value="pim:..."/> tag in its bar-descriptor.xml
+// invoke-target filter (see that file's own comment for the parallel
+// change there). Neither the vendor-mime-type pattern nor the uris
+// property appears anywhere in the official unified_data_source.h
+// header or any BlackBerry sample found during this investigation -
+// every previous fix attempt (target_name, UDS_PLACEMENT, account
+// type, card.previewer targets, disabling the item action entirely)
+// was tried and confirmed via on-device PPS monitoring + [Hub][invoke]
+// logging to make no difference, so this generic-vs-vendor mime type
+// difference is the most concrete, evidence-backed remaining lead.
+// Now used for BOTH the item (below) and the item action (see
+// uds_item_action_data_set_mime_type - updated to match, no longer
+// "text/plain") so long-press and short-tap resolve identically.
 static const char *HUB_INVOKE_TARGET = "ch.michioxd.bbcord.invoke";
+// The app's bar-descriptor.xml <id> - kept here for reference/debugging
+// only. NOT a valid invocation-framework target by itself (that's
+// HUB_INVOKE_TARGET, the <invoke-target id> actually declared in
+// bar-descriptor.xml) - see the short-tap fix note in init() below for
+// why conflating the two silently broke short-tap-to-open.
 static const char *HUB_APP_ID = "ch.michioxd.bbcord";
-static const char *HUB_MIME_TYPE_MESSAGE = "plain/message";
+static const char *HUB_MIME_TYPE_MESSAGE = "application/vnd.bbcord.hub.chat";
 
 // Context state bits for an item — MUST match the context_mask of the
 // "Open in BBCord" action (uds_item_action_data_set_context_mask, see
@@ -276,12 +295,36 @@ bool HubIntegration::init()
     uds_account_data_set_name(account, "BBCord");
     uds_account_data_set_description(account, "BBCord notifications");
     uds_account_data_set_icon(account, HUB_ICON_FILE);
-    uds_account_data_set_target_name(account, HUB_APP_ID);
+    // Fix (short-tap on a Hub item doesn't open the app): per
+    // uds_account_data_set_target_name()'s own doc comment in
+    // unified_data_source.h, this target_name is "used as a generic
+    // target for all invocation framework actions that are related to
+    // this account" - i.e. it's exactly what a plain tap (no specific
+    // item action) resolves against. It must be the id of an
+    // <invoke-target> actually declared in bar-descriptor.xml
+    // (HUB_INVOKE_TARGET = "ch.michioxd.bbcord.invoke"), NOT the app id
+    // (HUB_APP_ID = "ch.michioxd.bbcord") - those are two different
+    // strings and only the invoke-target id is registered/resolvable by
+    // the invocation framework. Using HUB_APP_ID here meant short-tap
+    // invoked a target that was never registered, so the Hub silently
+    // dropped the request - long-press kept working because the item
+    // context action sets its OWN target explicitly via
+    // uds_item_action_data_set_target(openAction, HUB_INVOKE_TARGET)
+    // a few lines below, bypassing this (wrong) account-level fallback
+    // entirely.
+    uds_account_data_set_target_name(account, HUB_INVOKE_TARGET);
     // false: this account doesn't support composing new messages
     // directly from Hub (no handler for the "bb.action.CREATE" action
     // on the app side yet) — only shows + opens to an existing
     // channel/thread.
     uds_account_data_set_supports_compose(account, false);
+    // Reverted back to UDS_ACCOUNT_TYPE_IM: UDS_ACCOUNT_TYPE_SOCIAL was
+    // tried and confirmed (via a live short-tap test with full PPS
+    // monitoring) to make no difference - matches what the type's own
+    // doc comment already said (account-tab ordering only, not
+    // tap/invoke behavior). Reverting to isolate the ACTUAL current
+    // experiment (disabling the item context action entirely, see
+    // below) as the only changed variable this round.
     uds_account_data_set_type(account, UDS_ACCOUNT_TYPE_IM);
 
     rc = uds_account_added(m_udsHandle, account);
@@ -322,6 +365,17 @@ bool HubIntegration::init()
     // Register "Open in BBCord" — item context action (long-press).
     // Registered once at the account level, applies to EVERY item of
     // this account.
+    //
+    // NOTE: this block was TEMPORARILY disabled for one test round to
+    // check whether registering an item context action was itself
+    // suppressing Hub's default short-tap behavior (motivated by
+    // Telega, a working reference app confirmed via notifybar to also
+    // use UDS, having NO long-press menu entry at all). Re-enabled
+    // after that test: disabling this made NO difference to short-tap
+    // (still completely silent - confirmed via full PPS monitoring +
+    // [Hub][invoke] logging), so item actions are NOT the cause. No
+    // reason to keep sacrificing the working long-press behavior for a
+    // hypothesis that's now refuted by direct evidence.
     uds_item_action_data_t *openAction = uds_item_action_data_create();
     uds_item_action_data_set_action(openAction, "bb.action.OPEN");
     uds_item_action_data_set_target(openAction, HUB_INVOKE_TARGET);
@@ -331,8 +385,14 @@ bool HubIntegration::init()
     uds_item_action_data_set_type(openAction, "service");
     uds_item_action_data_set_title(openAction, "Open in BBCord");
     uds_item_action_data_set_image_source(openAction, HUB_ICON_FILE);
-    uds_item_action_data_set_mime_type(openAction, "text/plain");
-    uds_item_action_data_set_placement(openAction, UDS_PLACEMENT_FIXED);
+    // Fix (short-tap on a Hub item doesn't open the app): changed from
+    // "text/plain" to HUB_MIME_TYPE_MESSAGE (the same vendor mime type
+    // now used on the item itself) - see HUB_MIME_TYPE_MESSAGE's own
+    // comment above for the full Beeper10-decompile reasoning. Using
+    // the same value here and on the item keeps long-press and
+    // short-tap resolving through the identical mime type.
+    uds_item_action_data_set_mime_type(openAction, HUB_MIME_TYPE_MESSAGE);
+    uds_item_action_data_set_placement(openAction, UDS_PLACEMENT_DEFAULT);
     uds_item_action_data_set_context_mask(openAction, HUB_CONTEXT_STATE_READ | HUB_CONTEXT_STATE_UNREAD);
 
     int actionRc = uds_register_item_context_action(m_udsHandle, ACCOUNT_ID, openAction);

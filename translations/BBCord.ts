@@ -216,6 +216,14 @@
     </message>
 </context>
 <context>
+    <name>HubPreviewCard</name>
+    <message>
+        <location filename="../assets/HubPreviewCard.qml" line="28"/>
+        <source>Opening BBCord...</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>ImagePreview</name>
     <message>
         <location filename="../src/ui/ImagePreview.cpp" line="61"/>
