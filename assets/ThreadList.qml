@@ -185,6 +185,24 @@ Page {
 		horizontalAlignment: HorizontalAlignment.Fill
 		verticalAlignment: VerticalAlignment.Fill
 
+		// Fix: the "Load older threads" Button below already had
+		// leftMargin/rightMargin/bottomMargin set, but it was STILL
+		// showing flush against the screen edges (confirmed via a real
+		// screenshot - button spans full width, sits right at the
+		// bottom). Root cause: this Container uses StackLayout, and in
+		// Cascades a StackLayout child's own margin controls SPACING
+		// BETWEEN SIBLINGS along the stack axis, not necessarily an
+		// inset from the CONTAINER's own edge - with no sibling after
+		// it, the Button's bottomMargin had nothing to push against.
+		// bottomPadding on the Container itself is what actually
+		// reserves that space at the true bottom edge, same way
+		// leftPadding/rightPadding already do on other Containers in
+		// this file (see the thread-row ListItemComponent's Container
+		// a bit further down). Kept the Button's own margins too - they
+		// still matter for the top spacing above it and are harmless to
+		// leave in.
+		bottomPadding: ui.du(1.5)
+
 		layout: StackLayout {}
 
 		Label {
@@ -257,12 +275,17 @@ Page {
 		// paginated using archivedCursor.
 		Button {
 			text: threadListPage.archivedLoading ? qsTr("Loading...") : qsTr("Load older threads")
-			horizontalAlignment: HorizontalAlignment.Fill
+			// Fix: was HorizontalAlignment.Fill, stretching the button
+			// to the full container width (minus left/rightMargin) -
+			// switched to Center so it sizes to its own text/padding
+			// instead, like a normal action button rather than a
+			// full-width bar.
+			horizontalAlignment: HorizontalAlignment.Center
 			topMargin: ui.du(1.0)
-			// Fix: was sitting flush against the screen edges (left,
-			// right, bottom) with only topMargin set - added matching
-			// side/bottom margins so it has breathing room on all
-			// sides like the rest of the app's buttons.
+			// leftMargin/rightMargin no longer do anything now that the
+			// button isn't Fill-width (nothing left/right of it to
+			// push against) - left in place, harmless, in case Fill is
+			// ever restored later.
 			leftMargin: ui.du(2.0)
 			rightMargin: ui.du(2.0)
 			bottomMargin: ui.du(1.5)

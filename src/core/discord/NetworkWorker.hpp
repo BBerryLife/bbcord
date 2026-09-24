@@ -33,6 +33,7 @@ public Q_SLOTS:
                             const QString &beforeCursor);
   void fetchChannelMessages(const QString &token, const QString &channelId,
                             int limit, const QString &beforeMessageId);
+  void fetchChannelInfo(const QString &token, const QString &channelId);
   void sendChannelMessage(const QString &token, const QString &channelId,
                           const QString &content, const QString &nonce,
                           const QString &replyMessageId,
@@ -70,6 +71,9 @@ Q_SIGNALS:
   void channelMessagesLoaded(const QString &channelId,
                              const QString &beforeMessageId,
                              const QVariantList &messages);
+  void channelInfoLoaded(const QString &channelId, const QString &guildId,
+                         const QString &channelName);
+  void channelInfoLoadFailed(const QString &channelId, const QString &message);
   void channelMessageSent(const QString &channelId, const QString &nonce,
                           const QVariantMap &message);
   void channelMessageEdited(const QString &channelId,

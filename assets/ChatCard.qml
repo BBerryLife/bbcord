@@ -81,6 +81,15 @@ Page {
                 stickToEdgePolicy: ListViewStickToEdgePolicy.End
                 scrollRole: ScrollRole.Main
                 property bool compactMessageEnabled: chatPage.compactMessageEnabled
+                // Fix: mirrors compactMessageEnabled above - delegates
+                // inside listItemComponents run in their own component
+                // scope and can't resolve "chatPage" directly (confirmed
+                // via a real "ReferenceError: Can't find variable:
+                // chatPage" from the Connections{ target: chatPage }
+                // below), but CAN reach back into this ListView via
+                // ListItem.view, exactly like compactMessage does two
+                // properties down.
+                property string highlightedMessageId: chatPage.highlightedMessageId
 
                 listItemComponents: [
                     ListItemComponent {
@@ -135,11 +144,29 @@ Page {
                             // non-visual attached objects belong in
                             // attachedObjects instead, same place Timer
                             // lives inside MessageBubble.qml itself.
+                            //
+                            // Fix: target was "chatPage" - unresolvable
+                            // from here (this delegate runs in its own
+                            // component scope, separate from chatPage's -
+                            // confirmed via a real, constantly-repeating
+                            // "ReferenceError: Can't find variable:
+                            // chatPage" every time a message list
+                            // rendered). Retargeted at ListItem.view
+                            // (the enclosing ListView), which - unlike
+                            // chatPage - IS resolvable from delegate
+                            // scope, the same way ListItem.view.
+                            // compactMessageEnabled/startEdit already
+                            // work a few lines up/down. ListItem.view.
+                            // highlightedMessageId is the new alias
+                            // added above (property string
+                            // highlightedMessageId: chatPage.
+                            // highlightedMessageId) that makes this
+                            // possible.
                             attachedObjects: [
                                 Connections {
-                                    target: chatPage
+                                    target: ListItem.view
                                     onHighlightedMessageIdChanged: {
-                                        if (chatPage.highlightedMessageId !== "" && chatPage.highlightedMessageId === messageId) {
+                                        if (ListItem.view.highlightedMessageId !== "" && ListItem.view.highlightedMessageId === messageId) {
                                             jumpHighlighted = true;
                                         }
                                     }

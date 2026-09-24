@@ -91,6 +91,102 @@ QString DiscordClient::guildIdForChannel(const QString &channelId) const {
   return m_chatGuildByChannelId.value(channelId.trimmed());
 }
 
+QString DiscordClient::channelNameForId(const QString &channelId) const {
+  QString safeChannelId = channelId.trimmed();
+  if (safeChannelId.isEmpty()) {
+    return QString();
+  }
+
+  // DMs first - m_dmChannelsById is global (not scoped to a single
+  // selected guild like m_allGuildChannels below), so this is safe to
+  // check unconditionally.
+  QString dmName =
+      m_dmChannelsById.value(safeChannelId).toMap().value("name").toString();
+  if (!dmName.isEmpty()) {
+    return dmName;
+  }
+
+  // Guild channels: only ever populated for m_selectedGuildId (see
+  // loadGuildChannels()) - a channel belonging to a guild that hasn't
+  // been selected/loaded this session simply won't be found here yet.
+  // Checked in both lists since a channel can be filtered out of
+  // m_allGuildChannels (permission pass) while still present in the
+  // raw pre-filter list.
+  for (int i = 0; i < m_allGuildChannels.size(); ++i) {
+    QVariantMap channel = m_allGuildChannels.at(i).toMap();
+    if (channel.value("id").toString() == safeChannelId) {
+      return channel.value("name").toString();
+    }
+  }
+  for (int i = 0; i < m_rawSelectedGuildChannels.size(); ++i) {
+    QVariantMap channel = m_rawSelectedGuildChannels.at(i).toMap();
+    if (channel.value("id").toString() == safeChannelId) {
+      return channel.value("name").toString();
+    }
+  }
+
+  return QString();
+}
+
+void DiscordClient::fetchChannelInfo(const QString &channelId) {
+  QString safeChannelId = channelId.trimmed();
+  if (safeChannelId.isEmpty() || m_token.trimmed().isEmpty() ||
+      m_networkWorker == 0) {
+    return;
+  }
+
+  QMetaObject::invokeMethod(m_networkWorker, "fetchChannelInfo",
+                            Qt::QueuedConnection, Q_ARG(QString, m_token),
+                            Q_ARG(QString, safeChannelId));
+}
+
+void DiscordClient::onChannelInfoLoaded(const QString &channelId,
+                                        const QString &guildId,
+                                        const QString &channelName) {
+  QString safeChannelId = channelId.trimmed();
+  QString safeGuildId = guildId.trimmed();
+  qDebug() << "[discord-chat] channel info resolved" << safeChannelId
+           << "guildId=" << safeGuildId << "name=" << channelName;
+
+  if (!safeGuildId.isEmpty()) {
+    // Cache it the same way selectChannel()'s normal path does, so a
+    // second lookup this session (e.g. re-tapping the same Hub item)
+    // hits guildIdForChannel() directly instead of round-tripping REST
+    // again.
+    m_chatGuildByChannelId.insert(safeChannelId, safeGuildId);
+    // Fix: see m_pendingUnreadClearChannelId's doc comment in
+    // Client.hpp - selectChannel()'s unread-clear already ran and
+    // found nothing (guild wasn't loaded yet), so flag this channel to
+    // have it redone once onGuildChannelsLoaded() actually has real
+    // channel data for this guild.
+    m_pendingUnreadClearChannelId = safeChannelId;
+    // Fix: this is the actual point of the REST call, not just a
+    // side-effect - selecting the guild triggers the NORMAL
+    // loadGuildChannels() flow (see above), which populates
+    // m_allGuildChannels and fires appStore's guildChannelsChanged -
+    // the self-heal path main.qml already wired up for the
+    // "guildId WAS known but channels weren't loaded yet" case (see
+    // that file's onGuildChannelsChanged() comment) now also covers
+    // this "guildId itself was unknown" cold-start case for free.
+    selectGuild(safeGuildId);
+  }
+
+  emit channelInfoResolved(safeChannelId, safeGuildId, channelName);
+}
+
+void DiscordClient::onChannelInfoLoadFailed(const QString &channelId,
+                                            const QString &message) {
+  qDebug() << "[discord-chat] channel info fetch failed for" << channelId
+           << ":" << message;
+  // Fix: still emit with empty guildId/channelName rather than swallow
+  // the failure - main.qml's handler already treats an empty
+  // channelName as "couldn't resolve, leave whatever's showing" (see
+  // its onGuildChannelsChanged()/tryOpenPendingHubChannel() comments),
+  // so this is a safe no-op on the UI side, just keeps the two arms
+  // symmetric instead of one of them silently going nowhere.
+  emit channelInfoResolved(channelId.trimmed(), QString(), QString());
+}
+
 void DiscordClient::selectChannel(const QString &channelId) {
   QString safeChannelId = channelId.trimmed();
   if (safeChannelId.isEmpty()) {
@@ -133,7 +229,7 @@ void DiscordClient::selectChannel(const QString &channelId) {
 }
 
 void DiscordClient::clearChannelUnreadStateAndRecomputeGuildBadge(
-    const QString &channelId) {
+    const QString &channelId, bool forceGuildBadgeRecompute) {
   bool channelStatusChanged = updateGuildChannelUnread(channelId, false);
   channelStatusChanged =
       updateGuildChannelMentionCount(channelId, 0) || channelStatusChanged;
@@ -161,13 +257,31 @@ void DiscordClient::clearChannelUnreadStateAndRecomputeGuildBadge(
   // unread/mentioned; the red badge should reflect the SUM of mentions
   // still outstanding across the guild's channels (m_allGuildChannels
   // already reflects channelId's own just-cleared state above).
-  if (channelStatusChanged) {
+  //
+  // Fix: was "if (channelStatusChanged)" only - confirmed as a real
+  // bug via logs (a second real-world case, not just theoretical) for
+  // the Hub cold-start path (see
+  // m_pendingUnreadClearChannelId/onGuildChannelsLoaded() in this same
+  // file): fetchChannelInfo()'s REST channel list already comes back
+  // with unread=false/mentionCount=0 for the just-opened channel (its
+  // own state was never stale - the GUILD badge lit up from an
+  // earlier gateway mention event, well before the guild's channels
+  // were ever loaded this session), so updateGuildChannelUnread()/
+  // updateGuildChannelMentionCount() correctly report "no change" and
+  // this whole block used to get skipped - the guild's badge/white bar
+  // stayed lit forever even though the channel itself was genuinely
+  // read. forceGuildBadgeRecompute lets that caller ask for the
+  // guild-level recompute unconditionally, since a channel's own
+  // "already correct, no delta" state says nothing about whether the
+  // GUILD-level badge (separate piece of state) is still stale.
+  if (channelStatusChanged || forceGuildBadgeRecompute) {
     QString ownerGuildId = m_chatGuildByChannelId.value(channelId).trimmed();
     if (ownerGuildId.isEmpty()) {
       ownerGuildId = m_selectedGuildId.trimmed();
     }
     qDebug() << "[discord-chat] recompute guild badges for" << ownerGuildId
-             << "from" << m_allGuildChannels.size() << "channels";
+             << "from" << m_allGuildChannels.size() << "channels"
+             << "(forced=" << forceGuildBadgeRecompute << ")";
     if (!ownerGuildId.isEmpty()) {
       bool anyChannelStillUnread = false;
       int totalMentionCount = 0;
@@ -220,6 +334,36 @@ void DiscordClient::onGuildChannelsLoaded(const QString &guildId,
 
   recomputeAccessibleGuildChannels(guildId);
   setStatusText("Connected");
+
+  // Fix: see m_pendingUnreadClearChannelId's doc comment in Client.hpp
+  // - redo the unread/badge clear for a channel that was opened via
+  // Hub's cold-start REST fallback (fetchChannelInfo()) before this
+  // guild's channels were loaded. Guarded by guildId match (not just
+  // "pending id is non-empty") so a DIFFERENT guild loading its
+  // channels around the same time can't consume/clear the flag for a
+  // channel that belongs elsewhere.
+  if (!m_pendingUnreadClearChannelId.isEmpty() &&
+      m_chatGuildByChannelId.value(m_pendingUnreadClearChannelId) == guildId) {
+    QString channelIdToClear = m_pendingUnreadClearChannelId;
+    m_pendingUnreadClearChannelId.clear();
+    // Fix: forceGuildBadgeRecompute=true - confirmed via logs as the
+    // actual missing piece: this channel's own unread/mentionCount in
+    // the just-loaded REST data already reads false/0 (Discord's own
+    // channel list, fetched fresh, has no reason to show it as
+    // unread), so the per-channel "did anything change" check here
+    // finds nothing new and would otherwise skip the guild-badge
+    // recompute entirely - leaving the guild's white bar/red badge lit
+    // from whatever earlier gateway event set it, forever. Force it
+    // here specifically, since this call only happens once, right
+    // after this guild's channel data has JUST become available for
+    // the first time this session - exactly the case the normal
+    // "only recompute if this channel changed" guard was never meant
+    // to cover.
+    clearChannelUnreadStateAndRecomputeGuildBadge(channelIdToClear, true);
+    if (m_store) {
+      m_store->clearChannelUnread(channelIdToClear);
+    }
+  }
 
   // Fix: Threads are NOT fetched via REST here (or anywhere else).
   // Tried both GET /guilds/{id}/threads/active and GET /channels/{id}/

@@ -43,9 +43,64 @@ NavigationPane {
         if (pendingHubChannelId === "" || !currentMainPage) {
             return;
         }
-        currentMainPage.openChat(pendingHubChannelId, pendingHubGuildId, "");
+        // Fix: this used to always pass "" for channelName - a Hub
+        // mention notification never carries the channel's own name
+        // (for a guild channel it's the SERVER name that gets pushed
+        // to Hub, see GatewayHandler::buildMentionNotification()), so
+        // the chat title/member-sheet title stayed permanently blank
+        // after opening from Hub (confirmed via screenshot: title bar
+        // empty even though the Members sheet's own data - which comes
+        // from a channelId-keyed lookup, not the name - loaded fine).
+        // discordClient.channelNameForId() is a best-effort, no-network
+        // lookup against whatever's already cached (DMs are global;
+        // guild channels only for the currently selected guild). If
+        // the channel's guild hasn't been loaded yet this session it
+        // still comes back empty here - guildChannelsChanged (connected
+        // below) re-resolves it once that guild's channels actually
+        // arrive, so the title self-heals instead of staying blank for
+        // the rest of the session.
+        var resolvedName = discordClient.channelNameForId(pendingHubChannelId);
+        currentMainPage.openChat(pendingHubChannelId, pendingHubGuildId, resolvedName);
         pendingHubChannelId = "";
         pendingHubGuildId = "";
+    }
+
+    // Fix: companion to the resolvedName lookup above - if the Hub
+    // invoke was a cold start (or the mentioned channel's guild was
+    // never opened this session), channelNameForId() had nothing
+    // cached yet and openChat() got called with an empty name. Once
+    // THIS guild's channels actually finish loading (loadGuildChannels()
+    // -> AppStore::setGuildChannels() -> guildChannelsChanged), try the
+    // lookup again and push the real name into the currently-open chat
+    // page if it's still showing blank. No-op on every normal launch
+    // (currentMainPage.activeChatChannelId only matches right after a
+    // Hub-invoked open with an unresolved name).
+    function onGuildChannelsChanged() {
+        if (!currentMainPage || !currentMainPage.activeChatChannelId ||
+                currentMainPage.activeChatChannelName !== "") {
+            return;
+        }
+        var resolvedName = discordClient.channelNameForId(currentMainPage.activeChatChannelId);
+        if (resolvedName !== "") {
+            currentMainPage.updateActiveChatChannelName(resolvedName);
+        }
+    }
+
+    // Fix: fires once DiscordClient::fetchChannelInfo()'s REST lookup
+    // returns (see that function's doc comment in Client.hpp) - the
+    // cold-start counterpart to onGuildChannelsChanged() above. Needed
+    // separately because onGuildChannelsChanged() only fires for GUILD
+    // channels (via appStore.guildChannelsChanged) - a cold-start Hub
+    // tap on a DM never triggers that signal at all, so without this,
+    // DMs opened cold would stay blank forever with no self-heal path.
+    // Matched by exact channelId (not just "any blank title") so this
+    // can't clobber an unrelated chat the user has since navigated to.
+    function onChannelInfoResolved(channelId, guildId, channelName) {
+        if (!currentMainPage || currentMainPage.activeChatChannelId !== channelId ||
+                currentMainPage.activeChatChannelName !== "" || channelName === "") {
+            return;
+        }
+        currentMainPage.updateActiveChatChannelName(channelName);
     }
 
     function playSfx(player) {
@@ -108,6 +163,8 @@ NavigationPane {
             pendingHubGuildId = guildId
             tryOpenPendingHubChannel()
         })
+        appStore.guildChannelsChanged.connect(onGuildChannelsChanged)
+        discordClient.channelInfoResolved.connect(onChannelInfoResolved)
         discordClient.autoLogin()
     }
 

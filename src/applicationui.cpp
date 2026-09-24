@@ -257,19 +257,31 @@ void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {
     return;
   }
 
-  // An empty channelId in m_chatGuildByChannelId means either a DM
-  // (guild channels are always inserted into this map on select — see
-  // GuildChannels.cpp::selectChannel()), or a cold-started app where
-  // this channel was never opened this session. For an unopened guild
-  // channel, an empty guildId means AppStore::selectChannel() skips
-  // guild navigation — acceptable since this is a rare case (a channel
-  // got pinged but the app never loaded it this session).
+  // Fix: this WAS "acceptable since it's a rare case" per the comment
+  // below - turned out to be the COMMON case, not rare: any cold app
+  // start (app not already running when the Hub notification is
+  // tapped) has an entirely empty m_chatGuildByChannelId, so guildId
+  // comes back empty here basically every time the app is launched
+  // via Hub (confirmed via a real log: "resolved guildId= \"\"" right
+  // after "[Hub] init() attempt 1 / 5" - i.e. on the very first
+  // invoke of a fresh process). Without a guildId, selectGuild() never
+  // ran, that guild's channels never loaded, and the chat title stayed
+  // permanently blank with nothing to self-heal it. Falls back to
+  // DiscordClient::fetchChannelInfo() (GET /channels/{id} - resolves
+  // both guildId and name in one REST call) whenever the cache comes
+  // back empty; DiscordClient::onChannelInfoLoaded() then selects the
+  // guild itself once the response arrives, same as the line below
+  // does synchronously when the cache DID have it.
   QString guildId = m_discordClient->guildIdForChannel(channelId);
   qDebug() << "[Hub][invoke] channelId=" << channelId << "resolved guildId="
            << guildId << "(empty is OK for a DM or a channel never opened"
                           " this session)";
   if (!guildId.isEmpty()) {
     m_discordClient->selectGuild(guildId);
+  } else {
+    qDebug() << "[Hub][invoke] guildId unresolved from cache - falling back"
+                " to fetchChannelInfo() REST lookup for" << channelId;
+    m_discordClient->fetchChannelInfo(channelId);
   }
   m_discordClient->selectChannel(channelId);
   qDebug() << "[Hub][invoke] selectChannel(" << channelId << ") called - done.";

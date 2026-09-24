@@ -36,6 +36,10 @@ DiscordNetworkWorker::DiscordNetworkWorker(QObject *parent)
   connect(&m_dataClient,
           SIGNAL(archivedThreadsLoaded(QString, QVariantList, bool)), this,
           SIGNAL(archivedThreadsLoaded(QString, QVariantList, bool)));
+  connect(&m_dataClient, SIGNAL(channelInfoLoaded(QString, QString, QString)),
+          this, SIGNAL(channelInfoLoaded(QString, QString, QString)));
+  connect(&m_dataClient, SIGNAL(channelInfoLoadFailed(QString, QString)),
+          this, SIGNAL(channelInfoLoadFailed(QString, QString)));
   connect(&m_dataClient, SIGNAL(requestFailed(QString)), this,
           SIGNAL(requestFailed(QString)));
 
@@ -199,6 +203,17 @@ void DiscordNetworkWorker::fetchArchivedThreads(const QString &token,
   }
 
   m_dataClient.fetchArchivedThreads(token, channelId, beforeCursor);
+}
+
+void DiscordNetworkWorker::fetchChannelInfo(const QString &token,
+                                            const QString &channelId) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "fetchChannelInfo", Qt::QueuedConnection,
+                              Q_ARG(QString, token), Q_ARG(QString, channelId));
+    return;
+  }
+
+  m_dataClient.fetchChannelInfo(token, channelId);
 }
 
 void DiscordNetworkWorker::fetchChannelMessages(

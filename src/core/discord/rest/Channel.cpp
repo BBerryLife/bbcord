@@ -126,3 +126,19 @@ void DiscordRestClient::fetchArchivedThreads(const QString &token,
   request.type = ArchivedThreadsRequest;
   enqueueRequest(request);
 }
+
+void DiscordRestClient::fetchChannelInfo(const QString &token,
+                                         const QString &channelId) {
+  RestRequest request;
+  request.token = token.trimmed();
+  request.channelId = channelId.trimmed();
+  if (request.token.isEmpty() || request.channelId.isEmpty()) {
+    emit requestFailed("Channel info request is empty");
+    return;
+  }
+
+  request.requestPath = QString("/api/v9/channels/%1").arg(request.channelId);
+
+  request.type = ChannelInfoRequest;
+  enqueueRequest(request);
+}

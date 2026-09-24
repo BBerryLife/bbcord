@@ -62,6 +62,18 @@ public:
   // session (e.g. opening the app from the Hub during a cold start —
   // see ApplicationUI::onInvoked()).
   Q_INVOKABLE QString guildIdForChannel(const QString &channelId) const;
+  // Best-effort channel/DM display name for a channelId, read from
+  // whatever's ALREADY cached client-side - never triggers a network
+  // request. Checks m_dmChannelsById first (global, always populated
+  // once DMs load), then m_allGuildChannels/m_rawSelectedGuildChannels
+  // (only populated for the CURRENTLY SELECTED guild - see
+  // loadGuildChannels()). Returns empty if the channel isn't in either
+  // place yet (e.g. a cold Hub-invoke for a guild channel whose guild
+  // hasn't been selected/loaded this session - see
+  // ApplicationUI::onInvoked(), which falls back to a placeholder
+  // title and relies on guildChannelsChanged to fill this in once
+  // loadGuildChannels() for that guild actually completes).
+  Q_INVOKABLE QString channelNameForId(const QString &channelId) const;
   // Active thread list (mapped through ItemMapper, same shape as items
   // in guildChannels) for a specific channel. Data comes entirely
   // through the GATEWAY (THREAD_LIST_SYNC event, see
@@ -105,6 +117,16 @@ Q_SIGNALS:
   // immediately.
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
+  // Fix: emitted once fetchChannelInfo() (Hub cold-start fallback)
+  // resolves a name, whether from this REST call itself or from cache
+  // becoming available moments later via onChannelInfoLoaded()'s
+  // selectGuild() call triggering the normal guild-channels load.
+  // channelName can legitimately be empty (see channelInfoLoaded()'s
+  // doc comment in RestClient.hpp for why) - main.qml only acts on
+  // this when it's non-empty, same as its existing
+  // onGuildChannelsChanged() self-heal path.
+  void channelInfoResolved(const QString &channelId, const QString &guildId,
+                           const QString &channelName);
 
 public Q_SLOTS:
   void clearAvatarCacheState();
@@ -143,6 +165,13 @@ public Q_SLOTS:
                                    const QString &content);
   Q_INVOKABLE void deleteChatMessage(const QString &channelId,
                                      const QString &messageId);
+  // Fix: see fetchChannelInfo()'s doc comment in RestClient.hpp - only
+  // needed on the Hub cold-start path, where guildIdForChannel()/
+  // channelNameForId() have nothing cached yet. token comes from
+  // wherever the rest of DiscordClient already stores it (see
+  // m_token/currentToken()-style usage elsewhere in this class) -
+  // callers don't pass it themselves.
+  Q_INVOKABLE void fetchChannelInfo(const QString &channelId);
 
 private Q_SLOTS:
   void onRestLoginSucceeded(const QVariantMap &user, const QString &token);
@@ -163,6 +192,17 @@ private Q_SLOTS:
                                const QStringList &roleIds);
   void onArchivedThreadsLoaded(const QString &channelId,
                                const QVariantList &threads, bool hasMore);
+  // Fix: companion to fetchChannelInfo() (see its doc comment in
+  // RestClient.hpp) - resolves guildId/channelName for a Hub-invoked
+  // chat that a cold app start couldn't resolve from cache. Selects
+  // the guild (so its channel list loads, same as a normal sidebar
+  // click) and emits channelInfoResolved() so main.qml/MainPage.qml
+  // can push the real name into whatever chat page is currently
+  // showing blank - see channelInfoResolved()'s own doc comment.
+  void onChannelInfoLoaded(const QString &channelId, const QString &guildId,
+                           const QString &channelName);
+  void onChannelInfoLoadFailed(const QString &channelId,
+                               const QString &message);
   void onChannelMessagesLoaded(const QString &channelId,
                                const QString &beforeMessageId,
                                const QVariantList &messages);
@@ -230,8 +270,15 @@ private:
   // Shared between selectChannel() (cold-open path) and
   // onGatewayDispatch()'s MESSAGE_CREATE handling (live-message path,
   // for a mention arriving in the channel the user already has open).
+  // forceGuildBadgeRecompute: normally the guild-level recompute only
+  // runs when this channel's OWN unread/mentionCount fields actually
+  // changed - but a caller that knows the GUILD badge might be stale
+  // independent of that (see onGuildChannelsLoaded()'s
+  // m_pendingUnreadClearChannelId consumer, the one real caller that
+  // passes true here) should force it regardless. Defaults to false so
+  // every existing call site keeps its previous behavior unchanged.
   void clearChannelUnreadStateAndRecomputeGuildBadge(
-      const QString &channelId);
+      const QString &channelId, bool forceGuildBadgeRecompute = false);
   void appendVisibleGuildChannels();
   // Fix: re-runs PermissionUtils::canViewChannel() over
   // m_rawSelectedGuildChannels (the unfiltered, already-mapped channel
@@ -333,6 +380,19 @@ private:
   QStringList &m_pendingUnreadChannelIds;
   QStringList &m_pendingDmPresenceUserIds;
   QHash<QString, QString> m_chatGuildByChannelId;
+  // Fix: companion to fetchChannelInfo()'s cold-start fallback (see
+  // its doc comment) - clearChannelUnreadStateAndRecomputeGuildBadge()
+  // runs as part of selectChannel(), called BEFORE this REST lookup
+  // resolves, so at that point the guild's channels aren't loaded yet
+  // and the unread/badge clear silently finds nothing to update
+  // (confirmed via a real log: "channelStatusChanged= false" right
+  // after a Hub short-tap opened the chat, with the Hub badge and red
+  // dot both staying lit). Set right before selectGuild() is called
+  // from onChannelInfoLoaded(), consumed once in
+  // onGuildChannelsLoaded() once that guild's channels actually finish
+  // loading, to redo the unread clear now that there's real channel
+  // data to clear it against.
+  QString m_pendingUnreadClearChannelId;
   // Most recent channel requested via requestMemberListSync().
   // GUILD_MEMBER_LIST_UPDATE (op 14 - unofficial protocol) doesn't
   // guarantee a root-level "channel_id" field, and the "id" field (list

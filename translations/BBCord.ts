@@ -156,37 +156,37 @@
 <context>
     <name>ChatCard</name>
     <message>
-        <location filename="../assets/ChatCard.qml" line="260"/>
+        <location filename="../assets/ChatCard.qml" line="287"/>
         <source>Loading more messages...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="315"/>
+        <location filename="../assets/ChatCard.qml" line="342"/>
         <source>Replying to </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="347"/>
+        <location filename="../assets/ChatCard.qml" line="374"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="414"/>
+        <location filename="../assets/ChatCard.qml" line="441"/>
         <source>File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="489"/>
+        <location filename="../assets/ChatCard.qml" line="516"/>
         <source>Message </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="544"/>
+        <location filename="../assets/ChatCard.qml" line="571"/>
         <source>Editing message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="570"/>
+        <location filename="../assets/ChatCard.qml" line="597"/>
         <source>Attach files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -328,8 +328,8 @@
 <context>
     <name>MainPage</name>
     <message>
-        <location filename="../assets/MainPage.qml" line="461"/>
-        <source>Threads #</source>
+        <location filename="../assets/MainPage.qml" line="534"/>
+        <source>Forums #</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -656,17 +656,17 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ThreadList.qml" line="191"/>
+        <location filename="../assets/ThreadList.qml" line="209"/>
         <source>No active threads in this channel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ThreadList.qml" line="259"/>
+        <location filename="../assets/ThreadList.qml" line="277"/>
         <source>Loading...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ThreadList.qml" line="259"/>
+        <location filename="../assets/ThreadList.qml" line="277"/>
         <source>Load older threads</source>
         <translation type="unfinished"></translation>
     </message>

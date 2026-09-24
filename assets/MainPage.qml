@@ -8,6 +8,30 @@ Page {
     property string activeContentType: ""
     property string activeServerId: ""
 
+    // Fix: tracks whichever chat page is currently on top (if any) so
+    // main.qml's onGuildChannelsChanged() can re-resolve a channel name
+    // that came back empty from a Hub-invoked open (see
+    // tryOpenPendingHubChannel()'s comment in main.qml) once that
+    // guild's channels actually finish loading. activeChatChannelId is
+    // cleared whenever the chat page is left (backRequested) so this
+    // never fires against a page that's no longer open. Deliberately
+    // NOT reused for the normal (non-Hub) open path - channelName is
+    // always already known there, so activeChatChannelName is never
+    // blank in that case and onGuildChannelsChanged() is a no-op.
+    property string activeChatChannelId: ""
+    property string activeChatChannelName: ""
+    property variant activeChatPage: null
+
+    function updateActiveChatChannelName(newName) {
+        activeChatChannelName = newName;
+        if (activeChatPage) {
+            // ChatCard.qml's titleBar.title is bound to channelName
+            // declaratively (title: chatPage.channelName) - setting
+            // this alone is enough for the title bar to update.
+            activeChatPage.channelName = newName;
+        }
+    }
+
     Container {
         layout: StackLayout {
             orientation: LayoutOrientation.LeftToRight
@@ -353,8 +377,33 @@ Page {
         if (page) {
             chatController.openChannel(channelId, guildId, channelName);
             page.channelName = channelName;
-            page.title = channelName;
+            // Fix: THIS WAS THE ACTUAL BUG behind the still-blank title
+            // after channelInfoResolved fired. ChatCard.qml's titleBar
+            // has a DECLARATIVE BINDING: title: chatPage.channelName
+            // (reached through the "title" alias). Assigning to
+            // page.title here writes straight through that alias into
+            // titleBar.title directly - and in QML, assigning to a
+            // property that has an active binding PERMANENTLY BREAKS
+            // that binding. From this line on, titleBar.title becomes a
+            // frozen plain string (""), never again following
+            // page.channelName - so every later fix that updates
+            // channelName (onCreationCompleted's chatController.
+            // currentChannelName read, and this file's own
+            // updateActiveChatChannelName()) kept "succeeding" (the
+            // property really was being set - confirmed via the
+            // console.log trace) while the title bar itself never
+            // moved, because it had already stopped listening.
+            // page.channelName = channelName above is enough on its
+            // own - drop the redundant page.title assignment entirely
+            // and let the binding do its job.
             page.compactMessageEnabled = settingsController.compactMessageEnabled;
+            // Fix: see activeChatChannelId's doc comment above - lets
+            // main.qml find and patch up this exact page later if
+            // channelName arrived empty (Hub-invoke path) and the real
+            // name wasn't cached yet at open time.
+            mainPage.activeChatPage = page;
+            mainPage.activeChatChannelId = channelId;
+            mainPage.activeChatChannelName = channelName;
             settingsController.compactMessageEnabledChanged.connect(function (enabled) {
                 page.compactMessageEnabled = enabled;
             });
@@ -367,6 +416,11 @@ Page {
                 // still being treated as "user is reading it live",
                 // confirmed bug via logs).
                 chatController.closeChannel();
+                if (mainPage.activeChatPage === page) {
+                    mainPage.activeChatPage = null;
+                    mainPage.activeChatChannelId = "";
+                    mainPage.activeChatChannelName = "";
+                }
                 if (mainPage.navigationPane) {
                     mainPage.navigationPane.pop();
                 }
@@ -375,10 +429,19 @@ Page {
                 var memberPage = channelMemberListDefinition.createObject();
 
                 if (memberPage) {
+                    // Fix: uses mainPage.activeChatChannelName (live)
+                    // instead of the closed-over channelName param
+                    // (fixed at openChat() time) - if this chat was
+                    // opened from a Hub invoke with an unresolved name,
+                    // activeChatChannelName may have since self-healed
+                    // via onGuildChannelsChanged() in main.qml by the
+                    // time the user actually opens the Members sheet.
+                    var resolvedChannelName = mainPage.activeChatChannelName !== ""
+                        ? mainPage.activeChatChannelName : channelName;
                     memberPage.channelId = channelId;
                     memberPage.guildId = guildId;
-                    memberPage.channelName = channelName;
-                    memberPage.title = "Members #" + channelName;
+                    memberPage.channelName = resolvedChannelName;
+                    memberPage.title = "Members #" + resolvedChannelName;
                     memberPage.backRequested.connect(function () {
                         if (mainPage.navigationPane) {
                             mainPage.navigationPane.pop();
@@ -458,7 +521,17 @@ Page {
             threadPage.channelId = channelId;
             threadPage.guildId = guildId;
             threadPage.channelName = channelName;
-            threadPage.title = qsTr("Threads #") + channelName;
+            // Fix: this was overwriting ThreadList.qml's own titleBar
+            // binding (title: qsTr("Forums #") + threadListPage.channelName)
+            // right after push - that binding never actually reached the
+            // screen because this assignment (via the "title" alias)
+            // ran after it and won, so the title bar kept showing
+            // "Threads #<channel>" no matter what ThreadList.qml itself
+            // declared. Kept in sync with ThreadList.qml's wording here
+            // too, since setting it again here (immediately after
+            // creation) is harmless and keeps both copies consistent if
+            // either ever changes independently.
+            threadPage.title = qsTr("Forums #") + channelName;
             threadPage.backRequested.connect(function () {
                 threadPage.cleanup();
                 if (mainPage.navigationPane) {

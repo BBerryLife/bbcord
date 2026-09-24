@@ -438,6 +438,8 @@ void DiscordRestClient::processNextRequest() {
       message = "Could not create Discord archived threads connection";
     } else if (m_requestType == ChannelMessagesRequest) {
       message = "Could not create Discord messages connection";
+    } else if (m_requestType == ChannelInfoRequest) {
+      message = "Could not create Discord channel info connection";
     } else if (m_requestType == SendMessageRequest ||
                m_requestType == UploadMessageRequest) {
       message = "Could not create Discord send connection";
@@ -471,6 +473,11 @@ void DiscordRestClient::processNextRequest() {
       QString guildId = m_iconGuildId;
       finishRequest();
       emit guildIconDownloadFailed(guildId, message);
+      processNextRequest();
+    } else if (m_requestType == ChannelInfoRequest) {
+      QString channelId = m_channelId;
+      finishRequest();
+      emit channelInfoLoadFailed(channelId, message);
       processNextRequest();
     } else {
       failDataRequest(message);
@@ -730,6 +737,43 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
       // "password login failure body" does, to see Discord's actual
       // {"message":..., "code":...} the next time this 400 happens.
       qDebug() << "[discord-rest] self guild member failure body" << body;
+      break;
+    }
+
+    if (m_requestType == ChannelInfoRequest) {
+      qDebug() << "[discord-rest] channel info status" << status;
+      if (status == 200) {
+        QString parseError;
+        QVariantMap channel = DiscordJsonParser::parseObject(body, &parseError);
+        if (!parseError.isEmpty()) {
+          QString channelId = m_channelId;
+          finishRequest(keepConnectionAlive);
+          emit channelInfoLoadFailed(
+              channelId,
+              QString("Discord REST JSON error: %1").arg(parseError));
+          processNextRequest();
+          break;
+        }
+
+        QString channelId = m_channelId;
+        finishRequest(keepConnectionAlive);
+        // Fix: DMs have no "guild_id" field at all (not even null in
+        // some client versions) - toString() on a missing key returns
+        // an empty QString either way, which is exactly the "this is a
+        // DM" signal callers already expect (same convention as
+        // guildIdForChannel()).
+        emit channelInfoLoaded(channelId,
+                               channel.value("guild_id").toString(),
+                               channel.value("name").toString());
+        processNextRequest();
+        break;
+      }
+
+      QString channelId = m_channelId;
+      finishRequest(keepConnectionAlive);
+      emit channelInfoLoadFailed(channelId,
+                                 dataErrorMessage("channel info", status));
+      processNextRequest();
       break;
     }
 

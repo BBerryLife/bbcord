@@ -23,6 +23,7 @@ enum RequestType {
   ActiveThreadsRequest,
   ArchivedThreadsRequest,
   ChannelMessagesRequest,
+  ChannelInfoRequest,
   SendMessageRequest,
   UploadMessageRequest,
   EditMessageRequest,
@@ -117,6 +118,15 @@ public:
                             const QString &beforeCursor);
   void fetchChannelMessages(const QString &token, const QString &channelId,
                             int limit, const QString &beforeMessageId);
+  // GET /channels/{channel.id} - a single channel object, including its
+  // own "guild_id" and "name" fields. Used ONLY as a fallback when a
+  // Hub-invoked chat open can't resolve guildId/channelName from
+  // already-cached data (see ApplicationUI::onInvoked()'s comment on
+  // why this happens on a cold start: m_chatGuildByChannelId is empty
+  // before ANY guild has been selected this session, so
+  // guildIdForChannel() has nothing to look up yet). Works for both
+  // guild channels and DMs - DMs simply come back with no "guild_id".
+  void fetchChannelInfo(const QString &token, const QString &channelId);
   void sendChannelMessage(const QString &token, const QString &channelId,
                           const QString &content, const QString &nonce,
                           const QString &replyMessageId,
@@ -171,6 +181,13 @@ Q_SIGNALS:
   void channelMessagesLoaded(const QString &channelId,
                              const QString &beforeMessageId,
                              const QVariantList &messages);
+  // channelName can be empty for a channel Discord itself has no name
+  // for (a DM has no "name" field at all - only group DMs sometimes
+  // do) - callers should fall back to something sensible rather than
+  // treat empty as an error.
+  void channelInfoLoaded(const QString &channelId, const QString &guildId,
+                         const QString &channelName);
+  void channelInfoLoadFailed(const QString &channelId, const QString &message);
   void channelMessageSent(const QString &channelId, const QString &nonce,
                           const QVariantMap &message);
   void channelMessageEdited(const QString &channelId,
