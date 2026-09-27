@@ -41,6 +41,7 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/ChannelMemberList.qml) \
         $$quote($$BASEDIR/assets/ChatCard.qml) \
         $$quote($$BASEDIR/assets/DmList.qml) \
+        $$quote($$BASEDIR/assets/EmojiOnlyItem.qml) \
         $$quote($$BASEDIR/assets/HubPreviewCard.qml) \
         $$quote($$BASEDIR/assets/LoginPage.qml) \
         $$quote($$BASEDIR/assets/MainPage.qml) \
@@ -139,6 +140,7 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/ui/MemberListController.cpp) \
         $$quote($$BASEDIR/src/ui/ServerListController.cpp) \
         $$quote($$BASEDIR/src/ui/SettingsController.cpp) \
+        $$quote($$BASEDIR/src/utils/EmojiUtils.cpp) \
         $$quote($$BASEDIR/src/utils/Logger.cpp) \
         $$quote($$BASEDIR/src/utils/MarkdownParser.cpp)
 
@@ -180,6 +182,7 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/ui/MemberListController.hpp) \
         $$quote($$BASEDIR/src/ui/ServerListController.hpp) \
         $$quote($$BASEDIR/src/ui/SettingsController.hpp) \
+        $$quote($$BASEDIR/src/utils/EmojiUtils.hpp) \
         $$quote($$BASEDIR/src/utils/Logger.hpp) \
         $$quote($$BASEDIR/src/utils/MarkdownParser.hpp)
 }

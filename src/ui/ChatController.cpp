@@ -4,6 +4,7 @@
 #include "../core/AttachmentImageCacheWorker.hpp"
 #include "../core/Client.hpp"
 #include "../core/models/Models.hpp"
+#include "../utils/EmojiUtils.hpp"
 
 #include <bb/system/Clipboard>
 #include <bb/system/InvokeManager>
@@ -1086,6 +1087,44 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
   item["timestampMs"] = item.value("timestampMs");
   item["message"] = item.value("message").toString();
   item["messageHtml"] = item.value("messageHtml").toString();
+  // Fix: was passing the raw cdn.discordapp.com URL straight through
+  // as each segment's "url", then binding that directly to an
+  // ImageView.imageSource in EmojiOnlyItem.qml. Cascades' ImageView
+  // only accepts local sources (file://, asset://, local://, or a bare
+  // local path) - it does NOT fetch http(s) itself (confirmed by
+  // on-device log: "Unsupported scheme (https) used in url ... Image
+  // loading aborted."). That's the exact same asset-vs-network
+  // distinction attachmentUrl/imageSource resolution already handles a
+  // few lines below for message attachments (see
+  // cachedImageSource()/requestCachedImage() there) - custom-emoji
+  // images need to go through the same disk-cache pipeline instead of
+  // being handed to ImageView raw.
+  QVariantList rawEmojiSegments = item.value("emojiSegments").toList();
+  QVariantList resolvedEmojiSegments;
+  for (int i = 0; i < rawEmojiSegments.size(); ++i) {
+    QVariantMap segment = rawEmojiSegments.at(i).toMap();
+    QString remoteUrl = segment.value("url").toString();
+    if (!remoteUrl.isEmpty() && isRemoteImageUrl(remoteUrl)) {
+      QString cached = cachedImageSource(remoteUrl);
+      if (!cached.isEmpty()) {
+        segment["url"] = cached;
+      } else {
+        // Not cached yet: leave "url" empty (renders as a blank slot
+        // in EmojiOnlyItem.qml - Cascades' ImageView with an empty
+        // imageSource just shows nothing, no warning/crash) and kick
+        // off the download. Once AttachmentImageCacheWorker finishes,
+        // onAttachmentImageCached's new emojiSegments-matching branch
+        // (see updateAttachmentImageInModel()) patches the cached path
+        // straight into this model item and triggers a re-render -
+        // no need to wait for prepareMessageForModel() to run again.
+        segment["url"] = QString();
+        requestCachedImage(remoteUrl);
+      }
+    }
+    resolvedEmojiSegments.append(segment);
+  }
+  item["emojiSegments"] = resolvedEmojiSegments;
+  item["emojiOnly"] = item.value("emojiOnly").toBool();
   item["replyAuthor"] = item.value("replyAuthor").toString();
   item["replyMessage"] = item.value("replyMessage").toString();
   item["replyMessageHtml"] = item.value("replyMessageHtml").toString();
@@ -1273,6 +1312,46 @@ void ChatController::updateAttachmentImageInModel(const QString &url,
         }
       }
     }
+
+    // Fix: onAttachmentImageCached()/onAttachmentImageFailed() call
+    // into this function to push a freshly-downloaded image into
+    // whichever model item was waiting on it, matched by the raw
+    // remote URL - but that matching only ever looked at
+    // "attachmentUrl"/"attachments", never "emojiSegments". So a
+    // custom emoji that wasn't cached yet at prepareMessageForModel()
+    // time (the common case - first time the emoji is ever seen) had
+    // its download kicked off correctly, but nothing put the result
+    // back once it landed: the bubble stayed blank until the message
+    // happened to scroll off-screen and back on, forcing a fresh
+    // prepareMessageForModel() call that this time found it already in
+    // m_cachedAttachmentImages. This mirrors the attachments loop
+    // above, matched by emojiSegments[n].id (the raw CDN URL is no
+    // longer on the item after prepareMessageForModel() resolves it -
+    // see EmojiUtils::cdnUrl(), which is deterministic from id+animated,
+    // so recomputing it here to compare against "url" is cheap and
+    // avoids having to also carry the original remote URL through the
+    // model just for this match).
+    QVariantList emojiSegments = message.value("emojiSegments").toList();
+    bool emojiChanged = false;
+    for (int j = 0; j < emojiSegments.size(); ++j) {
+      QVariantMap segment = emojiSegments.at(j).toMap();
+      QString segmentId = segment.value("id").toString();
+      if (segmentId.isEmpty()) {
+        continue;
+      }
+      bool segmentAnimated = segment.value("animated").toBool();
+      if (EmojiUtils::cdnUrl(segmentId, segmentAnimated) != url) {
+        continue;
+      }
+      segment["url"] = failed ? QString() : image;
+      emojiSegments[j] = segment;
+      emojiChanged = true;
+    }
+    if (emojiChanged) {
+      message["emojiSegments"] = emojiSegments;
+      changed = true;
+    }
+
     if (changed || topLevelChanged) {
       message["attachments"] = attachments;
       m_chatDataModel->replace(i, message);

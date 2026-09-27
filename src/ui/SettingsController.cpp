@@ -147,28 +147,60 @@ QString SettingsController::exportLog() {
     return QString();
   }
 
-  QDir destDir("/accounts/1000/shared/documents/bbcord");
-  if (!destDir.exists() && !destDir.mkpath(".")) {
-    qWarning() << "[settings] failed to create export directory"
-               << destDir.absolutePath();
-    return QString();
-  }
-
   QString destFileName =
       QString("bbcord-log-%1.log")
           .arg(QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss"));
-  QString destPath = destDir.absoluteFilePath(destFileName);
 
-  if (QFile::exists(destPath)) {
-    QFile::remove(destPath);
+  // Fix: /accounts/1000/shared/documents is only reachable once the
+  // user has actually granted the "Shared Files" permission via
+  // Settings > App Permissions on-device - the <permission
+  // access_shared> entry in bar-descriptor.xml only REQUESTS that
+  // permission at install time, it doesn't grant it, and a sideloaded
+  // dev-mode install commonly needs it granted (or re-granted)
+  // manually. Deleting and letting the app recreate destDir doesn't
+  // help when the failure is a permission the app was never given
+  // rather than a stale/broken directory - mkpath() fails identically
+  // either way. Falling back to the app's own sandbox (QDir::homePath,
+  // already proven writable elsewhere - see
+  // ChatController::attachmentImageCachePath()'s use of it for the
+  // image cache) means exportLog() still produces a usable file
+  // instead of silently returning empty, and the returned path itself
+  // tells the caller which case happened.
+  QDir sharedDir("/accounts/1000/shared/documents/bbcord");
+  if (sharedDir.exists() || sharedDir.mkpath(".")) {
+    QString sharedPath = sharedDir.absoluteFilePath(destFileName);
+    if (QFile::exists(sharedPath)) {
+      QFile::remove(sharedPath);
+    }
+    if (QFile::copy(logPath, sharedPath)) {
+      return sharedPath;
+    }
+    qWarning() << "[settings] failed to copy log to" << sharedPath
+               << "- falling back to app sandbox";
+  } else {
+    qWarning() << "[settings] failed to create export directory"
+               << sharedDir.absolutePath()
+               << "(likely missing Shared Files permission - check"
+               << "Settings > App Permissions on-device) - falling back"
+               << "to app sandbox";
   }
 
-  if (!QFile::copy(logPath, destPath)) {
-    qWarning() << "[settings] failed to copy log to" << destPath;
+  QDir sandboxDir(QDir::homePath() + "/data/exported-logs");
+  if (!sandboxDir.exists() && !sandboxDir.mkpath(".")) {
+    qWarning() << "[settings] failed to create fallback export directory"
+               << sandboxDir.absolutePath();
     return QString();
   }
 
-  return destPath;
+  QString sandboxPath = sandboxDir.absoluteFilePath(destFileName);
+  if (QFile::exists(sandboxPath)) {
+    QFile::remove(sandboxPath);
+  }
+  if (!QFile::copy(logPath, sandboxPath)) {
+    qWarning() << "[settings] failed to copy log to" << sandboxPath;
+    return QString();
+  }
+  return sandboxPath;
 }
 
 bool SettingsController::guildFolderExpanded(const QString &folderId) const {

@@ -108,6 +108,8 @@ Page {
                             timestampMs: ListItemData.timestampMs
                             message: ListItemData.message
                             messageHtml: ListItemData.messageHtml
+                            emojiSegments: ListItemData.emojiSegments
+                            emojiOnly: ListItemData.emojiOnly === true
                             replyAuthor: ListItemData.replyAuthor
                             replyMessage: ListItemData.replyMessage
                             replyMessageHtml: ListItemData.replyMessageHtml

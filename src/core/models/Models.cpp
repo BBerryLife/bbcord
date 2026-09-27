@@ -1,5 +1,6 @@
 #include "Models.hpp"
 
+#include "../../utils/EmojiUtils.hpp"
 #include "../../utils/MarkdownParser.hpp"
 
 #include <QDateTime>
@@ -235,6 +236,33 @@ QVariantMap DiscordMessage::toVariantMap() const {
   QString resolvedContent =
       resolveMentions(content, mentions, mentionRoles, mentionChannels);
   data["messageHtml"] = MarkdownParser::toHtml(resolvedContent);
+  // Fix: Cascades' Label(TextFormat.Html) has no <img> support, so
+  // custom-emoji images can't be inlined into messageHtml above (that
+  // HTML only ever gets the ":name:" text fallback for them - see
+  // MarkdownParser::parseInline()). Real emoji images are exposed here
+  // as their own ordered segment list so MessageBubble.qml can lay them
+  // out as ImageViews alongside the text, Repeater-style. Built from
+  // "content" (raw, unresolved) rather than resolvedContent - mention
+  // resolution never touches emoji token syntax, and running
+  // EmojiUtils::findTokens() against the smaller/simpler raw string
+  // avoids any chance of drifting from resolveMentions()'s own offsets.
+  QVariantList emojiSegments;
+  QList<EmojiUtils::EmojiToken> emojiTokens = EmojiUtils::findTokens(content);
+  for (int i = 0; i < emojiTokens.size(); ++i) {
+    const EmojiUtils::EmojiToken &token = emojiTokens.at(i);
+    QVariantMap segment;
+    segment["name"] = token.name;
+    segment["id"] = token.id;
+    segment["animated"] = token.animated;
+    segment["url"] = EmojiUtils::cdnUrl(token.id, token.animated);
+    emojiSegments.append(segment);
+  }
+  data["emojiSegments"] = emojiSegments;
+  // Fix: Discord renders a message as large "jumbo" emoji (no text
+  // bubble line) when its content is ONLY custom emoji (and whitespace)
+  // - see EmojiUtils::isEmojiOnly() for the exact rule (also caps at 27
+  // emoji, matching Discord's own behavior).
+  data["emojiOnly"] = EmojiUtils::isEmojiOnly(content);
   // Fix: raw mention data, needed by
   // ChatController::prepareMessageForModel() to compute
   // "mentionsCurrentUser" (this message pings @everyone/@here, the

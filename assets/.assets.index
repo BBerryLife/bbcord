@@ -1,5 +1,5 @@
 1
-55
+56
 About.qml
 audio/connected.ogg
 audio/error.ogg
@@ -9,6 +9,7 @@ ChannelMemberList.qml
 ChatCard.qml
 components/SettingItem.qml
 DmList.qml
+EmojiOnlyItem.qml
 HubPreviewCard.qml
 icon.png
 images/default-avt.png
