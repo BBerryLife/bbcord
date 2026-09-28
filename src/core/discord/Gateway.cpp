@@ -18,10 +18,7 @@ const char *kGatewayUrl =
 const char *kGatewayHost = "gateway.discord.gg";
 const int kGatewayPollIntervalMs = 10;
 
-// See RestClient.cpp for why mongoose's 3-second default DNS timeout is
-// raised here too: the gateway connection resolves the same
-// gateway.discord.gg host and is just as prone to spurious "DNS timeout"
-// failures on slower/mobile networks.
+// Raise mongoose's 3s default DNS timeout (see RestClient.cpp); gateway.discord.gg is equally prone to spurious timeouts.
 const int kGatewayDnsTimeoutMs = 10000;
 } // namespace
 
@@ -156,10 +153,7 @@ void DiscordGateway::sendMemberListSync(const QString &guildId,
     return;
   }
 
-  // Deliberately does NOT check m_sentLazyRequests — this is the one
-  // difference from sendLazyRequest(): the Members sheet needs a fresh
-  // SYNC every time it opens, regardless of whether the channel was
-  // already subscribed for message lazy-load.
+  // Unlike sendLazyRequest(), does not check m_sentLazyRequests: the Members sheet needs a fresh SYNC on every open.
   if (m_state != Ready || m_connection == NULL || !m_connection->is_websocket ||
       m_connection->is_closing) {
     qDebug() << "[discord-gateway] member-list sync request dropped; "
@@ -169,17 +163,10 @@ void DiscordGateway::sendMemberListSync(const QString &guildId,
     return;
   }
 
-  // Discord won't re-send GUILD_MEMBER_LIST_UPDATE (SYNC) if the
-  // subscribe request exactly matches a subscription the server already
-  // has on record (same guild_id + same channel range [0,99]) - this is
-  // always the case here since sendLazyRequest() already subscribed to
-  // this exact range when the user opened the channel, before the
-  // Members sheet was opened. So we send an "unsubscribe" payload (no
-  // "channels") right before the real sync payload, forcing the server
-  // to treat the following subscribe as an actual change that needs
-  // resyncing. Both packets are sent back-to-back without waiting for a
-  // response - server-side processing order is guaranteed by the
-  // WebSocket (TCP) protocol itself.
+  // Discord will not resend SYNC for a subscribe identical to the existing one
+  // (same guild_id and range [0,99], already sent by sendLazyRequest()). Send an
+  // "unsubscribe" (no "channels") first so the real payload counts as a change.
+  // Both are sent back-to-back; TCP preserves their order.
   QString unsubscribeErrorMessage;
   QByteArray unsubscribePayload = DiscordJsonParser::buildMemberListUnsubscribePayload(
       safeGuildId, &unsubscribeErrorMessage);
@@ -241,15 +228,9 @@ void DiscordGateway::timerEvent(QTimerEvent *event) {
     return;
   }
 
-  // Diagnostic: on a real device, Qt's 10ms timer fires with fairly
-  // regular spacing. On the Simulator (QNX virtualized under
-  // VirtualBox), the host OS scheduler / VM pause-resume can coalesce
-  // or delay this timer, so several poll cycles' worth of TCP data can
-  // pile up in the socket buffer before a single mg_mgr_poll() call
-  // processes it all at once - a plausible cause for mongoose
-  // misreading a TLS/WS handshake boundary. Logging the actual gap
-  // between calls (only when abnormally large) to confirm or rule this
-  // out before changing behavior further.
+  // Diagnostic: on the Simulator (QNX in VirtualBox) the 10ms timer can be delayed,
+  // so several polls of TCP data pile up and mongoose may misread a TLS/WS handshake
+  // boundary. Log abnormally large gaps between calls.
   qint64 nowMs = mg_millis();
   if (m_lastPollMs != 0) {
     qint64 gapMs = nowMs - m_lastPollMs;
@@ -261,13 +242,8 @@ void DiscordGateway::timerEvent(QTimerEvent *event) {
   }
   m_lastPollMs = nowMs;
 
-  // Increased from 0ms: a 0ms poll only drains whatever is already
-  // fully available right this instant and returns immediately. If a
-  // TLS/WS handshake response is still trickling in (e.g. delayed by
-  // VM scheduling), this gives mongoose a small window to read a
-  // complete chunk in one pass instead of being interrupted mid-frame
-  // by the poll returning early. Kept short so it doesn't stall other
-  // Qt event processing.
+  // Raised from 0ms: a 0ms poll returns at once and can cut a trickling handshake
+  // response mid-frame; a short window lets mongoose read a full chunk.
   mg_mgr_poll(m_mgr, kGatewayPollWaitMs);
 
   if (m_connection != NULL && m_connection->is_websocket &&

@@ -8,11 +8,8 @@ Container {
     property string serverId: ""
 
     signal channelSelected(string channelId, string guildId, string channelName)
-    // Forum/Media channels have no messages of their own to open via
-    // ChatCard - each forum "post" IS a thread (parentId points back to
-    // this channel). Fires a separate signal so MainPage.qml opens
-    // ThreadList.qml (showing the post/thread list) instead of trying
-    // ChatCard like a regular text channel.
+    // Forum/Media channels have no messages to open via ChatCard (each post is a thread),
+    // so a separate signal makes MainPage.qml open ThreadList.qml instead.
     signal forumChannelSelected(string channelId, string guildId, string channelName)
 
     horizontalAlignment: HorizontalAlignment.Fill
@@ -134,15 +131,8 @@ Container {
                             text: ListItemData.name
                             horizontalAlignment: HorizontalAlignment.Fill
                             textStyle.fontSize: FontSize.Medium
-                            // Fix: unread channels get a bright white
-                            // name (Discord's own unread-channel color),
-                            // read channels fall back to Discord's own
-                            // muted channel-name gray (#949BA4) - both
-                            // set explicitly rather than trying to
-                            // "unset" back to a theme default, since
-                            // Cascades' textStyle.color expects an
-                            // actual Color, not an empty/undefined
-                            // value.
+                            // Unread channel names are bright white and read ones muted gray (#949BA4), both set
+                            // explicitly since textStyle.color needs an actual Color, not an empty value.
                             textStyle.color: (ListItemData.unread || ListItemData.mentionCount > 0) ? Color.create("#FFFFFF") : Color.create("#949BA4")
                             opacity: (ListItemData.unread || ListItemData.mentionCount > 0) ? 1.0 : 0.45
                         }

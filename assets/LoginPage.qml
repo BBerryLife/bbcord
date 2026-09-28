@@ -110,17 +110,10 @@ Page {
                 topMargin: ui.du(1.0)
                 visible: !appStore.busy && passwordMode
 
-                // Fix: BB10's virtual keyboard buffers predictive input and
-                // only commits it into the "text" property on a word-commit
-                // event (space, submit, or focus loss) - a documented OS/
-                // Cascades quirk (see QTBUG-42475), not something we can fix
-                // from here. Binding btnPasswordLogin.enabled straight to
-                // emailField.text.length meant the button stayed disabled
-                // while typing and only flipped once focus moved elsewhere.
-                // onTextChanging fires per-keystroke with the live value as
-                // its "text" argument regardless of that buffering, so we
-                // mirror it into a plain property and bind enabled to that
-                // instead of to emailField.text directly.
+                // BB10's virtual keyboard buffers predictive input and only commits it to "text" on
+                // a word-commit (space, submit, focus loss; see QTBUG-42475). onTextChanging fires
+                // per keystroke, so its value is mirrored into a plain property and enabled is bound
+                // to that instead of to emailField.text.
                 property string liveText: ""
                 onTextChanging: {
                     emailField.liveText = text
@@ -154,12 +147,7 @@ Page {
                 topMargin: ui.du(1.0)
 
                 onClicked: {
-                    // Send liveText (mirrors onTextChanging per-keystroke,
-                    // see comment on emailField/passwordField above), not
-                    // the raw TextField.text - if the on-screen keyboard is
-                    // still holding an uncommitted word in its predictive
-                    // buffer, .text can lag behind what's visibly typed at
-                    // the exact moment this fires.
+                    // Send liveText (per-keystroke mirror, see emailField/passwordField), not TextField.text, which can lag behind the keyboard buffer.
                     discordClient.loginWithPassword(emailField.liveText, passwordField.liveText)
                 }
             }

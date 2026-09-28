@@ -158,11 +158,8 @@ QString DiscordMessage::resolveMentions(const QString &rawContent,
 
   QString result = rawContent;
 
-  // User mentions: "<@id>" or "<@!id>" (the "!" form means "display
-  // nickname if the member has one" - Discord's real client shows the
-  // same "@name" for both, so both patterns resolve the same way
-  // here). displayName() prefers a server nickname/global name over
-  // the bare username, matching what the official client shows.
+  // User mentions "<@id>" and "<@!id>" resolve the same way. displayName() prefers
+  // server nickname/global name over the username, like the official client.
   for (int i = 0; i < mentions.size(); ++i) {
     QVariantMap mention = mentions.at(i).toMap();
     QString userId = mention.value("id").toString().trimmed();
@@ -182,9 +179,7 @@ QString DiscordMessage::resolveMentions(const QString &rawContent,
     result.replace(QString("<@%1>").arg(userId), "@" + displayName);
   }
 
-  // Channel mentions: "<#id>" - mention_channels entries carry "name"
-  // directly (unlike role mentions, which are just a bare id array -
-  // see the mention_roles fallback below).
+  // Channel mentions "<#id>": mention_channels entries carry "name" directly (roles do not).
   for (int i = 0; i < mentionChannels.size(); ++i) {
     QVariantMap channel = mentionChannels.at(i).toMap();
     QString channelId = channel.value("id").toString().trimmed();
@@ -195,15 +190,9 @@ QString DiscordMessage::resolveMentions(const QString &rawContent,
     result.replace(QString("<#%1>").arg(channelId), "#" + channelName);
   }
 
-  // Role mentions: "<@&id>" - Discord's "mention_roles" field is only
-  // a bare array of role id strings (no name attached), and resolving
-  // the real name needs the guild's role list (AppStore), which this
-  // static method has no access to - falling back to a generic "@role"
-  // rather than leaving the raw numeric id visible, same spirit as
-  // what's being fixed here for user mentions. mentionRoles is kept as
-  // a parameter (each entry already normalized to {"id": ...} in
-  // fromVariantMap()) so a future caller with role-name access can
-  // pass real names in without changing this method's signature again.
+  // Role mentions "<@&id>": mention_roles is a bare id array and role names need
+  // AppStore (not available in this static method), so fall back to a generic
+  // "@role". mentionRoles stays a parameter so callers with names can pass them.
   QRegExp roleMentionPattern("<@&(\\d+)>");
   int searchIndex = 0;
   while ((searchIndex = roleMentionPattern.indexIn(result, searchIndex)) !=
@@ -227,25 +216,16 @@ QVariantMap DiscordMessage::toVariantMap() const {
   data["initials"] = authorInitials();
   data["nonce"] = nonce;
   data["message"] = content;
-  // Fix: resolve <@id>/<@&id>/<#id> tokens to "@name"/"#name"/"@role"
-  // BEFORE markdown/HTML conversion, not after - MarkdownParser::toHtml()
-  // escapes/wraps raw text, so running resolveMentions() on its output
-  // would risk mangling tags it already inserted. content itself (and
-  // "message"/"content" below) is left untouched - those are the raw
-  // form, still needed for editing this message later.
+  // Resolve mentions before markdown/HTML conversion: toHtml() escapes and wraps
+  // text, so resolving afterwards could mangle inserted tags. content stays raw
+  // (needed for editing).
   QString resolvedContent =
       resolveMentions(content, mentions, mentionRoles, mentionChannels);
   data["messageHtml"] = MarkdownParser::toHtml(resolvedContent);
-  // Fix: Cascades' Label(TextFormat.Html) has no <img> support, so
-  // custom-emoji images can't be inlined into messageHtml above (that
-  // HTML only ever gets the ":name:" text fallback for them - see
-  // MarkdownParser::parseInline()). Real emoji images are exposed here
-  // as their own ordered segment list so MessageBubble.qml can lay them
-  // out as ImageViews alongside the text, Repeater-style. Built from
-  // "content" (raw, unresolved) rather than resolvedContent - mention
-  // resolution never touches emoji token syntax, and running
-  // EmojiUtils::findTokens() against the smaller/simpler raw string
-  // avoids any chance of drifting from resolveMentions()'s own offsets.
+  // Label(TextFormat.Html) has no <img>, so custom emoji get a ":name:" text fallback
+  // in messageHtml and are also exposed as ordered segments for MessageBubble.qml to
+  // draw as ImageViews. Built from raw "content", since mention resolution never
+  // touches emoji tokens.
   QVariantList emojiSegments;
   QList<EmojiUtils::EmojiToken> emojiTokens = EmojiUtils::findTokens(content);
   for (int i = 0; i < emojiTokens.size(); ++i) {
@@ -258,23 +238,12 @@ QVariantMap DiscordMessage::toVariantMap() const {
     emojiSegments.append(segment);
   }
   data["emojiSegments"] = emojiSegments;
-  // Fix: Discord renders a message as large "jumbo" emoji (no text
-  // bubble line) when its content is ONLY custom emoji (and whitespace)
-  // - see EmojiUtils::isEmojiOnly() for the exact rule (also caps at 27
-  // emoji, matching Discord's own behavior).
+  // Content that is only custom emoji (and whitespace) renders as jumbo emoji; see
+  // EmojiUtils::isEmojiOnly() (capped at 27 like Discord).
   data["emojiOnly"] = EmojiUtils::isEmojiOnly(content);
-  // Fix: raw mention data, needed by
-  // ChatController::prepareMessageForModel() to compute
-  // "mentionsCurrentUser" (this message pings @everyone/@here, the
-  // current user directly, or a role they have) - that computation
-  // needs AppStore (current user id + their roles in this guild),
-  // which this const method has no access to, so it's done one layer
-  // up instead, using these raw fields. mentionRoles here is already
-  // normalized to [{"id": ...}, ...] (see fromVariantMap()) - re-flatten
-  // back to a bare id list since that's the shape
-  // gatewayMessageMentionsCurrentUser()'s logic (mirrored in
-  // prepareMessageForModel()) expects, matching Discord's own
-  // "mention_roles" shape.
+  // Raw mention data for ChatController::prepareMessageForModel() to compute
+  // "mentionsCurrentUser" (needs AppStore, unavailable in this const method).
+  // mentionRoles is flattened back to a bare id list.
   QStringList mentionRoleIds;
   for (int i = 0; i < mentionRoles.size(); ++i) {
     QString roleId = mentionRoles.at(i).toMap().value("id").toString();
@@ -345,12 +314,8 @@ DiscordMessage DiscordMessage::fromVariantMap(const QVariantMap &data) {
       data.value("channel_id", data.value("channelId")).toString();
   message.guildId = data.value("guild_id", data.value("guildId")).toString();
   message.content = data.value("content", data.value("message")).toString();
-  // Fix: raw Discord arrays needed to resolve <@id>/<@&id>/<#id> tokens
-  // in content into display names - see resolveMentions() and its call
-  // site in toVariantMap(). "mention_roles" is just an array of role id
-  // strings (not {id,...} objects like the other two), normalized to
-  // the same {"id": ...} shape here so resolveMentions() can treat all
-  // three arrays uniformly.
+  // Raw arrays used by resolveMentions(). "mention_roles" is a plain id array, so it
+  // is normalized to {"id": ...} like the other two.
   message.mentions = data.value("mentions").toList();
   message.mentionChannels = data.value("mention_channels").toList();
   message.mentionEveryone =

@@ -24,9 +24,7 @@ QString authorDisplayNameFromPayload(const QVariantMap &payload) {
   return name;
 }
 
-// mention_roles: array of role IDs (string) @-mentioned in content —
-// Discord resolves this field itself based on message content, no need
-// for the app to parse text. Returns true if any role in mention_roles
+// mention_roles: role IDs mentioned in content (resolved by Discord). True if any
 // matches one of our current roles in that guild.
 bool payloadMentionsRoleOf(const QVariantMap &payload,
                           const QStringList &myRoleIds) {
@@ -56,9 +54,8 @@ QString guildNameById(AppStore *store, const QString &guildId) {
   return QString();
 }
 
-// Returns true and fills dmName/isGroup if channelId is found in the
-// cached DM channel list in AppStore (the "name"/"isGroup" fields are
-// pre-built by ItemMapper::dmChannelToItem — see ItemMapper.cpp).
+// Returns true and fills dmName/isGroup if channelId is in AppStore's cached DM list
+// ("name"/"isGroup" come from ItemMapper::dmChannelToItem).
 bool findDmChannel(AppStore *store, const QString &channelId, QString *dmName,
                    bool *isGroup) {
   if (store == 0 || channelId.isEmpty()) {
@@ -86,13 +83,8 @@ qint64 messageTimestampMsFromPayload(const QVariantMap &payload) {
   return ms > 0 ? ms : static_cast<qint64>(QDateTime::currentMSecsSinceEpoch());
 }
 
-// Empty "content" isn't automatically a bug — Discord allows sending a
-// message that's only an attachment/embed/sticker with no text at all
-// (a photo, a file, a pasted link that auto-embeds, a sticker...). The
-// old code just concatenated the empty content straight into the preview,
-// producing a dangling "Replied: " with nothing after the colon — that
-// was the original bug report. This falls back to a short, natural-language
-// label when content is empty, so the preview is never blank.
+// Empty "content" is not a bug: a message can be only an attachment, embed or
+// sticker. Fall back to a short label so the preview is never blank.
 QString previewContentFromPayload(const QString &content,
                                   const QVariantMap &payload) {
   if (!content.trimmed().isEmpty()) {
@@ -103,9 +95,7 @@ QString previewContentFromPayload(const QString &content,
   if (!attachments.isEmpty()) {
     QString contentType =
         attachments.first().toMap().value("content_type").toString();
-    // Discord's own "voice message" attachments are flagged via the
-    // message's `flags` bit 1<<13 (IS_VOICE_MESSAGE) rather than a
-    // distinct content_type, so check that first.
+    // Voice messages are flagged by the message `flags` bit 1<<13 (IS_VOICE_MESSAGE), not by content_type.
     int flags = payload.value("flags").toInt();
     if (flags & (1 << 13)) {
       return QLatin1String("Voice message");
@@ -136,11 +126,8 @@ QString previewContentFromPayload(const QString &content,
     return QLatin1String("Poll");
   }
 
-  // No content, no attachment/sticker/embed/poll — none of the known
-  // "text-less message" shapes matched. Log which top-level keys the
-  // payload actually has (never the values — message text/media are
-  // user data and shouldn't hit the log) so a repeat of this can be
-  // diagnosed without needing to capture private message content.
+  // No known text-less shape matched. Log only the top-level keys (never values, to
+  // keep private content out of the log) for diagnosis.
   qDebug() << "[Hub] previewContentFromPayload: empty content with no "
               "matching fallback, payload keys="
            << payload.keys();
@@ -186,29 +173,14 @@ void GatewayHandler::applyGatewayOrderingEvent(
     } else if (!guildId.isEmpty() &&
                payload.value("author").toMap().value("id").toString() !=
                    (m_store ? m_store->currentUserId() : QString())) {
-      // Fix: confirmed as a real bug - a message arriving in the
-      // channel/guild the user is CURRENTLY looking at was still
-      // unconditionally marked unread here, same as a message in any
-      // other channel. selectChannel() only clears that mark when
-      // it's actually called (i.e. when the user switches INTO a
-      // channel) - it never re-runs just because a new message
-      // arrived while already sitting in that channel, so the
-      // unread/mention badges would light up and then never turn
-      // off until the user left and came back. Skip marking anything
-      // unread for the channel currently open (m_store's
-      // selectedChannelId) - the user is looking right at the
-      // message, there is nothing to catch up on.
+      // Do not mark a message unread in the channel currently open (m_store's
+      // selectedChannelId): selectChannel() only clears marks on switching in, so the
+      // badge would never turn off.
       bool isCurrentlyOpenChannel =
           m_store != 0 && !channelId.isEmpty() &&
           m_store->selectedChannelId() == channelId;
 
-      // Fix: temporary diagnostic logging - needed to pin down a
-      // reported bug where a non-mention message's guild badge only
-      // seems to "take" after the FIRST mention of a session has been
-      // read/cleared, never before. Without this, there was no way to
-      // tell from a log whether a given non-mention MESSAGE_CREATE
-      // even reached this branch, or what isCurrentlyOpenChannel
-      // evaluated to for it.
+      // Diagnostic logging for non-mention messages (which branch, isCurrentlyOpenChannel).
       qDebug() << "[discord-chat] non-own MESSAGE_CREATE guild" << guildId
                << "channel" << channelId << "selectedChannelId"
                << (m_store ? m_store->selectedChannelId() : QString("<no store>"))
@@ -358,15 +330,9 @@ MentionNotification GatewayHandler::buildMentionNotification(
 
   QString channelId = payload.value("channel_id").toString().trimmed();
   QString guildId = payload.value("guild_id").toString().trimmed();
-  // Fix: resolve <@id>/<@&id>/<#id> tokens to "@name"/"@role"/"#name"
-  // before building the notification preview - otherwise a ping shows
-  // its raw numeric id in the Hub notification body (confirmed via a
-  // real screenshot: "<@921017648869957654>" instead of a name).
-  // mentionRoles isn't resolved to real names here either (same
-  // limitation as DiscordMessage::resolveMentions() itself - Discord's
-  // "mention_roles" is a bare id array with no name attached, and
-  // resolving it needs the guild's role list) - falls back to the
-  // same generic "@role" DiscordMessage::resolveMentions() uses.
+  // Resolve <@id>/<@&id>/<#id> tokens before building the notification preview.
+  // Role mentions fall back to a generic "@role" (mention_roles has no names; see
+  // DiscordMessage::resolveMentions()).
   QString content = DiscordMessage::resolveMentions(
       payload.value("content").toString(), payload.value("mentions").toList(),
       payload.value("mention_roles").toList(),
@@ -405,14 +371,8 @@ MentionNotification GatewayHandler::buildMentionNotification(
   bool foundDm = findDmChannel(m_store, channelId, &dmName, &isGroup);
 
   if (isGroup) {
-    // Group DM: only worth notifying if the message is a reply to one
-    // of our own messages. DiscordMessage::fromVariantMap() already
-    // parses referenced_message -> replyAuthor/replyContent, but to
-    // know if that reply targets US specifically (not just "is a
-    // reply") we need author.id straight from referenced_message in
-    // the raw payload, since replyAuthor only stores the display name
-    // (not reliable for id comparison — two people can share a
-    // display name in the same group).
+    // Group DM: notify only for replies to our own messages. Compare author.id from the
+    // raw referenced_message, since replyAuthor holds only a display name.
     QVariantMap reference = payload.value("referenced_message").toMap();
     QString repliedToAuthorId =
         reference.value("author").toMap().value("id").toString();
@@ -432,9 +392,7 @@ MentionNotification GatewayHandler::buildMentionNotification(
     return result;
   }
 
-  // 1-1 DM (or a channel not yet cached in dmChannels — still treated
-  // as a 1-1 DM as a safe default, since guildId was confirmed empty
-  // above so this can't be a guild channel): notify for every new message.
+  // 1-1 DM (or a DM not yet cached; guildId is empty, so it cannot be a guild channel): notify for every message.
   Q_UNUSED(foundDm);
   QString authorName = authorDisplayNameFromPayload(payload);
   QString title = !dmName.isEmpty() ? dmName : authorName;

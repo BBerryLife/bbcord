@@ -49,47 +49,31 @@ struct DiscordRole {
   QString id;
   QString guildId;
   QString name;
-  // Hex color "#RRGGBB", empty if the role has no custom color (color
-  // == 0 in the Discord payload — the real client falls back to the
-  // default text color then, not black).
+  // Hex color "#RRGGBB"; empty for color == 0 (the client uses the default text color, not black).
   QString color;
-  // Role position in the hierarchy — higher number means "higher up".
-  // Used to: (1) pick the highest-position role's color for a member's
-  // display name (2) group members by role in the Members sheet, same
-  // as the real Discord client.
+  // Role position in the hierarchy (higher = higher up). Picks the color of a
+  // member's name and groups members in the Members sheet.
   int position;
-  // true if Discord separates this role into its own group in the
-  // member list ("hoist" in the raw payload) — only hoisted roles get
-  // their own heading in the Members sheet; non-hoisted roles fall
-  // into the "Online"/"Offline" group.
+  // True if the role has its own group in the member list ("hoist"); other roles
+  // fall into "Online"/"Offline".
   bool hoisted;
-  // Raw permissions bitfield for this role ("permissions" in the
-  // payload, a stringified int64 — Qt's QVariant::toLongLong() parses
-  // it fine straight from the JSON string). Needed to compute whether
-  // a channel is actually visible to the current user: Discord's REST
-  // "guild channels" endpoint returns every channel in the guild
-  // regardless of permissions, so channel visibility has to be derived
-  // client-side from base role permissions + each channel's
+  // Raw permissions bitfield ("permissions" is a stringified int64; toLongLong()
+  // parses it). Channel visibility is computed client-side from role permissions and
   // permission_overwrites (see PermissionUtils::canViewChannel()).
   qint64 permissions;
 
   DiscordRole() : position(0), hoisted(false), permissions(0) {}
 };
 
-// A single flattened "member" row in the Members sheet, merged from the
-// guild member object + user object in the GUILD_MEMBER_LIST_UPDATE
-// payload. Not a 1:1 map of the raw payload — only keeps the fields the
-// UI actually needs, to avoid dragging nested objects (presence/
-// activities/...) into QML.
+// A flattened Members-sheet row merged from the member and user objects of
+// GUILD_MEMBER_LIST_UPDATE; keeps only the fields the UI needs.
 struct DiscordMember {
   QString userId;
   QString displayName; // nick if set, falls back to username/global_name
   QString avatarUrl;   // empty when using the default avatar (initials)
   QString status;      // "online" | "idle" | "dnd" | "offline"
-  // roleId of the highest-position hoisted role the member has — used
-  // to group the member under the right heading and color their name.
-  // Empty if the member has no hoisted role (falls into "Online"/
-  // "Offline").
+  // roleId of the member's highest-position hoisted role (heading and name color).
+  // Empty if none ("Online"/"Offline").
   QString primaryRoleId;
 
 
@@ -117,13 +101,8 @@ struct DiscordChannel {
   QString name;
   ChannelType type;
   int position;
-  // Parent channel ID — empty for top-level channels, or pointing to
-  // the GuildText/GuildForum/GuildAnnouncement channel containing this
-  // one if it's a thread (AnnouncementThread/PublicThread/PrivateThread).
-  // Already present at the QVariantMap level via
-  // ItemMapper::guildChannelToItem() ("parentId") — added here too so
-  // the struct is accurate, used when grouping threads under their
-  // parent channel or checking "is this channel a thread".
+  // Parent channel ID: empty for top-level channels, or the channel containing this
+  // thread. Also present as "parentId" from ItemMapper::guildChannelToItem().
   QString parentId;
 
   DiscordChannel() : type(Unknown), position(0) {}
@@ -140,25 +119,14 @@ struct DiscordMessage {
   QString guildId;
   DiscordUser author;
   QString content;
-  // Fix: Discord's raw "content" contains unresolved mention syntax
-  // like "<@921017648869957654>" - the real client renders these as
-  // "@username" using the message's own "mentions"/"mention_roles"/
-  // "mention_channels" arrays (each entry already carries the
-  // mentioned user/role/channel's display name, no extra lookup
-  // needed). These raw arrays are kept on the message (rather than
-  // resolving immediately in fromVariantMap()) so toVariantMap() can
-  // run resolveMentions() right before building messageHtml - see
-  // resolveMentions() below and its call site in toVariantMap().
+  // Raw "content" has unresolved mention syntax ("<@id>"). The raw mentions/
+  // mention_roles/mention_channels arrays are kept so toVariantMap() can call
+  // resolveMentions() before building messageHtml.
   QVariantList mentions;
   QVariantList mentionRoles;
   QVariantList mentionChannels;
-  // Fix: "mention_everyone" is true when the message used @everyone or
-  // @here - needed (together with mentions/mentionRoles) to compute
-  // whether THIS message pings the current user, for the yellow
-  // highlight in MessageBubble.qml. Discord doesn't distinguish
-  // @everyone from @here in this boolean field (both set it to true) -
-  // the real client highlights for both the same way, so no further
-  // distinction is needed here either.
+  // mention_everyone: true for @everyone or @here (Discord does not distinguish
+  // them). Used with mentions/mentionRoles to detect pings for the yellow highlight.
   bool mentionEveryone;
   QString nonce;
   QString timestamp;
@@ -166,12 +134,8 @@ struct DiscordMessage {
   QString replyMessageId;
   QString replyAuthor;
   QString replyContent;
-  // Fix: same purpose as mentions/mentionRoles/mentionChannels above,
-  // but for the REFERENCED message's own content (the small quoted
-  // preview shown above a reply) - Discord nests a full message object
-  // under "referenced_message", with its own independent "mentions"/
-  // "mention_roles"/"mention_channels" arrays, not shared with the
-  // reply itself.
+  // Same as above, for the referenced (replied-to) message, which has its own
+  // independent mentions/mention_roles/mention_channels arrays.
   QVariantList replyMentions;
   QVariantList replyMentionRoles;
   QVariantList replyMentionChannels;
@@ -195,18 +159,9 @@ struct DiscordMessage {
   QString authorInitials() const;
   QVariantMap toVariantMap() const;
   static DiscordMessage fromVariantMap(const QVariantMap &data);
-  // Replaces every "<@id>"/"<@!id>" (user), "<@&id>" (role), and
-  // "<#id>" (channel) token in rawContent with a "@name"/"#name" form,
-  // using the display names supplied in mentions/mentionRoles/
-  // mentionChannels (each a raw Discord array of {id, ...} objects, as
-  // found on the message payload's own "mentions"/"mention_roles"/
-  // "mention_channels" fields). A token whose id isn't found in the
-  // matching array is left as-is (rather than silently dropped) - this
-  // shouldn't normally happen since Discord always includes an entry
-  // for every mention actually present in the content, but a channel
-  // the current user can't see would still appear as a resolvable
-  // channel in "mention_channels" without a name in rare edge cases,
-  // and leaving the raw token is safer than guessing.
+  // Replaces "<@id>"/"<@!id>" (user), "<@&id>" (role) and "<#id>" (channel) tokens in
+  // rawContent with "@name"/"#name" using the given arrays. Tokens whose id is not
+  // found are left as-is rather than guessed.
   static QString resolveMentions(const QString &rawContent,
                                  const QVariantList &mentions,
                                  const QVariantList &mentionRoles,

@@ -26,16 +26,9 @@ NavigationPane {
     property variant currentUserSheet: null
     property variant aboutDialog: null
     property variant currentSettingsSheet: null
-    // Fix: short-tap/long-press on a Hub item wasn't navigating into
-    // the actual chat, only opening the app to the main server/DM list
-    // - selectChannel() (called from ApplicationUI::onInvoked() in
-    // applicationui.cpp) only updates backend state, it never pushes
-    // any QML page itself. Stashed here instead of acting immediately
-    // because hubOpenChannelRequested can arrive before currentMainPage
-    // exists yet (a cold start still has to finish login first) - see
-    // tryOpenPendingHubChannel(), called both from the signal handler
-    // below AND from openMainPage() itself for whichever order actually
-    // happens first.
+    // Stashed instead of acting immediately: hubOpenChannelRequested can arrive before
+    // currentMainPage exists (cold start still logging in). tryOpenPendingHubChannel()
+    // runs from the signal handler and from openMainPage(), whichever comes first.
     property string pendingHubChannelId: ""
     property string pendingHubGuildId: ""
 
@@ -43,38 +36,18 @@ NavigationPane {
         if (pendingHubChannelId === "" || !currentMainPage) {
             return;
         }
-        // Fix: this used to always pass "" for channelName - a Hub
-        // mention notification never carries the channel's own name
-        // (for a guild channel it's the SERVER name that gets pushed
-        // to Hub, see GatewayHandler::buildMentionNotification()), so
-        // the chat title/member-sheet title stayed permanently blank
-        // after opening from Hub (confirmed via screenshot: title bar
-        // empty even though the Members sheet's own data - which comes
-        // from a channelId-keyed lookup, not the name - loaded fine).
-        // discordClient.channelNameForId() is a best-effort, no-network
-        // lookup against whatever's already cached (DMs are global;
-        // guild channels only for the currently selected guild). If
-        // the channel's guild hasn't been loaded yet this session it
-        // still comes back empty here - guildChannelsChanged (connected
-        // below) re-resolves it once that guild's channels actually
-        // arrive, so the title self-heals instead of staying blank for
-        // the rest of the session.
+        // A Hub notification carries no channel name (for guild channels it is the server
+        // name), so look it up with discordClient.channelNameForId() (cache only). If empty,
+        // guildChannelsChanged re-resolves it once that guild's channels load.
         var resolvedName = discordClient.channelNameForId(pendingHubChannelId);
         currentMainPage.openChat(pendingHubChannelId, pendingHubGuildId, resolvedName);
         pendingHubChannelId = "";
         pendingHubGuildId = "";
     }
 
-    // Fix: companion to the resolvedName lookup above - if the Hub
-    // invoke was a cold start (or the mentioned channel's guild was
-    // never opened this session), channelNameForId() had nothing
-    // cached yet and openChat() got called with an empty name. Once
-    // THIS guild's channels actually finish loading (loadGuildChannels()
-    // -> AppStore::setGuildChannels() -> guildChannelsChanged), try the
-    // lookup again and push the real name into the currently-open chat
-    // page if it's still showing blank. No-op on every normal launch
-    // (currentMainPage.activeChatChannelId only matches right after a
-    // Hub-invoked open with an unresolved name).
+    // Once this guild's channels load, retry the name lookup and push it into the open
+    // chat page if it is still blank. No-op unless currentMainPage.activeChatChannelId
+    // matches a Hub-opened chat with an unresolved name.
     function onGuildChannelsChanged() {
         if (!currentMainPage || !currentMainPage.activeChatChannelId ||
                 currentMainPage.activeChatChannelName !== "") {
@@ -86,15 +59,9 @@ NavigationPane {
         }
     }
 
-    // Fix: fires once DiscordClient::fetchChannelInfo()'s REST lookup
-    // returns (see that function's doc comment in Client.hpp) - the
-    // cold-start counterpart to onGuildChannelsChanged() above. Needed
-    // separately because onGuildChannelsChanged() only fires for GUILD
-    // channels (via appStore.guildChannelsChanged) - a cold-start Hub
-    // tap on a DM never triggers that signal at all, so without this,
-    // DMs opened cold would stay blank forever with no self-heal path.
-    // Matched by exact channelId (not just "any blank title") so this
-    // can't clobber an unrelated chat the user has since navigated to.
+    // Fires when fetchChannelInfo()'s REST lookup returns. Separate from
+    // onGuildChannelsChanged() because a cold-start Hub tap on a DM never triggers that.
+    // Matched by exact channelId so it cannot touch an unrelated chat.
     function onChannelInfoResolved(channelId, guildId, channelName) {
         if (!currentMainPage || currentMainPage.activeChatChannelId !== channelId ||
                 currentMainPage.activeChatChannelName !== "" || channelName === "") {
@@ -153,11 +120,8 @@ NavigationPane {
         discordClient.loginFailed.connect(playErrorSfx)
         settingsController.sfxEnabledChanged.connect(updateConnectingSfx)
         appStore.busyChanged.connect(updateConnectingSfx)
-        // Fix: see pendingHubChannelId's doc comment above -
-        // applicationUI (the C++ ApplicationUI object, already exposed
-        // as a context property for openLink()) emits this after a Hub
-        // short-tap/long-press invoke, whether or not the main page
-        // exists yet.
+        // applicationUI emits this after a Hub invoke, whether or not the main page exists
+        // yet (see pendingHubChannelId).
         applicationUI.hubOpenChannelRequested.connect(function (channelId, guildId) {
             pendingHubChannelId = channelId
             pendingHubGuildId = guildId
@@ -183,12 +147,8 @@ NavigationPane {
                 currentLoginPage.destroy()
                 currentLoginPage = null
             }
-            // Fix: handles the cold-start ordering - if
-            // hubOpenChannelRequested arrived while the app was still
-            // logging in (pendingHubChannelId got set before
-            // currentMainPage existed), apply it now that the main
-            // page is finally here. A no-op (pendingHubChannelId is
-            // "") on every normal, non-Hub launch.
+            // Cold-start ordering: apply a pendingHubChannelId set before currentMainPage
+            // existed. No-op on normal launches.
             tryOpenPendingHubChannel()
         }
     }

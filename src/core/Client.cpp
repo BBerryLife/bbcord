@@ -9,15 +9,8 @@
 #include "client/AvatarManager.hpp"
 #include "client/CacheManager.hpp"
 #include "client/GatewayHandler.hpp"
-// Fix: Client.hpp only forward-declares "class ItemMapper;" (enough
-// for the m_itemMapper pointer member, but NOT enough to call methods
-// on it - incomplete type). Previously only GuildChannels.cpp (a
-// separate module file) included this header in full. Client.cpp now
-// also calls m_itemMapper->guildChannelToItem() directly when handling
-// THREAD_LIST_SYNC (onGatewayDispatch()), so it needs the include here
-// - confirmed by an actual build error: "invalid use of incomplete
-// type 'struct ItemMapper'" at the guildChannelToItem() call site in
-// Client.cpp.
+// Full definition needed: Client.cpp calls m_itemMapper->guildChannelToItem()
+// (Client.hpp only forward-declares ItemMapper).
 #include "client/ItemMapper.hpp"
 
 #include <QDebug>
@@ -353,12 +346,8 @@ void DiscordClient::onRestLoginSucceeded(const QVariantMap &user,
   qDebug() << "[discord-client] REST login succeeded"
            << user.value("id").toString();
 
-  // Client::m_token was previously only ever assigned in login(token) (the
-  // "paste a token directly" path) - a password+MFA login never set it,
-  // leaving it empty here and making the connectGateway() call below fail
-  // with "Discord token is empty" despite the REST login having just
-  // succeeded. token now comes from RestClient::m_token via the
-  // loginSucceeded signal chain (see succeedWithUser() in Login.cpp).
+  // The token comes from RestClient::m_token via loginSucceeded, so
+  // password/MFA logins also have it for connectGateway().
   QString trimmedToken = token.trimmed();
   if (!trimmedToken.isEmpty()) {
     m_token = trimmedToken;
@@ -392,28 +381,9 @@ void DiscordClient::onRestLoginSucceeded(const QVariantMap &user,
     rebuildDmChannelIndexes();
   }
 
-  // Fix: Discord's gateway only pushes MESSAGE_CREATE (including
-  // plain, non-mention messages) for a channel once it's been
-  // subscribed via OP 14 (sendLazyRequest()/GatewayHandler.cpp) -
-  // that only used to happen once the user actually opened a
-  // channel's chat view this session. So on a cold app start, sitting
-  // on the DM tab, a non-mention message sent to whatever channel the
-  // user had open last time produced no gateway event at all - no way
-  // to light up its badge - until the user opened that channel once
-  // in the new session. loadBootstrapCache() above already restores
-  // m_store's selectedGuildId/selectedChannelId from the last session
-  // (see CacheManager::loadBootstrapCache()), so proactively subscribe
-  // that same channel here too - this only sends the OP 14 request
-  // (via m_pendingLazyRequests, flushed once the gateway reaches
-  // Ready - see DiscordGateway::handleDispatch()'s READY case), it
-  // does NOT open the chat view or change what the user sees, so it's
-  // safe to do unconditionally on every cold start. This does NOT
-  // survive fully closing and reopening the app a second time in the
-  // sense of "the channel stays subscribed forever" - each gateway
-  // reconnect is a fresh session requiring its own subscribe, but that
-  // reconnect always re-runs this same startup path, so the
-  // last-known channel keeps getting re-subscribed every time the app
-  // starts.
+  // Gateway only pushes MESSAGE_CREATE for channels subscribed via OP 14, so
+  // re-subscribe the last-open channel on startup. Sends only the request (no UI
+  // change); it is flushed once the gateway is Ready.
   if (m_store) {
     QString cachedGuildId = m_store->selectedGuildId().trimmed();
     QString cachedChannelId = m_store->selectedChannelId().trimmed();
@@ -737,52 +707,14 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       }
     }
 
-    // Fix: confirmed via real debug logs that GUILD_CREATE is NEVER
-    // sent by this user-token gateway (0/140 events in a full session,
-    // including opening many guilds/channels/forums) - unlike the
-    // traditional bot protocol. All full guild data (channels, threads,
-    // roles, members...) is bundled by Discord directly into the
-    // "guilds" field of the READY payload - this is also why the READY
-    // payload is ~5MB even with only 49 guilds. buildLightReadyPayload()
-    // (GatewayEvents.cpp) was updated to extract this raw "guilds"
-    // array (without parsing the full JSON payload, keeping the
-    // fast-path optimization) - loop through it here to get each
-    // guild's threads, sharing mergeThreadsIntoCache() with
-    // THREAD_LIST_SYNC.
+    // User-token gateways never send GUILD_CREATE on initial load; guild data
+    // (threads, roles) comes in READY.guilds (extracted by buildLightReadyPayload()).
+    // Threads are merged via mergeThreadsIntoCache().
     if (eventName == "READY") {
-      // Fix: the user-token gateway does NOT send individual
-      // GUILD_CREATE events per guild on initial load (confirmed via
-      // real debug logs: 0/140 events in a full session) - unlike the
-      // traditional bot protocol. Most full guild data (channels,
-      // threads, roles...) is bundled by Discord straight into the
-      // "guilds" field of the READY payload itself - this is also why
-      // the READY payload is ~5MB even with only 49 guilds.
-      // buildLightReadyPayload() (GatewayEvents.cpp) was updated to
-      // extract this raw "guilds" array (without parsing the full JSON
-      // payload, keeping the fast-path optimization) - loop through it
-      // here to get each guild's threads AND roles.
-      // Fix: role parsing used to live ONLY in the GUILD_CREATE branch
-      // below, which (per the comment above) never actually fires on
-      // initial load - so m_store's role data for every guild stayed
-      // empty for the whole session, which made
-      // PermissionUtils::canViewChannel() treat every channel as
-      // inaccessible (base permissions computed from zero roles = 0)
-      // and the channel list came back empty for every guild. Confirmed
-      // via a real BBCord log: "guild channels" REST calls returned 200
-      // with data, but the channel list rendered empty - the filtering
-      // pass throwing everything away, not the fetch. Parsing roles
-      // here, from the data READY actually carries, is the fix.
-      //
-      // Fix: unlike "roles"/"threads", each guild object in
-      // READY.guilds[] does NOT include a "members" field on this
-      // gateway - directly confirmed via a debug qDebug() dump of a
-      // real guild object's keys (temporarily added, then removed once
-      // this was settled). So the current user's OWN roles in a guild
-      // can't be derived from READY at all - see
-      // fetchSelfGuildMember()/onSelfGuildMemberLoaded()
-      // (GuildChannels.cpp) for where that's fetched instead, and the
-      // GUILD_MEMBER_UPDATE handling further below in this function for
-      // how a role change is picked up in real time afterwards.
+      // Guild roles come from READY.guilds (GUILD_CREATE never fires on initial load);
+      // without them canViewChannel() hides every channel.
+      // READY guilds have no "members" field, so the user's own roles are fetched via
+      // fetchSelfGuildMember() and kept current via GUILD_MEMBER_UPDATE.
       QVariantList readyGuilds = payload.value("guilds").toList();
       for (int i = 0; i < readyGuilds.size(); ++i) {
         QVariantMap guildRaw = readyGuilds.at(i).toMap();
@@ -802,73 +734,32 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       mergeGuildRolesIntoCache(guildId, payload);
     }
 
-    // GUILD_CREATE doesn't fire on the user-token gateway during
-    // initial load (confirmed: 0/140 events in a full session - see
-    // comment in the "READY" block above, that's the real threads
-    // source for the normal case). Keeping the threads-reading logic
-    // here in case Discord still sends GUILD_CREATE when the user JOINS
-    // a new guild while the app is running (the official docs list
-    // this as one of three reasons GUILD_CREATE is sent).
+    // GUILD_CREATE is not sent on initial load; kept as a fallback for joining
+    // a new guild while the app is running.
     mergeThreadsIntoCache(payload.value("threads").toList(), QVariantList());
   }
 
 
   if (eventName == "GUILD_MEMBER_LIST_UPDATE") {
-    // Standard Discord payload (not restricted-intent bot-gateway):
-    //   guild_id: string
-    //   id: string (list id, usually "everyone" for the default list)
-    //   ops: [ { op: "SYNC"|"INSERT"|"UPDATE"|"DELETE"|"INVALIDATE",
-    //            range: [start,end] (SYNC only),
-    //            items: [ {group:{id,count}} | {member:{...}} ] } ]
-    // Only handles op "SYNC" (a full snapshot, always the first
-    // response after sending guild_subscribe with a channel range —
-    // see sendLazyRequest()/buildGuildSubscribePayload() in
-    // Gateway.cpp). INSERT/UPDATE/DELETE (live updates while the
-    // Members sheet is open) are NOT handled yet — see comment at
-    // AppStore::setMemberListForChannel().
+    // Handles op "SYNC" only (full snapshot after guild_subscribe).
+    // INSERT/UPDATE/DELETE live updates are not handled yet.
     QString guildId = payload.value("guild_id").toString().trimmed();
-    // Fix: needed for the self-role fallback further below (see the
-    // "opportunistically pick up the CURRENT USER's own role list"
-    // comment inside the member-parsing loop).
+    // Needed for the self-role fallback in the member-parsing loop below.
     QString currentUserId = m_store ? m_store->currentUserId() : QString();
-    // The standard op:14/GUILD_MEMBER_LIST_UPDATE payload (an
-    // unofficial protocol, not in Discord's official bot docs) has no
-    // root-level "channel_id" field - that field only exists for
-    // regular channel events (MESSAGE_CREATE, etc). For a
-    // single-channel subscribe (channels: {"<id>": [[0,99]]} - see
-    // buildMemberListSyncPayload() in JsonParser.cpp), Discord returns
-    // that channel id in the root-level "id" field instead. Read
-    // "channel_id" first (in case Discord changes format), fall back to
-    // "id" if empty - the code used to only read "channel_id" so it
-    // always got an empty string and threw away the whole parsed member
-    // list.
+    // The payload has no root "channel_id"; for a single-channel subscribe the
+    // channel id is in the root "id". Read "channel_id" first, fall back to "id".
     QString channelId = payload.value("channel_id").toString().trimmed();
     if (channelId.isEmpty()) {
       channelId = payload.value("id").toString().trimmed();
     }
-    // "id" is usually the logical list id ("everyone") rather than a
-    // real channel id, so it's not 100% reliable. Since the current
-    // flow only tracks one channel's member list at a time, fall back
-    // to the channel most recently requested via
-    // requestMemberListSync() if both sources above are empty or don't
-    // match the channel waiting for data.
+    // "id" may be the list id ("everyone"), so fall back to the channel last
+    // requested via requestMemberListSync() if both sources are empty or mismatched.
     if (channelId.isEmpty() || channelId == "everyone") {
       channelId = m_pendingMemberListChannelId;
     }
-    // The FIRST SYNC for a channel always arrives right after that
-    // channel gets subscribed (sendLazyRequest() in Gateway.cpp -
-    // called when the user OPENS the channel, not when the Members
-    // sheet opens). At that point, m_pendingMemberListChannelId is
-    // still empty (Members sheet never opened yet), so the fallback
-    // above isn't enough - the ACTUAL member list data is present in
-    // this SYNC but gets thrown away if the channel can't be
-    // identified. Discord won't send another SYNC once the Members
-    // sheet later opens and resends the same request (known gateway
-    // behavior: a subscribe request identical to an existing
-    // subscription gets no response) - so this is the ONLY CHANCE to
-    // get the data. Falls back to the channel currently open in the
-    // chat view (selectedChannelId) when no other channel can be
-    // determined.
+    // The first SYNC arrives when the channel is opened, before the Members sheet,
+    // so m_pendingMemberListChannelId is empty and Discord will not resend it.
+    // Fall back to the open channel (selectedChannelId) to avoid losing the data.
     if (channelId.isEmpty() && m_store) {
       channelId = m_store->selectedChannelId();
     }
@@ -878,10 +769,8 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
 
     if (!guildId.isEmpty() && m_store) {
       QVariantList roles = m_store->guildRolesForGuild(guildId);
-      // Map roleId -> position, keeping only hoisted roles (only
-      // hoisted roles create a group/heading in the Members sheet). The
-      // highest-position role a member has determines their display
-      // group/name color, matching real Discord client behavior.
+      // roleId -> position for hoisted roles only (they form Members sheet headings);
+      // the highest one decides a member's group/name color.
       QMap<QString, int> hoistedRolePosition;
       for (int i = 0; i < roles.size(); ++i) {
         QVariantMap role = roles.at(i).toMap();
@@ -903,11 +792,7 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
         for (int i = 0; i < items.size(); ++i) {
           QVariantMap item = items.at(i).toMap();
           if (!item.contains("member")) {
-            // A "group" item (heading role) — the Members sheet
-            // computes its own heading from each member's
-            // primaryRoleId at the QML level, no need to store a
-            // separate "group" item here to avoid duplicating logic
-            // between C++ and QML.
+            // No "group" item stored; the Members sheet derives headings from primaryRoleId in QML.
             continue;
           }
 
@@ -933,30 +818,16 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
           QString effectiveAvatarHash =
               !avatarHash.isEmpty() ? avatarHash : userAvatarHash;
           if (!effectiveAvatarHash.isEmpty()) {
-            // Hardcoded cdn.discordapp.com instead of using
-            // DiscordRestClient::cdnBaseUrl() — no RestClient instance
-            // conveniently available in this scope, and
-            // cdn.discordapp.com is Discord's stable CDN hostname
-            // (different from the custom API URL in Settings, which
-            // targets an API proxy, not the CDN). Same
-            // "%1/%2.png?size=128" format as
-            // RestClientRequests.cpp::sendAvatarRequest() for
-            // consistency.
+            // Hardcoded cdn.discordapp.com (no RestClient here); the API URL in Settings
+            // may point to a proxy. Same format as sendAvatarRequest().
             member.avatarUrl = QString("https://cdn.discordapp.com/avatars/"
                                        "%1/%2.png?size=128")
                                     .arg(userId)
                                     .arg(effectiveAvatarHash);
           }
 
-          // "presence" lives INSIDE the "member" object (memberRaw), not
-          // a sibling of "member" at the "item" level — reading
-          // item.value("presence") by mistake always returns an empty
-          // map, causing status to always fall back to "offline" for
-          // EVERY member regardless of their real state (confirmed bug:
-          // Members sheet showed all 97 members as "Offline" and lost
-          // role grouping entirely, since everyone got dumped into
-          // offlineGroup in
-          // MemberListController::rebuildMemberDataModel()).
+          // "presence" is inside the "member" object, not a sibling of it; reading it
+          // from the item always gave "offline".
           QVariantMap presence = memberRaw.value("presence").toMap();
           member.status = presence.value("status").toString();
           if (member.status.isEmpty()) {
@@ -964,17 +835,9 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
           }
 
           QVariantList memberRoleIds = memberRaw.value("roles").toList();
-          // Fix: opportunistically pick up the CURRENT USER's own role
-          // list whenever they happen to appear in a member-list SYNC
-          // (which does include a full "roles" array per member,
-          // confirmed working in real logs) - this is a fallback path,
-          // separate from fetchSelfGuildMember()/GUILD_MEMBER_UPDATE
-          // (see GuildChannels.cpp), for whenever that REST endpoint
-          // isn't usable for user tokens. Only updates if this SYNC's
-          // roles differ from what's cached, to avoid redundant
-          // recomputeAccessibleGuildChannels() calls on every channel
-          // open (a SYNC fires each time a channel is opened, not just
-          // when roles actually change).
+          // Pick up the current user's own roles from a member-list SYNC (fallback for
+          // fetchSelfGuildMember()). Only updates when roles changed, to avoid redundant
+          // recomputeAccessibleGuildChannels() calls.
           if (userId == currentUserId && !guildId.isEmpty() && m_store) {
             QStringList newRoleIds;
             for (int j = 0; j < memberRoleIds.size(); ++j) {
@@ -1020,18 +883,9 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
     }
   }
 
-  // Fix: GET /guilds/{id}/threads/active AND GET /channels/{id}/threads/
-  // active (2 REST endpoints tried previously) are both flatly rejected
-  // by Discord for user tokens - actual response confirmed:
-  // {"message": "Only bots can use this endpoint.", "code": 20002}.
-  // This is a hard limit from Discord, not fixable by changing the
-  // request. What the real Discord client actually uses (confirmed via
-  // community network traces): gateway op:14 (Lazy Guild Subscribe)
-  // with "threads: true" - already enabled in
-  // DiscordJsonParser::buildGuildSubscribePayload() (see
-  // JsonParser.cpp) - causing Discord to push threads itself via the
-  // THREAD_LIST_SYNC dispatch event on every guild subscribe, no
-  // manual request needed.
+  // The REST "active threads" endpoints are rejected for user tokens. Threads
+  // arrive via THREAD_LIST_SYNC after op 14 with "threads: true"
+  // (buildGuildSubscribePayload()).
   if (eventName == "THREAD_LIST_SYNC") {
     QVariantList rawThreads = payload.value("threads").toList();
     QVariantList syncedChannelIds = payload.value("channel_ids").toList();
@@ -1042,16 +896,8 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
   }
 
   if (eventName == "GUILD_MEMBER_UPDATE") {
-    // Fix: real-time counterpart to fetchSelfGuildMember() (see
-    // GuildChannels.cpp) - Discord sends this to every gateway
-    // connection a member (or an admin acting on them) has open
-    // whenever that member's roles change, INCLUDING when it's the
-    // current user's own roles. Without handling it, a role granted
-    // while BBCord is sitting on the affected guild wouldn't reveal
-    // the newly-unlocked channel until the guild was closed and
-    // reselected (which is what triggers the REST fetch). Standard
-    // Discord payload: guild_id, user.id, roles (the member's full new
-    // role-id array, not a delta).
+    // GUILD_MEMBER_UPDATE: real-time counterpart of fetchSelfGuildMember(); picks up
+    // role changes (payload carries the full new role-id array) without reselecting the guild.
     QString guildId = payload.value("guild_id").toString().trimmed();
     QString userId = payload.value("user").toMap().value("id").toString();
     QString currentUserId = m_store ? m_store->currentUserId() : QString();
@@ -1084,15 +930,8 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
                << "message" << payload.value("id").toString();
     }
 
-    // Fix: a mention arriving in the channel the user already has open
-    // was never clearing that channel's guild-level unread/mention
-    // state (only selectChannel() did, i.e. cold-opening a channel) -
-    // reported bug: server's white bar / red badge stayed on even
-    // after reading the mention live in an already-open channel. Not
-    // needed for MESSAGE_DELETE (nothing new became unread) and
-    // MESSAGE_UPDATE (edits don't create new unread state), so only
-    // for MESSAGE_CREATE; only when this is genuinely the channel the
-    // user is looking at right now.
+    // MESSAGE_CREATE only: a mention in the already-open channel must clear the
+    // guild's unread/mention state (MESSAGE_DELETE/UPDATE create no new unread state).
     if (eventName == "MESSAGE_CREATE" && isSelectedChannel &&
         !channelId.isEmpty()) {
       clearChannelUnreadStateAndRecomputeGuildBadge(channelId);
@@ -1101,21 +940,14 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
 
   if (eventName == "MESSAGE_CREATE" && m_gatewayHandler != 0 &&
       m_hubIntegration != 0) {
-    // Push to BlackBerry Hub regardless of whether that channel is
-    // currently open — the user could be viewing a different channel,
-    // or the app could be in the background/screen off; the Hub is a
-    // notification channel independent of the in-app UI. Not limited
-    // by selectedOrLoaded like the log block above.
+    // Push to Hub regardless of the open channel or app state; not limited by selectedOrLoaded.
     MentionNotification notification =
         m_gatewayHandler->buildMentionNotification(payload);
     if (notification.shouldNotify) {
       m_hubIntegration->upsertThreadItem(
           notification.sourceId, notification.title, notification.preview,
           notification.timestampMs);
-      // ping.m4a sound for every notify-worthy message (like Zalo) —
-      // same shouldNotify condition as the Hub push above, but called
-      // independently since playPingSound() doesn't depend on
-      // UDS/init() (see HubIntegration.cpp).
+      // Ping sound under the same shouldNotify condition; independent of UDS/init().
       m_hubIntegration->playPingSound();
     }
   }
@@ -1132,13 +964,8 @@ void DiscordClient::mergeGuildRolesIntoCache(const QString &guildId,
     return;
   }
 
-  // "roles": the guild's full array of role objects (id/name/color/
-  // position/hoist/permissions/...). Present the same way whether
-  // guildRaw came from READY's "guilds" array or a genuine
-  // GUILD_CREATE payload - both are "a guild object" per Discord's
-  // docs. color == 0 means the role has no custom color — the real
-  // Discord client doesn't show black for this case, it uses the
-  // default text color, so we leave color empty instead of "#000000".
+  // "roles": full role objects, same shape from READY guilds and GUILD_CREATE.
+  // color == 0 means no custom color, so leave it empty rather than "#000000".
   QVariantList roleVariants = guildRaw.value("roles").toList();
   QVariantList parsedRoles;
   for (int i = 0; i < roleVariants.size(); ++i) {
@@ -1154,9 +981,7 @@ void DiscordClient::mergeGuildRolesIntoCache(const QString &guildId,
     role.name = roleRaw.value("name").toString();
     role.position = roleRaw.value("position").toInt();
     role.hoisted = roleRaw.value("hoist").toBool();
-    // "permissions" arrives as a stringified int64 in the Discord
-    // payload (values exceed int32 range) - toLongLong() parses the
-    // numeric string directly, no manual conversion needed.
+    // "permissions" is a stringified int64; toLongLong() parses it directly.
     role.permissions = roleRaw.value("permissions").toLongLong();
 
     bool colorOk = false;
@@ -1179,21 +1004,10 @@ void DiscordClient::mergeGuildRolesIntoCache(const QString &guildId,
   }
   m_store->setGuildRoles(guildId, parsedRoles);
 
-  // "members": the full array of guild member objects (not a single
-  // "member" field for self — that's a restricted-intent bot gateway
-  // behavior, NOT applicable to the user-account gateway BBCord uses).
-  // Find the entry whose user.id matches ourselves to get our roles -
-  // used for the Hub notification feature when pinged via a role, and
-  // for PermissionUtils::canViewChannel() (GuildChannels.cpp).
-  // Fix: confirmed this "members" field is NEVER present when this
-  // function is called from the READY branch above - only real
-  // GUILD_CREATE payloads (the join-a-new-guild-while-running case)
-  // actually carry it, so this loop is effectively dead code on the
-  // READY path and only fires there in practice. The real source of
-  // the current user's own roles on initial load is
-  // fetchSelfGuildMember() (GuildChannels.cpp) - kept here anyway since
-  // it's harmless (empty "members" -> loop just does nothing) and
-  // covers the genuine GUILD_CREATE case for free.
+  // "members": array of member objects (there is no single self "member" field on
+  // the user gateway). Find our user.id to get our roles (Hub role pings,
+  // canViewChannel()). Only present in real GUILD_CREATE payloads, so this loop
+  // does nothing on the READY path; harmless there.
   QString currentUserId = m_store->currentUserId();
   if (currentUserId.isEmpty()) {
     return;
@@ -1222,10 +1036,8 @@ void DiscordClient::mergeThreadsIntoCache(
     const QVariantList &rawThreads, const QVariantList &channelIdsToClear) {
   QVariantMap threadsByParentId = m_channelThreadsByParentId;
 
-  // channelIdsToClear lists channels that no longer have ANY active
-  // threads (only present for THREAD_LIST_SYNC, empty when called from
-  // GUILD_CREATE) - their old keys must be removed before reloading, or
-  // the list would keep threads that were already closed/archived.
+  // channelIdsToClear: channels with no active threads left (THREAD_LIST_SYNC only);
+  // their old keys are removed before reloading.
   for (int i = 0; i < channelIdsToClear.size(); ++i) {
     threadsByParentId.remove(channelIdsToClear.at(i).toString());
   }
@@ -1239,15 +1051,8 @@ void DiscordClient::mergeThreadsIntoCache(
     }
 
     QVariantList siblingThreads = threadsByParentId.value(parentId).toList();
-    // Fix: THREAD_LIST_SYNC can fire multiple times for the same guild
-    // in one session (once per new channel subscribed in that guild) -
-    // append() used to just add without checking for duplicates, so
-    // the same thread (same itemId) got added repeatedly on every
-    // merge, causing observable duplicates in the UI (confirmed bug via
-    // real testing). Remove the old item with the same itemId before
-    // appending again - ensures the newest version always wins (thread
-    // data can change between syncs, e.g. message count) without
-    // duplicating the list.
+    // THREAD_LIST_SYNC can fire several times per guild, so remove the existing item
+    // with the same itemId before appending (newest wins, no duplicates).
     for (int j = siblingThreads.size() - 1; j >= 0; --j) {
       if (siblingThreads.at(j).toMap().value("id").toString() == itemId) {
         siblingThreads.removeAt(j);
@@ -1481,13 +1286,7 @@ void DiscordClient::flushGatewayUiUpdates() {
   m_pendingMentionCountsByChannelId.clear();
   m_pendingDmUiUpdate = false;
 
-  // Fix: temporary diagnostic logging - flushGatewayUiUpdates() had no
-  // qDebug() output at all before this, making it impossible to tell
-  // from a log alone whether it actually ran, and with what pending
-  // guild/channel ids, for a given non-mention message. Needed to
-  // pin down a reported bug where a non-mention message's badge only
-  // seems to "take" after the FIRST mention of a session has been
-  // read/cleared, never before.
+  // Diagnostic logging for flushGatewayUiUpdates() (pending guild/channel ids).
   qDebug() << "[discord-chat] flushGatewayUiUpdates guildIds=" << guildIds
            << "channelIds=" << channelIds
            << "mentionCounts=" << mentionCounts;
@@ -1503,16 +1302,9 @@ void DiscordClient::flushGatewayUiUpdates() {
   }
   for (int i = 0; i < channelIds.size(); ++i) {
     updateGuildChannelUnread(channelIds.at(i), true);
-    // Fix: updateGuildChannelUnread() above only takes effect if this
-    // channel is already present in m_allGuildChannels/
-    // m_visibleGuildChannels - i.e. only if its guild is the one
-    // currently open. A message in a channel belonging to some OTHER
-    // guild would silently do nothing there, so that channel would
-    // never show up white/unread once its guild finally gets opened
-    // later. markChannelUnread() records the fact independently of
-    // what's currently loaded; recomputeAccessibleGuildChannels() (via
-    // onGuildChannelsLoaded()) applies it once that guild's channels
-    // actually load - see AppStore.hpp for the full explanation.
+    // updateGuildChannelUnread() only applies to the currently open guild, so
+    // markChannelUnread() records it independently and it is applied when that
+    // guild's channels load (see AppStore.hpp).
     if (m_store) {
       m_store->markChannelUnread(channelIds.at(i));
     }

@@ -36,10 +36,7 @@ void DiscordClient::initializeManagers() {
     m_sortUtils = new SortUtils(this);
   }
   if (m_hubIntegration == 0) {
-    // Don't call init() here — HubIntegration::init() lazy-inits itself
-    // on the first upsertThreadItem() call (see HubIntegration.cpp), to
-    // avoid the IPC UDS cost at app startup when the user isn't logged
-    // in yet or has no messages to notify about.
+    // Do not call init() here: HubIntegration lazy-inits on the first upsertThreadItem(), avoiding UDS IPC cost at startup.
     m_hubIntegration = new HubIntegration(this);
   }
 }

@@ -8,16 +8,9 @@ Page {
     property string activeContentType: ""
     property string activeServerId: ""
 
-    // Fix: tracks whichever chat page is currently on top (if any) so
-    // main.qml's onGuildChannelsChanged() can re-resolve a channel name
-    // that came back empty from a Hub-invoked open (see
-    // tryOpenPendingHubChannel()'s comment in main.qml) once that
-    // guild's channels actually finish loading. activeChatChannelId is
-    // cleared whenever the chat page is left (backRequested) so this
-    // never fires against a page that's no longer open. Deliberately
-    // NOT reused for the normal (non-Hub) open path - channelName is
-    // always already known there, so activeChatChannelName is never
-    // blank in that case and onGuildChannelsChanged() is a no-op.
+    // Tracks the chat page currently on top so main.qml's onGuildChannelsChanged()
+    // can re-resolve a name that came back empty from a Hub-invoked open. Cleared on
+    // backRequested; not used for the normal open path (name already known).
     property string activeChatChannelId: ""
     property string activeChatChannelName: ""
     property variant activeChatPage: null
@@ -25,9 +18,7 @@ Page {
     function updateActiveChatChannelName(newName) {
         activeChatChannelName = newName;
         if (activeChatPage) {
-            // ChatCard.qml's titleBar.title is bound to channelName
-            // declaratively (title: chatPage.channelName) - setting
-            // this alone is enough for the title bar to update.
+            // ChatCard.qml's titleBar.title is bound to channelName (title: chatPage.channelName), so this alone updates it.
             activeChatPage.channelName = newName;
         }
     }
@@ -309,15 +300,8 @@ Page {
                                 horizontalAlignment: HorizontalAlignment.Left
                                 verticalAlignment: VerticalAlignment.Center
                                 background: Color.create("#FFFFFF")
-                                // Fix: white bar for ANY new message in
-                                // the server, mention or not - unread
-                                // (a plain new message) OR mentionCount
-                                // > 0 (a ping) both show it. The red
-                                // badge below is separate and layered
-                                // on TOP of this bar for pings
-                                // specifically, not a replacement for
-                                // it - a plain unread message gets only
-                                // the white bar, a ping gets both.
+                                // White bar for any new message (unread or mentionCount > 0). The red badge below
+                                // is layered on top of it for pings only.
                                 visible: (ListItemData.type == "server" || ListItemData.type == "folder") && (ListItemData.unread == true || ListItemData.mentionCount > 0)
                             }
 
@@ -327,13 +311,7 @@ Page {
                                 horizontalAlignment: HorizontalAlignment.Right
                                 verticalAlignment: VerticalAlignment.Top
                                 background: Color.create("#ED4245")
-                                // Fix: pings specifically (not every
-                                // unread message) still get this red
-                                // count badge, shown together with the
-                                // white bar above rather than instead
-                                // of it - both clear the same way, when
-                                // the user reads the pinging message
-                                // (mentionCount drops to 0).
+                                // Pings also get this red count badge, together with the white bar; both clear when mentionCount drops to 0.
                                 visible: ListItemData.mentionCount > 0
 
                                 layout: DockLayout {}
@@ -377,30 +355,12 @@ Page {
         if (page) {
             chatController.openChannel(channelId, guildId, channelName);
             page.channelName = channelName;
-            // Fix: THIS WAS THE ACTUAL BUG behind the still-blank title
-            // after channelInfoResolved fired. ChatCard.qml's titleBar
-            // has a DECLARATIVE BINDING: title: chatPage.channelName
-            // (reached through the "title" alias). Assigning to
-            // page.title here writes straight through that alias into
-            // titleBar.title directly - and in QML, assigning to a
-            // property that has an active binding PERMANENTLY BREAKS
-            // that binding. From this line on, titleBar.title becomes a
-            // frozen plain string (""), never again following
-            // page.channelName - so every later fix that updates
-            // channelName (onCreationCompleted's chatController.
-            // currentChannelName read, and this file's own
-            // updateActiveChatChannelName()) kept "succeeding" (the
-            // property really was being set - confirmed via the
-            // console.log trace) while the title bar itself never
-            // moved, because it had already stopped listening.
-            // page.channelName = channelName above is enough on its
-            // own - drop the redundant page.title assignment entirely
-            // and let the binding do its job.
+            // Do not assign page.title here: ChatCard.qml's titleBar binds
+            // title: chatPage.channelName via the "title" alias, and assigning to a bound
+            // property permanently breaks the binding, freezing the title bar.
+            // page.channelName above is enough.
             page.compactMessageEnabled = settingsController.compactMessageEnabled;
-            // Fix: see activeChatChannelId's doc comment above - lets
-            // main.qml find and patch up this exact page later if
-            // channelName arrived empty (Hub-invoke path) and the real
-            // name wasn't cached yet at open time.
+            // Lets main.qml find this page later if channelName arrived empty (Hub invoke).
             mainPage.activeChatPage = page;
             mainPage.activeChatChannelId = channelId;
             mainPage.activeChatChannelName = channelName;
@@ -408,13 +368,8 @@ Page {
                 page.compactMessageEnabled = enabled;
             });
             page.backRequested.connect(function () {
-                // Fix: tell the C++ side the user actually left this
-                // channel, not just that the UI page went away - see
-                // ChatController::closeChannel()/AppStore::
-                // clearChannelSelection() for why this matters (a
-                // non-mention message arriving after backing out was
-                // still being treated as "user is reading it live",
-                // confirmed bug via logs).
+                // Tell the C++ side the user left the channel (ChatController::closeChannel()/
+                // AppStore::clearChannelSelection()), or later messages count as read live.
                 chatController.closeChannel();
                 if (mainPage.activeChatPage === page) {
                     mainPage.activeChatPage = null;
@@ -429,13 +384,8 @@ Page {
                 var memberPage = channelMemberListDefinition.createObject();
 
                 if (memberPage) {
-                    // Fix: uses mainPage.activeChatChannelName (live)
-                    // instead of the closed-over channelName param
-                    // (fixed at openChat() time) - if this chat was
-                    // opened from a Hub invoke with an unresolved name,
-                    // activeChatChannelName may have since self-healed
-                    // via onGuildChannelsChanged() in main.qml by the
-                    // time the user actually opens the Members sheet.
+                    // Use the live mainPage.activeChatChannelName: a Hub-opened chat's name may have
+                    // self-healed since openChat().
                     var resolvedChannelName = mainPage.activeChatChannelName !== ""
                         ? mainPage.activeChatChannelName : channelName;
                     memberPage.channelId = channelId;
@@ -450,21 +400,9 @@ Page {
                     if (mainPage.navigationPane) {
                         mainPage.navigationPane.push(memberPage);
                     }
-                    // IMPORTANT: createObject() fires
-                    // ChannelMemberList.qml's onCreationCompleted()
-                    // IMMEDIATELY, synchronously, BEFORE the property
-                    // assignments above (channelId/guildId are still the
-                    // default empty "" at that point) — so
-                    // requestMemberList() called from inside
-                    // onCreationCompleted() always gets two empty
-                    // arguments and early-returns, leaving the Members
-                    // sheet permanently blank even though
-                    // channelId/guildId get assigned correctly right
-                    // after (confirmed bug via real logs — none of
-                    // MemberListController::requestMemberList()'s
-                    // qDebug lines ever showed up). Call it again
-                    // EXPLICITLY here, after the properties have real
-                    // values, to make sure the correct data gets used.
+                    // createObject() runs ChannelMemberList.qml's onCreationCompleted() before the
+                    // properties are assigned (channelId/guildId still empty), so its
+                    // requestMemberList() returns early. Call it again explicitly here.
                     memberPage.requestMemberListNow();
                 } else {
                     console.log("Could not create ChannelMemberList.qml");
@@ -509,11 +447,8 @@ Page {
         }
     }
 
-    // Pulled out from inside openChat() (which previously could only be
-    // opened via a channel's "Threads" action) so it can be shared with
-    // tapping DIRECTLY on a forum/media channel in ServerList (channels
-    // of this type can't open via ChatCard - they have no messages of
-    // their own, each "post" IS a thread).
+    // Shared by openChat()'s "Threads" action and direct taps on forum/media channels
+    // in ServerList (they have no messages; each post is a thread).
     function openThreadList(channelId, guildId, channelName) {
         var threadPage = threadListDefinition.createObject();
 
@@ -521,16 +456,8 @@ Page {
             threadPage.channelId = channelId;
             threadPage.guildId = guildId;
             threadPage.channelName = channelName;
-            // Fix: this was overwriting ThreadList.qml's own titleBar
-            // binding (title: qsTr("Forums #") + threadListPage.channelName)
-            // right after push - that binding never actually reached the
-            // screen because this assignment (via the "title" alias)
-            // ran after it and won, so the title bar kept showing
-            // "Threads #<channel>" no matter what ThreadList.qml itself
-            // declared. Kept in sync with ThreadList.qml's wording here
-            // too, since setting it again here (immediately after
-            // creation) is harmless and keeps both copies consistent if
-            // either ever changes independently.
+            // Sets the title again after push: an earlier assignment via the "title" alias
+            // overrode ThreadList.qml's own binding. Keep wording in sync with ThreadList.qml.
             threadPage.title = qsTr("Forums #") + channelName;
             threadPage.backRequested.connect(function () {
                 threadPage.cleanup();
@@ -543,22 +470,15 @@ Page {
                 if (mainPage.navigationPane) {
                     mainPage.navigationPane.pop();
                 }
-                // Opens a thread exactly like a regular channel:
-                // ChatController just needs a valid channelId, it
-                // doesn't care whether it's in
-                // allGuildChannels/channelTree (see AppStore::
-                // selectChannel() - only sets m_selectedChannelId, no
-                // extra lookup) - so openChat() is reused directly, no
-                // need for a separate flow for threads.
+                // Opens a thread like a regular channel: ChatController only needs a valid
+                // channelId (AppStore::selectChannel() does no lookup), so openChat() is reused.
                 mainPage.openChat(threadId, guildId, threadName);
             });
             if (mainPage.navigationPane) {
                 mainPage.navigationPane.push(threadPage);
             }
-            // Same caveat as ChannelMemberList.qml: createObject() runs
-            // ThreadList.qml's onCreationCompleted() BEFORE the property
-            // assignments above, so it's called again explicitly after
-            // channelId has a real value.
+            // createObject() runs ThreadList.qml's onCreationCompleted() before the properties
+            // are assigned, so it is called again here after channelId is set.
             threadPage.requestThreadsNow();
         } else {
             console.log("Could not create ThreadList.qml");

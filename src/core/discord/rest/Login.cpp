@@ -9,9 +9,7 @@ extern "C" {
 }
 
 namespace {
-// Discord's /auth/login and /auth/mfa/totp endpoints accept small JSON
-// payloads. Reuse bb::data::JsonDataAccess the same way the message-sending
-// code does, since these payloads are simple and always serialize cleanly.
+// /auth/login and /auth/mfa/totp take small JSON payloads; reuse bb::data::JsonDataAccess as the message-sending code does.
 QByteArray buildAuthJsonBody(const QVariantMap &data) {
   bb::data::JsonDataAccess json;
   QByteArray body;
@@ -116,11 +114,8 @@ void DiscordRestClient::sendFingerprintRequest(
   m_requestSent = true;
   m_awaitingFingerprint = true;
 
-  // Best-effort lookup of an anonymous fingerprint, sent back as
-  // X-Fingerprint on the actual login request below. This mirrors what the
-  // official/other unofficial clients do before a password login and makes
-  // a CAPTCHA challenge less likely. It is optional: if this fails for any
-  // reason we still proceed straight to the login request.
+  // Best-effort anonymous fingerprint, sent as X-Fingerprint on the login request to
+  // make a CAPTCHA less likely. Optional: on failure the login proceeds anyway.
   QByteArray pathBytes =
       apiRequestPath("/api/v9/experiments?with_guild_experiments=true")
           .toUtf8();
@@ -153,33 +148,24 @@ void DiscordRestClient::sendPasswordLoginRequest(
   payload["undelete"] = false;
   QByteArray bodyBytes = buildAuthJsonBody(payload);
 
-  // Note: unlike before, the plaintext password is *not* wiped here
-  // anymore. If Discord responds with a CAPTCHA challenge, retrying this
-  // exact login after the user solves it needs the same password again;
-  // see tryHandleCaptcha(), which copies it into m_pendingCaptchaRequest.
-  // It is still wiped from memory in finishRequest(), which always runs
-  // once this request is truly done (success, non-CAPTCHA failure, or
-  // after being copied into the pending CAPTCHA retry).
+  // The plaintext password is not wiped here: a CAPTCHA retry needs it (copied into
+  // m_pendingCaptchaRequest by tryHandleCaptcha()). It is wiped in finishRequest().
 
   QByteArray pathBytes = apiRequestPath("/api/v9/auth/login").toUtf8();
   QByteArray hostBytes = hostHeader(apiBaseUrl()).toUtf8();
   QByteArray userAgent = DiscordUtils::desktopUserAgent();
   QByteArray superProperties = DiscordUtils::superPropertiesHeader();
 
-  // Temporary: log the decoded X-Super-Properties JSON so a 400/"Invalid
-  // Form Body" here can be confirmed (or ruled out) as coming from a
-  // malformed super-properties payload rather than the login body itself.
-  // Remove once password login is confirmed reliable again.
+  // Temporary: log the decoded X-Super-Properties JSON to tell a malformed payload
+  // from a bad login body on a 400 "Invalid Form Body". Remove once login is reliable.
   qDebug() << "[discord-rest] super properties header"
            << superProperties.trimmed();
   QByteArray fingerprintHeader =
       m_fingerprint.isEmpty()
           ? QByteArray()
           : ("X-Fingerprint: " + m_fingerprint.toUtf8() + "\r\n");
-  // Attached only when this request is a retry after the user solved a
-  // CAPTCHA challenge in the WebView (see captchaRequired()/
-  // submitCaptchaKey()). Cleared after every attempt (processNextRequest()/
-  // cancel()), so a stale key is never resent.
+  // Attached only on a retry after the user solved a CAPTCHA (see captchaRequired()/
+  // submitCaptchaKey()); cleared after every attempt so a stale key is never resent.
   QByteArray captchaHeader =
       m_captchaKey.isEmpty()
           ? QByteArray()
@@ -258,15 +244,9 @@ void DiscordRestClient::succeedWithUser(const QVariantMap &user) {
   }
 
   finishRequest();
-  // m_token is populated by this point (set when the /auth/mfa/totp or
-  // /auth/login response carried a token, or directly by loginWithToken())
-  // and finishRequest() above does not clear it - only the ephemeral
-  // login-attempt fields (email/password/mfa ticket/etc.) get cleared.
-  // Passed explicitly here because Client::m_token (a separate member one
-  // layer up) was previously never assigned after a password+MFA login,
-  // only after loginWithToken() - leaving it empty and causing
-  // connectGateway() to fail with "Discord token is empty" right after a
-  // successful REST login.
+  // m_token is set by now (login response or loginWithToken()) and is not cleared by
+  // finishRequest(). Passed explicitly because Client::m_token was never set after a
+  // password+MFA login, which made connectGateway() fail with "Discord token is empty".
   emit loginSucceeded(user, m_token);
   processNextRequest();
 }

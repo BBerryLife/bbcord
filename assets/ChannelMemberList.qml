@@ -76,26 +76,10 @@ Page {
 							orientation: LayoutOrientation.LeftToRight
 						}
 
-						// Fix: the outer id (memberPage) does NOT resolve
-						// from within a ListItemComponent's own scope in
-						// Cascades (see comment at the top of the file) —
-						// "memberPage.controller" throws a ReferenceError
-						// right in onCreationCompleted(), so
-						// tryLoadAvatar() never actually calls
-						// cachedAvatarSource() and avatarCached never
-						// gets connected. Observed effect: avatars didn't
-						// load lazily per-row as designed, they only
-						// appeared all at once when the whole ListView
-						// got rebuilt/re-rendered. Fixed by using the
-						// same pattern already proven stable elsewhere in
-						// the app (see ChatCard.qml:
-						// loadAttachmentImage() declared on the parent
-						// ListView, the delegate calling back up via
-						// "ListItem.view.<function>" — the standard
-						// Cascades API for a delegate to reach its
-						// containing ListView) instead of trying to
-						// access a context property through a local id
-						// not visible from this scope.
+						// The outer id (memberPage) does not resolve inside a ListItemComponent's scope,
+						// so "memberPage.controller" threw in onCreationCompleted() and avatars never
+						// loaded per row. Use ListItem.view.<function>, as ChatCard.qml's
+						// loadAttachmentImage() does.
 						function tryLoadAvatar() {
 							if (ListItemData.avatarUrl === "") {
 								return
@@ -176,12 +160,8 @@ Page {
 				return data.type
 			}
 
-			// Bridge for the "member" delegate to call back up via
-			// ListItem.view.loadMemberAvatar()/connectAvatarCached() -
-			// see the comment at tryLoadAvatar() in the "member"
-			// ListItemComponent above for why memberListController (or
-			// the memberPage.controller alias) isn't called directly
-			// from inside the delegate scope.
+			// Bridge for the "member" delegate: it calls ListItem.view.loadMemberAvatar()/
+			// connectAvatarCached() (see tryLoadAvatar() above).
 			function loadMemberAvatar(avatarUrl) {
 				return memberListController.cachedAvatarSource(avatarUrl)
 			}
@@ -192,20 +172,10 @@ Page {
 		}
 	}
 
-	// Lazy-load: only sends a request/subscribes the member list when
-	// this sheet is actually opened (i.e. when the user opens the
-	// Members tab), not as soon as the channel is opened - per the
-	// original optimization requirement. See
-	// MemberListController::requestMemberList() (MemberListController.cpp)
-	// for the details of the Gateway subscribe mechanism.
-	//
-	// NOT called in onCreationCompleted: createObject() in MainPage.qml
-	// fires onCreationCompleted() IMMEDIATELY, synchronously, BEFORE
-	// channelId/guildId get assigned (the properties are still the
-	// default "" at that point) — so the request would always get empty
-	// arguments and be skipped. Instead, MainPage.qml calls this
-	// function EXPLICITLY right after channelId/guildId have been
-	// assigned, ensuring the correct data is used.
+	// Lazy-load: subscribes the member list only when the sheet opens (see
+	// MemberListController::requestMemberList()). Not called in onCreationCompleted:
+	// createObject() runs it before channelId/guildId are assigned, so MainPage.qml
+	// calls this explicitly afterwards.
 	function requestMemberListNow() {
 		memberListController.requestMemberList(memberPage.channelId, memberPage.guildId)
 	}

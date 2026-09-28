@@ -62,23 +62,12 @@ bool shouldParseDispatch(const QString &eventName) {
          eventName == "USER_SETTINGS_PROTO_UPDATE" ||
          eventName == "PRESENCE_UPDATE" ||
          eventName == "GUILD_MEMBER_LIST_UPDATE" ||
-         // Fix: needed so a role change reaches the client in
-         // real time (see the GUILD_MEMBER_UPDATE handling block in
-         // Client.cpp::onGatewayDispatch()) - without this, the event
-         // is silently dropped right here, before it ever reaches
-         // onGatewayDispatch(), exactly like THREAD_LIST_SYNC was
-         // below before it got added to this same whitelist.
+         // GUILD_MEMBER_UPDATE must be whitelisted so role changes reach
+         // onGatewayDispatch(); events not listed are dropped by shouldParseDispatch().
          eventName == "GUILD_MEMBER_UPDATE" ||
-         // Fix: THREAD_LIST_SYNC was missing from this whitelist when
-         // Threads was added - any message not on this list gets
-         // returned early by the shouldParseDispatch() check at the top
-         // of handleTextMessage(), NEVER reaching handleDispatch()/
-         // onGatewayDispatch() regardless of whether Discord sent the
-         // event. This was the real reason GUILD_CREATE also seemed
-         // "not firing" when no debug log showed up — initial suspicion,
-         // but THREAD_LIST_SYNC is the event actually managed by the
-         // OP 14 lazy subscribe mechanism (already used for member
-         // list/channel list) and needs parsing.
+         // THREAD_LIST_SYNC must be whitelisted too: events not listed are dropped in
+         // handleTextMessage() before reaching onGatewayDispatch(). It is delivered by the
+         // OP 14 lazy-subscribe mechanism.
          eventName == "THREAD_LIST_SYNC";
 }
 
@@ -165,21 +154,11 @@ QVariantMap buildLightMessageCreatePayload(const QByteArray &bytes,
       DiscordJsonParser::extractStringField(dataBytes, "guild_id");
   payload["mention_everyone"] =
       DiscordJsonParser::extractBoolField(dataBytes, "mention_everyone", false);
-  // Fix: this "light" payload (used for a message in a channel that
-  // ISN'T currently open - see the shouldBuildFullMessage branch above)
-  // used to stop here, without "content" or the full "mentions"/
-  // "mention_roles" arrays - fine for unread/mention-count bookkeeping,
-  // but this SAME payload also feeds Hub notifications
+  // The "light" payload (channels that are not open) must still carry content and
+  // the mentions/mention_roles/mention_channels arrays: Hub notifications
   // (GatewayHandler::buildMentionNotification()) and
-  // DiscordMessage::fromVariantMap() (for mention-name resolution) -
-  // both need actual message content, confirmed via a real log showing
-  // the Hub notification body falling back to "New message" because
-  // "content" was one of the fields missing here. content/mentions/
-  // mention_roles/mention_channels are still just flat string/array
-  // extractions (no full nested-object parsing of e.g. embeds or
-  // attachments), so this stays cheap - the whole point of the "light"
-  // path is avoiding a full JSON parse of the entire message object,
-  // not avoiding these specific fields.
+  // DiscordMessage::fromVariantMap() need them. These are flat extractions, so the
+  // path stays cheap (no full parse of embeds or attachments).
   payload["content"] =
       DiscordJsonParser::extractStringField(dataBytes, "content");
   payload["mentions"] = DiscordJsonParser::extractArrayField(dataBytes, "mentions");
@@ -192,10 +171,7 @@ QVariantMap buildLightMessageCreatePayload(const QByteArray &bytes,
       DiscordJsonParser::extractObjectField(dataBytes, "author");
   QVariantMap author;
   author["id"] = DiscordJsonParser::extractStringField(authorBytes, "id");
-  // Fix: needed for the Hub notification's "AuthorName: message" title
-  // (authorDisplayNameFromPayload() reads these) - without them, the
-  // author side of that string falls back to an id too, same class of
-  // bug as the missing "content" above.
+  // Author fields are needed for the Hub notification's "AuthorName: message" title (authorDisplayNameFromPayload()).
   author["username"] =
       DiscordJsonParser::extractStringField(authorBytes, "username");
   author["global_name"] =
@@ -230,18 +206,9 @@ QVariantMap buildLightReadyPayload(const QByteArray &bytes) {
     payload["settings"] = settings;
   }
 
-  // Fix: the user-token gateway (unlike the bot protocol) does NOT send
-  // individual GUILD_CREATE events per guild - confirmed via real debug
-  // logs (0/140 events received were GUILD_CREATE in a full session).
-  // Discord bundles all the full guild data (channels, roles,
-  // threads...) directly INSIDE this READY payload, in the root-level
-  // "guilds" field of "d" - this is also why the READY payload is
-  // ~5MB even with only 49 guilds. buildLightReadyPayload used to skip
-  // this field entirely for performance (avoiding a full JSON parse of
-  // the huge payload) - keeping that same idea, we only extract the raw
-  // "guilds" array via extractArrayField() (no deep parsing of the
-  // objects inside here), letting Client.cpp parse individual guilds
-  // separately when needed (threads) without parsing the whole payload.
+  // The user-token gateway sends no per-guild GUILD_CREATE; full guild data is in
+  // READY's root "guilds" field (hence the ~5MB payload). Only the raw array is
+  // extracted via extractArrayField() (no deep parsing); Client.cpp parses guilds as needed.
   payload["guilds"] = DiscordJsonParser::extractArrayField(dataBytes, "guilds");
 
   return payload;
@@ -311,22 +278,16 @@ void DiscordGateway::handleEvent(struct mg_connection *connection, int event,
 
     qDebug() << "[discord-gateway] error" << message;
 
-    // A dropped UDP packet to the DNS resolver on a flaky mobile/Wi-Fi
-    // connection surfaces here as "DNS timeout" even though the network is
-    // otherwise fine (the REST login that just ran a few seconds earlier is
-    // proof of that). Retry the resolve/connect a couple of times before
-    // giving up and telling the user - see kMaxDnsRetries. Other
-    // errors (TLS failures, refused connections, etc.) are surfaced
-    // immediately, same as before.
+    // A dropped UDP packet to the DNS resolver can surface as "DNS timeout" on flaky
+    // networks, so retry the resolve/connect a few times (kMaxDnsRetries). Other errors
+    // are surfaced immediately.
     if (message.contains("DNS timeout", Qt::CaseInsensitive) &&
         m_dnsRetriesLeft > 0) {
       // (see kMaxDnsRetries in Gateway.hpp)
       --m_dnsRetriesLeft;
       qDebug() << "[discord-gateway] retrying after DNS timeout, retries left"
                << m_dnsRetriesLeft;
-      // Don't reconnect here: MG_EV_CLOSE always follows MG_EV_ERROR for a
-      // failed connect, and that's where mongoose finishes tearing down
-      // this connection. Reconnecting now would race that teardown.
+      // Do not reconnect here: MG_EV_CLOSE always follows MG_EV_ERROR and finishes teardown; reconnecting now would race it.
       break;
     }
 
@@ -542,8 +503,6 @@ void DiscordGateway::handleTextMessage(const char *data, int length) {
 
   switch (payload.op) {
   case 0:
-    // qDebug() << "[discord-gateway] parsed dispatch" << payload.eventName
-    //          << "seq" << payload.sequence;
     if (payload.eventName == "READY") {
       qDebug() << "[discord-gateway] READY presences"
                << payload.data.value("presences").toList().size()
@@ -593,11 +552,8 @@ void DiscordGateway::handleDispatch(const QString &eventName,
     emit ready(m_sessionId);
     flushPendingLazyRequests();
 
-    // If the Members sheet was open when the gateway closed/reconnected
-    // (see m_activeMemberListGuildId in Gateway.hpp), Discord doesn't
-    // remember the old subscription after the socket drops - the SYNC
-    // must be manually re-sent, or the sheet stays empty until the
-    // user closes and reopens it.
+    // If the Members sheet was open when the gateway dropped (m_activeMemberListGuildId),
+    // Discord forgets the subscription; re-send the SYNC or the sheet stays empty.
     if (!m_activeMemberListGuildId.isEmpty()) {
       qDebug() << "[discord-gateway] re-sending member-list sync after "
                   "reconnect"

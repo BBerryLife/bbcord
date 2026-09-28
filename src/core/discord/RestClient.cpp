@@ -24,27 +24,13 @@ const int kPollIntervalMs = 10;
 const int kRequestTimeoutTicks = 600;
 const int kKeepAliveIdleTimeoutTicks = 300;
 
-// Diagnostic/tuning, same idea as Gateway.cpp's timer-gap logging: the
-// very first REST request after a fresh app/Simulator start has been
-// observed timing out repeatedly, with later attempts (after closing
-// and reopening the app) succeeding normally. This mirrors the WS
-// handshake timing issue investigated separately - possibly the same
-// underlying cause (Simulator network stack still "cold" right after
-// the app process starts). Retrying once, transparently, before
-// surfacing "Discord REST timeout" to the UI, gives the connection a
-// second chance without the user having to manually restart the app.
-// This only retries on this exact timeout path - a wrong
-// password/MFA code, or any other REST error, still fails immediately
-// as before.
+// The first REST request after a fresh start often times out (likely a cold
+// network stack), so retry once transparently before surfacing "Discord REST
+// timeout". Only this timeout path retries; other errors fail immediately.
 const int kMaxTimeoutRetries = 1;
 
-// Mongoose defaults to a 3-second DNS resolve timeout, which is too short on
-// mobile/carrier networks and BB10 Wi-Fi, where a lookup to its built-in
-// 8.8.8.8 resolver can legitimately take longer (or momentarily stall)
-// under load. A short timeout here doesn't fail fast so much as it fails
-// *early*, right in the middle of normal usage (e.g. immediately after the
-// password step, while the user is still typing their MFA code). Raise it
-// to give slower networks a fair chance before giving up.
+// Mongoose's default 3s DNS timeout is too short on mobile/BB10 Wi-Fi and fails
+// mid-use (e.g. while typing the MFA code); raised for slower networks.
 const int kDnsTimeoutMs = 10000;
 
 QByteArray httpBodyToBytes(const struct mg_http_message *message) {
@@ -98,12 +84,9 @@ QString authErrorMessage(int status, const QVariantMap &parsedBody,
     return message;
   }
 
-  // Discord's captcha-required response has no top-level "message" field
-  // (it uses "captcha_key"/"captcha_sitekey"/etc. instead), so without this
-  // check we'd fall through to the generic fallback below - e.g. reporting
-  // "Invalid verification code" on every retry even though the real
-  // problem is a captcha challenge blocking the request before Discord
-  // ever checks the code. Surface that distinction explicitly instead.
+  // The captcha-required response has no top-level "message" (it uses
+  // "captcha_key"/"captcha_sitekey"), so check it explicitly instead of falling
+  // through to a generic error such as "Invalid verification code".
   if (parsedBody.contains("captcha_key") ||
       parsedBody.contains("captcha_sitekey")) {
     return "Discord is requiring a CAPTCHA before this request can "
@@ -171,9 +154,7 @@ void DiscordRestClient::cancel() {
   m_iconHash.clear();
   m_outputPath.clear();
   m_loginEmail.clear();
-  // Secure-wipe: the password can now live until finishRequest()/cancel()
-  // (see sendPasswordLoginRequest()), so clear its backing memory here
-  // rather than just dropping the QString's reference to it.
+  // Secure-wipe: the password may live until finishRequest()/cancel(), so clear its backing memory.
   m_loginPassword.fill(QLatin1Char('0'));
   m_loginPassword.clear();
   m_mfaTicket.clear();
@@ -212,18 +193,9 @@ void DiscordRestClient::timerEvent(QTimerEvent *event) {
   } else if (m_connection != NULL && !m_finished) {
     ++m_pollTicks;
     if (m_pollTicks > kRequestTimeoutTicks) {
-      // The connection genuinely hung (no response within
-      // kRequestTimeoutTicks), most likely because the far end (Discord's
-      // server, or a proxy/load balancer in between) silently closed the
-      // keep-alive TCP connection while we were idle waiting for user
-      // input (e.g. typing an MFA code) - mongoose/the OS has no way to
-      // know that until it actually tries to use the connection. Mark it
-      // closing and forget it here so the *next* request is forced to open
-      // a brand new connection in processNextRequest() instead of
-      // reusing this same dead one and hanging for another
-      // kRequestTimeoutTicks - without this, back-to-back "Discord REST
-      // timeout" failures can repeat several times before a fresh
-      // connection finally gets through.
+      // The connection hung, most likely because the far end closed the idle keep-alive
+      // socket. Mark it closing and forget it so the next request opens a fresh
+      // connection instead of hanging again.
       if (!m_connection->is_closing) {
         m_connection->is_closing = 1;
       }
@@ -232,13 +204,8 @@ void DiscordRestClient::timerEvent(QTimerEvent *event) {
       m_connectionUrl.clear();
 
       if (m_timeoutRetriesLeft > 0) {
-        // Retry the exact same request transparently instead of
-        // surfacing "Discord REST timeout" to the UI - see
-        // kMaxTimeoutRetries comment above. Must build the retry request
-        // from the current m_request*/m_login*/m_mfa* fields BEFORE
-        // calling finishRequest(), since finishRequest() clears all of
-        // them (including a secure-wipe of m_loginPassword) as part of
-        // its normal cleanup.
+        // Retry the same request. Build it from the m_request*/m_login*/m_mfa* fields
+        // before finishRequest(), which clears them (including wiping m_loginPassword).
         --m_timeoutRetriesLeft;
         qDebug() << "[discord-rest] request timed out, retrying"
                  << "(retries left after this:" << m_timeoutRetriesLeft << ")";
@@ -265,15 +232,9 @@ void DiscordRestClient::eventHandler(struct mg_connection *connection,
 }
 
 void DiscordRestClient::enqueueRequest(const RestRequest &request) {
-  // Reset the timeout-retry budget here, not in processNextRequest() or
-  // finishRequest() - both of those also run on the internal retry path
-  // (requeueCurrentRequestForRetry() -> finishRequest() ->
-  // processNextRequest()), and resetting there would refill the counter
-  // before it could ever reach zero, turning "retry once" into an
-  // infinite retry loop. This function is the one place a genuinely NEW
-  // request enters the queue (retries go straight into m_requestQueue
-  // via prepend(), bypassing enqueueRequest() entirely) - see
-  // kMaxTimeoutRetries comment.
+  // Reset the retry budget only here, the one place a genuinely new request enters
+  // the queue. Resetting in processNextRequest()/finishRequest() would make the
+  // retry loop infinite.
   m_timeoutRetriesLeft = kMaxTimeoutRetries;
   m_requestQueue.append(request);
   processNextRequest();
@@ -728,14 +689,8 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
       }
 
       failDataRequest(dataErrorMessage("self guild member", status));
-      // Fix: dataErrorMessage() only surfaces a generic "Discord self
-      // guild member error 400" - not enough to tell whether this is a
-      // route Discord genuinely rejects for user tokens (like the
-      // guild-level active-threads endpoint - see
-      // fetchActiveThreads()'s comment) vs. a malformed request on
-      // BBCord's end. Logging the raw body here, same as
-      // "password login failure body" does, to see Discord's actual
-      // {"message":..., "code":...} the next time this 400 happens.
+      // Log the raw body (as "password login failure body" does): dataErrorMessage()
+      // only gives a generic 400, which cannot tell a rejected route from a malformed request.
       qDebug() << "[discord-rest] self guild member failure body" << body;
       break;
     }
@@ -757,11 +712,8 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
 
         QString channelId = m_channelId;
         finishRequest(keepConnectionAlive);
-        // Fix: DMs have no "guild_id" field at all (not even null in
-        // some client versions) - toString() on a missing key returns
-        // an empty QString either way, which is exactly the "this is a
-        // DM" signal callers already expect (same convention as
-        // guildIdForChannel()).
+        // DMs have no "guild_id" (toString() on a missing key gives an empty QString),
+        // which is the "this is a DM" convention callers expect.
         emit channelInfoLoaded(channelId,
                                channel.value("guild_id").toString(),
                                channel.value("name").toString());
@@ -780,10 +732,8 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
     if (m_requestType == ActiveThreadsRequest) {
       qDebug() << "[discord-rest] active threads status" << status;
       if (status == 200) {
-        // GET .../threads/active returns a single OBJECT {threads: [...],
-        // members: [...], has_more: bool} - UNLIKE /guilds/{id}/channels
-        // (returns a plain array) - so use parseObject() + pull out the
-        // "threads" field, not parseArray() like the 3 requests above.
+        // threads/active returns an object {threads, members, has_more}, unlike
+        // /guilds/{id}/channels (array), so use parseObject() and read "threads".
         QString parseError;
         QVariantMap responseObject =
             DiscordJsonParser::parseObject(body, &parseError);
@@ -808,10 +758,7 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
     if (m_requestType == ArchivedThreadsRequest) {
       qDebug() << "[discord-rest] archived threads status" << status;
       if (status == 200) {
-        // Same response shape {threads, members, has_more} as active
-        // threads - but archivedThreadsLoaded needs has_more too so the
-        // UI knows if there's an older page to load (active threads
-        // aren't paginated, Discord always returns them all at once).
+        // Same {threads, members, has_more} shape; has_more tells the UI whether an older page exists.
         QString parseError;
         QVariantMap responseObject =
             DiscordJsonParser::parseObject(body, &parseError);
@@ -849,9 +796,7 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
         }
       }
 
-      // Proceed to the real login request either way; the fingerprint is
-      // only used to make a CAPTCHA challenge less likely, it is not
-      // required for the login itself.
+      // Proceed to the login either way; the fingerprint only makes a CAPTCHA less likely.
       m_requestSent = false;
       sendPasswordLoginRequest(connection);
       break;
@@ -894,13 +839,8 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
         break;
       }
 
-      // Log the raw response body on failure, matching the MFA branch
-      // below. Discord's 50035 "Invalid Form Body" errors carry a
-      // per-field "errors" object identifying exactly which field it
-      // rejected - authErrorMessage() only surfaces the generic top-level
-      // "message" string ("Invalid Form Body"), which is not enough to
-      // diagnose a malformed request body/header vs. genuinely wrong
-      // credentials.
+      // Log the raw body on failure: Discord's 50035 errors carry per-field details
+      // that authErrorMessage() does not surface.
       qDebug() << "[discord-rest] password login failure body" << body;
 
       failWithMessage(authErrorMessage(
@@ -927,12 +867,8 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
         break;
       }
 
-      // Log the raw response body on failure. Discord's error payloads
-      // carry a numeric "code" (e.g. 50035 = invalid form body, 60005 =
-      // invalid TOTP code, 60003 = MFA required) and per-field validation
-      // "errors" that the generic "message" string doesn't convey - without
-      // this we can't tell a real "wrong code" from e.g. a malformed
-      // request being rejected before Discord ever looks at the code.
+      // Log the raw body on failure: Discord's numeric "code" (50035 invalid form body,
+      // 60005 invalid TOTP, 60003 MFA required) tells a wrong code from a malformed request.
       qDebug() << "[discord-rest] mfa totp failure body" << body;
 
       if (tryHandleCaptcha(keepConnectionAlive, response)) {
@@ -1006,11 +942,8 @@ bool DiscordRestClient::tryHandleCaptcha(bool keepConnectionAlive,
   QString rqdata = parsedBody.value("captcha_rqdata").toString();
   QString rqtoken = parsedBody.value("captcha_rqtoken").toString();
   if (sitekey.isEmpty()) {
-    // No sitekey means there is nothing a WebView challenge can solve
-    // (Discord sometimes sends captcha_key alone as a plain rejection, e.g.
-    // "You need to update your app..." for very old/unsupported clients).
-    // Let the caller fall back to its normal error handling instead of
-    // emitting a captchaRequired() the UI could never satisfy.
+    // No sitekey means a WebView challenge cannot solve it (e.g. captcha_key alone as a
+    // plain rejection); let the caller use normal error handling.
     return false;
   }
 
@@ -1023,12 +956,8 @@ bool DiscordRestClient::tryHandleCaptcha(bool keepConnectionAlive,
     return false;
   }
 
-  // Snapshot the exact request currently in flight - using the live
-  // m_loginEmail/m_loginPassword/m_mfaTicket/etc. members, which are still
-  // populated at this point and only cleared by finishRequest() below - so
-  // submitCaptchaKey() can replay it unchanged once the user solves the
-  // challenge, without the UI having to re-collect the password or TOTP
-  // code.
+  // Snapshot the in-flight request (live m_login*/m_mfa* fields, cleared later by
+  // finishRequest()) so submitCaptchaKey() can replay it after the challenge.
   RestRequest pending;
   pending.type = m_requestType;
   pending.loginEmail = m_loginEmail;
@@ -1045,14 +974,9 @@ bool DiscordRestClient::tryHandleCaptcha(bool keepConnectionAlive,
   return true;
 }
 
-// Rebuilds a RestRequest from the currently in-flight request's
-// m_request*/m_login*/m_mfa* fields and pushes it to the FRONT of
-// m_requestQueue (not the back), so it's the very next thing
-// processNextRequest() picks up once this function returns - anything
-// else already queued behind the original request keeps its relative
-// order. Must be called BEFORE finishRequest(), since finishRequest()
-// clears every one of these fields as part of its normal cleanup - see
-// the timeout-retry block in checkTimeout()/timerEvent() above.
+// Rebuilds a RestRequest from the in-flight m_request*/m_login*/m_mfa* fields and
+// pushes it to the front of m_requestQueue. Call before finishRequest(), which
+// clears those fields (see checkTimeout()/timerEvent()).
 void DiscordRestClient::requeueCurrentRequestForRetry() {
   RestRequest retryRequest;
   retryRequest.type = m_requestType;
@@ -1112,9 +1036,7 @@ void DiscordRestClient::finishRequest(bool keepConnectionAlive) {
   m_iconHash.clear();
   m_outputPath.clear();
   m_loginEmail.clear();
-  // Secure-wipe: the password can live until here now (see
-  // sendPasswordLoginRequest()), so clear its backing memory rather than
-  // just dropping the QString's reference to it.
+  // Secure-wipe: the password may live until here (see sendPasswordLoginRequest()), so clear its memory.
   m_loginPassword.fill(QLatin1Char('0'));
   m_loginPassword.clear();
   m_mfaTicket.clear();

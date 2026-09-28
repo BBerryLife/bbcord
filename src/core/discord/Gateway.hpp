@@ -20,18 +20,13 @@ class DiscordGateway : public QObject {
 public:
   enum ConnectionState { Disconnected, Connecting, Connected, Ready };
 
-  // A single dropped UDP packet to the DNS resolver on a flaky mobile/Wi-Fi
-  // connection can exhaust mongoose's (already-raised) DNS timeout with no
-  // automatic retry. Allow a couple of silent reconnect attempts before
-  // surfacing "DNS timeout" to the user - see Gateway.cpp/GatewayEvents.cpp.
+  // A dropped UDP packet to the DNS resolver can exhaust mongoose's DNS timeout, so
+  // allow a couple of silent reconnects before surfacing "DNS timeout"
+  // (see Gateway.cpp/GatewayEvents.cpp).
   static const int kMaxDnsRetries = 2;
 
-  // Diagnostic/tuning for the Simulator vs real-device timer behavior
-  // difference - see the comment in Gateway.cpp::timerEvent(). Not a
-  // confirmed fix, just a first attempt: gives mg_mgr_poll() a small
-  // window instead of a 0ms poll, in case a slow/coalesced Qt timer on
-  // the Simulator is causing mongoose to read a TLS/WS handshake
-  // response in a partial or misaligned chunk.
+  // Tuning for Simulator vs device timer behavior (see Gateway.cpp::timerEvent()); an
+  // unconfirmed first attempt: a small poll window instead of 0ms.
   static const int kGatewayPollWaitMs = 5;
 
   explicit DiscordGateway(QObject *parent = 0);
@@ -41,25 +36,13 @@ public:
   Q_INVOKABLE void disconnectFromGateway();
   Q_INVOKABLE void sendLazyRequest(const QString &guildId,
                                    const QString &channelId);
-  // Same as sendLazyRequest() (same op:14 payload, same
-  // buildGuildSubscribePayload()) but SKIPS the m_sentLazyRequests
-  // cache entirely — always sends a fresh request. Used specifically
-  // for the Members sheet: sendLazyRequest() already consumes the
-  // dedup key when the user opens the channel (called earlier by
-  // ChatController), so if the Members sheet called sendLazyRequest()
-  // again with the same guildId/channelId it would be silently
-  // dropped, no new SYNC would come back — this was why the Members
-  // sheet showed empty even though the channel was already open. This
-  // function doesn't write to m_sentLazyRequests so it doesn't affect
-  // dedup for the message lazy-load flow (subscribeToGuildChannel/
-  // Chat.cpp) — the two concerns stay fully separate.
+  // Same op:14 payload as sendLazyRequest() but skips the m_sentLazyRequests dedup
+  // cache and always sends. Used by the Members sheet, whose request would otherwise
+  // be dropped (the key is consumed on channel open). Message lazy-load dedup is unaffected.
   Q_INVOKABLE void sendMemberListSync(const QString &guildId,
                                       const QString &channelId);
-  // Call when the Members sheet closes, to stop auto re-sync after a
-  // reconnect (see m_activeMemberListGuildId/ChannelId). Not required
-  // for sendMemberListSync() to work correctly — only affects whether
-  // an auto re-sync fires if the gateway reconnects AFTER the user has
-  // already left the tab.
+  // Call when the Members sheet closes to stop the auto re-sync after a reconnect
+  // (m_activeMemberListGuildId/ChannelId). Not needed for sendMemberListSync() itself.
   Q_INVOKABLE void clearMemberListSync();
   Q_INVOKABLE void updateMessageFilterState(const QString &selectedChannelId,
                                             const QStringList &loadedChannelIds,
@@ -119,12 +102,9 @@ private:
   QString m_selectedChannelId;
   QStringList m_loadedChannelIds;
   QString m_currentUserId;
-  // Guild/channel currently synced for the Members sheet, if open. Used to
-  // silently re-send the member-list SYNC after a reconnect (Discord closes
-  // the connection with code 4002 - see JsonParser.cpp - or the app itself
-  // reconnects for other reasons - the server has no memory of the previous
-  // subscription once the socket drops, so without this the Members sheet
-  // stays permanently empty until the user closes and reopens it).
+  // Guild/channel synced for the open Members sheet. Used to re-send the SYNC after a
+  // reconnect (e.g. close code 4002), since the server forgets the subscription and
+  // the sheet would stay empty.
   QString m_activeMemberListGuildId;
   QString m_activeMemberListChannelId;
 };

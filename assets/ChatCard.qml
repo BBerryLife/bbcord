@@ -12,11 +12,9 @@ Page {
     property string replyMessageId: ""
     property string replyAuthor: ""
     property string replyMessage: ""
-    // Fix: id of the message to flash-highlight after a
-    // scrollToMessage() jump (tapping a reply-quote box) - read
-    // directly by each MessageBubble delegate (bound via
-    // jumpHighlighted below) rather than something Cascades'
-    // ListView exposes an "item at index" API for, which it doesn't.
+    // Id of the message to flash after a scrollToMessage() jump (reply-quote tap);
+    // read by each MessageBubble delegate via jumpHighlighted (ListView has no
+    // item-at-index API).
     property string highlightedMessageId: ""
     property string editingMessageId: ""
     property bool active: true
@@ -28,12 +26,8 @@ Page {
     signal backRequested
     signal memberListRequested
 
-    // Previously changed to Visible to put a "Threads" action on the
-    // action bar (Page.actions + ActionBarPlacement.OnBar). Reverted
-    // since that action took up a whole bar just for one button, and
-    // there's now a direct way into Threads from ServerList.qml
-    // (tapping a Forum/Media channel opens ThreadList.qml directly) -
-    // no need for a duplicate entry point here.
+    // Threads is no longer an action-bar entry; ServerList.qml opens ThreadList.qml
+    // directly for Forum/Media channels.
     actionBarVisibility: ChromeVisibility.Hidden
 
     titleBar: TitleBar {
@@ -81,14 +75,8 @@ Page {
                 stickToEdgePolicy: ListViewStickToEdgePolicy.End
                 scrollRole: ScrollRole.Main
                 property bool compactMessageEnabled: chatPage.compactMessageEnabled
-                // Fix: mirrors compactMessageEnabled above - delegates
-                // inside listItemComponents run in their own component
-                // scope and can't resolve "chatPage" directly (confirmed
-                // via a real "ReferenceError: Can't find variable:
-                // chatPage" from the Connections{ target: chatPage }
-                // below), but CAN reach back into this ListView via
-                // ListItem.view, exactly like compactMessage does two
-                // properties down.
+                // Mirrors compactMessageEnabled: delegates run in their own component scope and
+                // cannot resolve "chatPage", but can reach this ListView via ListItem.view.
                 property string highlightedMessageId: chatPage.highlightedMessageId
 
                 listItemComponents: [
@@ -136,34 +124,9 @@ Page {
                             ownMessage: ListItemData.ownMessage === true
                             deleteAllowed: ListItemData.deleteAllowed === true
 
-                            // Fix: Connections (a QtQuick/non-visual
-                            // type) can't be a direct child of a
-                            // Cascades Container like MessageBubble -
-                            // confirmed via a real "Cannot assign
-                            // object to list" QML load error. Cascades
-                            // containers only accept VisualNode/Control
-                            // children in their default content list;
-                            // non-visual attached objects belong in
-                            // attachedObjects instead, same place Timer
-                            // lives inside MessageBubble.qml itself.
-                            //
-                            // Fix: target was "chatPage" - unresolvable
-                            // from here (this delegate runs in its own
-                            // component scope, separate from chatPage's -
-                            // confirmed via a real, constantly-repeating
-                            // "ReferenceError: Can't find variable:
-                            // chatPage" every time a message list
-                            // rendered). Retargeted at ListItem.view
-                            // (the enclosing ListView), which - unlike
-                            // chatPage - IS resolvable from delegate
-                            // scope, the same way ListItem.view.
-                            // compactMessageEnabled/startEdit already
-                            // work a few lines up/down. ListItem.view.
-                            // highlightedMessageId is the new alias
-                            // added above (property string
-                            // highlightedMessageId: chatPage.
-                            // highlightedMessageId) that makes this
-                            // possible.
+                            // Connections is non-visual, so it goes in attachedObjects (not a direct child of
+                            // a Cascades Container). Its target is ListItem.view, since "chatPage" is not
+                            // resolvable from delegate scope; highlightedMessageId is the alias added above.
                             attachedObjects: [
                                 Connections {
                                     target: ListItem.view
@@ -530,12 +493,8 @@ Page {
                         }
                     }
 
-                    // Cascades doesn't always re-evaluate the
-                    // sendButton.enabled property binding right away on
-                    // keystrokes (only refreshes when the page is
-                    // created/reactivated). Update explicitly via a
-                    // signal so the Send button enables/disables
-                    // correctly on every character.
+                    // The sendButton.enabled binding is not always re-evaluated on keystrokes, so it
+                    // is updated explicitly via a signal.
                     onTextChanging: {
                         chatPage.hasComposedText = text.length > 0;
                     }
@@ -681,25 +640,16 @@ Page {
     }
 
     function scrollToMessage(messageId) {
-        // Fix: jump to a message's original position when its
-        // reply-quote box is tapped (see MessageBubble.qml's
-        // replyPreviewTapped / onReplyPreviewTapped above).
-        // indexForMessage() returns -1 if the message isn't currently
-        // loaded in chatDataModel (scrolled further back than what's
-        // been fetched) - nothing to scroll to in that case, so this
-        // just does nothing rather than erroring.
+        // Jump to the original message when its reply-quote box is tapped.
+        // indexForMessage() returns -1 if it is not loaded; then do nothing.
         var index = chatController.indexForMessage(messageId);
         if (index < 0) {
             return;
         }
 
         messageList.scrollToItem([ index ], ScrollAnimation.Default);
-        // Fix: cleared and reset so the SAME message can be
-        // highlighted again on a second tap in a row - a plain
-        // assignment wouldn't re-fire onHighlightedMessageIdChanged
-        // for delegates if the value doesn't actually change (already
-        // set to this same id from a previous tap), so it's cleared
-        // first.
+        // Clear first: assigning the same id again would not re-fire
+        // onHighlightedMessageIdChanged for delegates.
         highlightedMessageId = "";
         highlightedMessageId = messageId;
     }
@@ -711,11 +661,8 @@ Page {
         editingMessageId = "";
         olderLoadRequested = false;
         olderScrollReady = false;
-        // Fix: a message id from the PREVIOUS channel should never
-        // carry over - since ids are per-channel, this could otherwise
-        // coincidentally match a different message in the new channel
-        // (or just never clear on its own, leaking the old highlight
-        // state around).
+        // Reset on channel change: ids are per-channel, so an old id could match a
+        // different message in the new channel.
         highlightedMessageId = "";
     }
 

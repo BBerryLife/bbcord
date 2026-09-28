@@ -82,18 +82,12 @@ QString discordPreviewUrl(const QString &url, int originalWidth,
   parsed.removeAllQueryItems("format");
   parsed.addQueryItem("width", QString::number(previewWidth));
   parsed.addQueryItem("height", QString::number(previewHeight));
-  // Fix: media.discordapp.net's resize proxy returns WebP by default
-  // (confirmed on-device: content-type image/webp, magic "RIFF....WEBP"),
-  // but the result is cached to a file with the ORIGINAL extension
-  // (.png) and Cascades' ImageView can't decode WebP, so the inline
-  // preview stayed blank while the full-size view (which loads the
-  // original cdn.discordapp.com PNG) worked. Ask the proxy for PNG
-  // explicitly. Discord only honors format=png|jpeg|webp on this host.
+  // media.discordapp.net returns WebP by default, which ImageView cannot decode
+  // (the file is cached with a .png extension), so request format=png explicitly.
   parsed.addQueryItem("format", "png");
 
-  // Fix: attachment URLs from the gateway end with a trailing "&"
-  // (e.g. "...&hm=<hash>&"), so appending query items produced
-  // "...&&width=512". Collapse any run of "&" so the URL is clean.
+  // Gateway attachment URLs end with "&" ("...&hm=<hash>&"), which produced
+  // "...&&width=512"; collapse runs of "&".
   QString result = parsed.toString();
   while (result.contains("&&")) {
     result.replace("&&", "&");
@@ -234,16 +228,9 @@ void ChatController::closeChannel() {
   m_currentGuildId.clear();
   m_currentChannelName.clear();
   m_chatDataModel->clear();
-  // Fix: confirmed as a real bug via logs - closeChannel() cleared this
-  // controller's own idea of the current channel, but never told
-  // AppStore the user actually left it. AppStore's selectedChannelId()
-  // is what every "is the user currently looking at this channel"
-  // check elsewhere reads (the guild-badge recompute in
-  // GuildChannels.cpp, GatewayHandler's isCurrentlyOpenChannel guard),
-  // so leaving it pointing at the just-closed channel made a
-  // non-mention message arriving after the user backed out still look
-  // like it arrived while they were reading it live - no unread mark,
-  // channel/server badge never lit up for it.
+  // Also tell AppStore the channel was left: its selectedChannelId() drives the
+  // "is the user looking at this channel" checks (badge recompute, GatewayHandler),
+  // so a stale value hid unread marks for messages arriving after closing.
   if (m_store) {
     m_store->clearChannelSelection();
   }
@@ -628,10 +615,8 @@ void ChatController::onChatMessagesPrepended(const QString &channelId,
   for (int i = 0; i <= refreshEnd; ++i) {
     if (i >= 0 && i < m_chatDataModel->size() && i < current.size()) {
       QVariantMap rawMessage = current.at(i).toMap();
-      // This item may already exist (not one of the messages just
-      // prepended above) and already have its avatar loaded - preserve
-      // it before rebuilding from raw data. See full explanation in
-      // refreshModelGroupingAround()/onChatMessagesBatched().
+      // This item may already exist with its avatar loaded; preserve it before
+      // rebuilding from raw data (see refreshModelGroupingAround()).
       QString existingAvatarSource =
           m_chatDataModel->value(i).toMap().value("avatarSource").toString();
       if (!existingAvatarSource.isEmpty()) {
@@ -658,15 +643,9 @@ void ChatController::onChatMessagesBatched(const QString &channelId,
     if (index < 0) {
       index = chatDataModelIndexForNonce(rawMessage.value("nonce").toString());
     }
-    // If this message is already in the model (an update, not new),
-    // copy its existing avatarSource over before rebuilding -
-    // "rawMessage" comes from AppStore and doesn't carry avatarSource
-    // (that field only lives in m_chatDataModel, set by
-    // onChatAvatarChanged() once the avatar finishes loading). Skipping
-    // this can wipe out a correctly loaded avatar for this item if the
-    // avatar isn't in cache yet at this exact moment (still loading for
-    // a DIFFERENT message by the same author) - see
-    // prepareMessageForModel().
+    // If the message is already in the model, copy its avatarSource over first: the
+    // raw AppStore data has none (it is set by onChatAvatarChanged()), and skipping
+    // this can wipe a loaded avatar (see prepareMessageForModel()).
     if (index >= 0) {
       QString existingAvatarSource =
           m_chatDataModel->value(index).toMap().value("avatarSource").toString();
@@ -823,12 +802,8 @@ void ChatController::rebuildChatDataModel() {
 }
 
 void ChatController::replaceChatDataModel(const QVariantList &messages) {
-  // clear() wipes all existing model state, including each message's
-  // already-loaded avatarSource (that field only lives in
-  // m_chatDataModel, not in AppStore's raw data - see
-  // refreshModelGroupingAround()). Grouped by authorId before clearing
-  // so avatars for authors who already have the right one don't need
-  // reloading.
+  // clear() wipes each message's loaded avatarSource (only in m_chatDataModel);
+  // group by authorId first so avatars that are already right need no reload.
   QHash<QString, QString> avatarSourceByAuthorId;
   for (int i = 0; i < m_chatDataModel->size(); ++i) {
     QVariantMap existing = m_chatDataModel->value(i).toMap();
@@ -875,10 +850,8 @@ void ChatController::syncChatDataModel(const QVariantList &messages) {
       }
       for (int i = refreshStart; i < messages.size(); ++i) {
         QVariantMap rawMessage = messages.at(i).toMap();
-        // i can point to an item that ALREADY existed (refreshStart is
-        // moved back by 1 to refresh grouping at the boundary) -
-        // preserve that item's loaded avatar before rebuilding from raw
-        // data. See full explanation in refreshModelGroupingAround().
+        // i may point at an existing item (refreshStart moves back by 1 to refresh
+        // grouping); preserve its loaded avatar before rebuilding from raw data.
         if (i < m_chatDataModel->size()) {
           QString existingAvatarSource = m_chatDataModel->value(i)
                                              .toMap()
@@ -1046,19 +1019,9 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
       }
     }
     if (avatarSource.isEmpty()) {
-      // No new avatar computed yet (avatar still loading or not
-      // started). Keep the avatarSource already present on the input
-      // item instead of leaving it empty - "message" passed into this
-      // function may be RAW data read back from the store (see
-      // currentMessages() in refreshModelGroupingAround()/
-      // onChatMessagesBatched()), which doesn't carry the
-      // avatarSource that was set earlier by onChatAvatarChanged() when
-      // the avatar first loaded. Not preserving the old value here
-      // would clear a message's ALREADY-CORRECT avatar back to empty
-      // every time the item is re-rendered through this path while a
-      // DIFFERENT message's avatar (same author) is still in the load
-      // queue - exactly the "two messages same author, only one has an
-      // avatar" symptom observed on-device.
+      // No new avatar yet: keep the avatarSource already on the input item. "message"
+      // may be raw store data without it, and clearing it would blank a correct avatar
+      // while another message by the same author is still loading.
       avatarSource = item.value("avatarSource").toString();
       item["avatarSource"] = avatarSource;
     } else {
@@ -1095,11 +1058,8 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
       !authorId.isEmpty() && m_store && authorId == m_store->currentUserId();
   item["initials"] = item.value("initials").toString();
   item["avatarHash"] = avatarHash;
-  // NO LONGER overwriting with item.value("avatarSource") here - the
-  // block above already sets item["avatarSource"] correctly (either the
-  // new value or the preserved old one), re-setting it from that same
-  // field is redundant and, worse, previously caused the old value to
-  // be read incorrectly if field order in "item" wasn't as expected.
+  // Not overwriting from item.value("avatarSource"): the block above already set it
+  // (new or preserved), and re-reading depended on field order.
   item["avatarColor"] = item.value("avatarColor", "#5865F2").toString();
   if (item.value("avatarColor").toString().isEmpty()) {
     item["avatarColor"] = "#5865F2";
@@ -1108,18 +1068,9 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
   item["timestampMs"] = item.value("timestampMs");
   item["message"] = item.value("message").toString();
   item["messageHtml"] = item.value("messageHtml").toString();
-  // Fix: was passing the raw cdn.discordapp.com URL straight through
-  // as each segment's "url", then binding that directly to an
-  // ImageView.imageSource in EmojiOnlyItem.qml. Cascades' ImageView
-  // only accepts local sources (file://, asset://, local://, or a bare
-  // local path) - it does NOT fetch http(s) itself (confirmed by
-  // on-device log: "Unsupported scheme (https) used in url ... Image
-  // loading aborted."). That's the exact same asset-vs-network
-  // distinction attachmentUrl/imageSource resolution already handles a
-  // few lines below for message attachments (see
-  // cachedImageSource()/requestCachedImage() there) - custom-emoji
-  // images need to go through the same disk-cache pipeline instead of
-  // being handed to ImageView raw.
+  // ImageView only accepts local sources (file://, asset://, local://), not http(s),
+  // so custom-emoji URLs go through the disk-cache pipeline
+  // (cachedImageSource()/requestCachedImage()) like attachments.
   QVariantList rawEmojiSegments = item.value("emojiSegments").toList();
   QVariantList resolvedEmojiSegments;
   for (int i = 0; i < rawEmojiSegments.size(); ++i) {
@@ -1130,14 +1081,8 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
       if (!cached.isEmpty()) {
         segment["url"] = cached;
       } else {
-        // Not cached yet: leave "url" empty (renders as a blank slot
-        // in EmojiOnlyItem.qml - Cascades' ImageView with an empty
-        // imageSource just shows nothing, no warning/crash) and kick
-        // off the download. Once AttachmentImageCacheWorker finishes,
-        // onAttachmentImageCached's new emojiSegments-matching branch
-        // (see updateAttachmentImageInModel()) patches the cached path
-        // straight into this model item and triggers a re-render -
-        // no need to wait for prepareMessageForModel() to run again.
+        // Not cached yet: leave "url" empty (blank slot) and start the download.
+        // onAttachmentImageCached patches the path in via updateAttachmentImageInModel().
         segment["url"] = QString();
         requestCachedImage(remoteUrl);
       }
@@ -1167,15 +1112,9 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
   item["showUsername"] = item.value("showUsername", true).toBool();
   item["showTimestamp"] = item.value("showTimestamp", true).toBool();
 
-  // Fix: whether THIS message pings the current user - @everyone/@here,
-  // a direct @mention, or a role they hold - mirrors the same check
-  // GatewayHandler::gatewayMessageMentionsCurrentUser() does for
-  // notifications, but computed here (with access to m_store) from the
-  // raw mention fields DiscordMessage::toVariantMap() exposes, since
-  // that struct has no AppStore access itself. Drives the yellow
-  // highlight in MessageBubble.qml (own_message excluded - Discord
-  // doesn't highlight your own messages even if they happen to
-  // @mention yourself/@everyone).
+  // Whether this message pings the current user (@everyone/@here, direct mention or
+  // a held role); mirrors GatewayHandler::gatewayMessageMentionsCurrentUser().
+  // Drives the yellow highlight in MessageBubble.qml; own messages are excluded.
   bool mentionsCurrentUser = false;
   if (m_store != 0 && authorId != m_store->currentUserId()) {
     if (item.value("mentionEveryone").toBool()) {
@@ -1275,14 +1214,8 @@ void ChatController::refreshModelGroupingAround(int index) {
     }
 
     QVariantMap rawMessage = messages.at(i).toMap();
-    // messages.at(i) comes from AppStore::messagesForChannel() - RAW
-    // data, doesn't carry "avatarSource" (that field only lives in
-    // m_chatDataModel, set by onChatAvatarChanged() once the avatar
-    // finishes loading). If it's not copied over before calling
-    // prepareMessageForModel(), and the avatar isn't in cache yet at
-    // this exact moment (still loading for ANOTHER message by the same
-    // author), this row's ALREADY-LOADED avatar gets cleared back to
-    // empty when replace() below runs.
+    // messages.at(i) is raw AppStore data without "avatarSource"; copy it over before
+    // prepareMessageForModel() so replace() does not clear a loaded avatar.
     QVariantMap existing = m_chatDataModel->value(i).toMap();
     QString existingAvatarSource = existing.value("avatarSource").toString();
     if (!existingAvatarSource.isEmpty()) {
@@ -1334,24 +1267,9 @@ void ChatController::updateAttachmentImageInModel(const QString &url,
       }
     }
 
-    // Fix: onAttachmentImageCached()/onAttachmentImageFailed() call
-    // into this function to push a freshly-downloaded image into
-    // whichever model item was waiting on it, matched by the raw
-    // remote URL - but that matching only ever looked at
-    // "attachmentUrl"/"attachments", never "emojiSegments". So a
-    // custom emoji that wasn't cached yet at prepareMessageForModel()
-    // time (the common case - first time the emoji is ever seen) had
-    // its download kicked off correctly, but nothing put the result
-    // back once it landed: the bubble stayed blank until the message
-    // happened to scroll off-screen and back on, forcing a fresh
-    // prepareMessageForModel() call that this time found it already in
-    // m_cachedAttachmentImages. This mirrors the attachments loop
-    // above, matched by emojiSegments[n].id (the raw CDN URL is no
-    // longer on the item after prepareMessageForModel() resolves it -
-    // see EmojiUtils::cdnUrl(), which is deterministic from id+animated,
-    // so recomputing it here to compare against "url" is cheap and
-    // avoids having to also carry the original remote URL through the
-    // model just for this match).
+    // Also match emojiSegments (by id; the CDN URL is recomputed via
+    // EmojiUtils::cdnUrl()), not just attachments. Otherwise an uncached custom emoji
+    // stays blank until the row is re-prepared.
     QVariantList emojiSegments = message.value("emojiSegments").toList();
     bool emojiChanged = false;
     for (int j = 0; j < emojiSegments.size(); ++j) {

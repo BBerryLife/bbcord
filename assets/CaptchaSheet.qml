@@ -1,28 +1,19 @@
 import bb.cascades 1.4
 import QtQuick 1.0
 
-// Shown when Discord rejects a password-login or MFA request with a
-// CAPTCHA challenge (see DiscordRestClient::tryHandleCaptcha() /
-// captchaRequired() in the C++ layer). Loads Discord's real hCaptcha
-// widget in a WebView so the user solves it exactly as they would on
-// discord.com, then reports the resulting token back to C++ via
-// discordClient.submitCaptchaKey(), which retries the original
-// password-login/MFA request with the token attached.
-//
-// There is no reliable two-way JS bridge on this WebKit version, so the
-// hand-off works by navigation interception instead: the page's JS
-// callback redirects to a fake "bbcord://captcha-result?token=..." URL
-// once hCaptcha succeeds, which onNavigationRequested() below intercepts
-// (cancelling the real navigation) and extracts the token from.
+// Shown when Discord answers a password/MFA request with a CAPTCHA (see
+// tryHandleCaptcha()/captchaRequired()). Loads the real hCaptcha widget in a WebView
+// and reports the token via discordClient.submitCaptchaKey(), which retries the request.
+// There is no reliable JS bridge on this WebKit, so the page redirects to a fake
+// "bbcord://captcha-result?token=..." URL, which onNavigationRequested() intercepts
+// (cancelling the navigation) to extract the token.
 Sheet {
     id: captchaSheet
 
     property string sitekey: ""
     property string rqdata: ""
     property string rqtoken: ""
-    // "password" or "mfa" - purely informational for the status label
-    // below; C++ already knows which request is pending via
-    // m_pendingCaptchaRequest and does not need this passed back.
+    // "password" or "mfa": informational for the status label only (C++ tracks the pending request).
     property string requestKind: ""
     property bool submitting: false
 
@@ -32,12 +23,8 @@ Sheet {
     }
 
     function buildHtml() {
-        // Hardcoding the site URL to discord.com/channels/@me is the
-        // documented approach for third-party clients solving Discord's
-        // hCaptcha challenge outside the real discord.com page (confirmed
-        // by the discord.py-self maintainer for the equivalent bot-side
-        // flow) - hCaptcha's checksiteconfig only needs a "host" value it
-        // recognizes, not for the page to actually be served from there.
+        // Site URL hardcoded to discord.com/channels/@me, the documented approach for
+        // third-party clients: hCaptcha's checksiteconfig only needs a recognized host.
         return "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">" +
                "<script src=\"https://js.hcaptcha.com/1/api.js\" async defer></script>" +

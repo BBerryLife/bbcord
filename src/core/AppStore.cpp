@@ -174,19 +174,9 @@ void AppStore::selectGuild(const QString &guildId) {
     return;
   }
 
-  // Fix: confirmed as a real bug - previously this always cleared
-  // m_selectedChannelId, even when re-selecting the SAME guild that
-  // was already open (e.g. the user tapping the already-active
-  // server's icon in the sidebar again, which the QML side does send
-  // through here). That silently desynced m_selectedChannelId from
-  // what the UI was actually showing: the chat page stayed open on
-  // the same channel, but selectedChannelId() (used everywhere - the
-  // guild-badge recompute, the gateway's "is this the channel the
-  // user has open" checks, GatewayHandler's isCurrentlyOpenChannel
-  // guard, etc.) went blank, making every one of those comparisons
-  // fail for as long as the user stayed in that channel. Only clear
-  // the channel selection when actually switching to a DIFFERENT
-  // guild (or when no guild was selected before).
+  // Clear m_selectedChannelId only when switching to a different guild (or none was
+  // selected). Re-selecting the same guild left the chat open while
+  // selectedChannelId() went blank, breaking the "is this channel open" checks.
   bool switchingGuild = !m_selectedGuildId.isEmpty() && m_selectedGuildId != guildId;
 
   m_selectedGuildId = guildId;

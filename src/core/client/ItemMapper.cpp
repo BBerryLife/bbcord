@@ -165,19 +165,12 @@ QVariantMap ItemMapper::guildChannelToItem(const QVariantMap &channel) const {
              type == DiscordChannel::GuildMedia) {
     item["icon"] = "asset:///images/icons/ic_chat_multiperson.png";
   } else if (isThread) {
-    // No dedicated thread icon yet in assets/images/icons — reuse the
-    // "multiperson" icon from forum/media instead of the default
-    // hash.png, so threads stand out from regular text channels.
-    // TODO: add a proper thread icon (branch/thread style) if available.
+    // Reuses the "multiperson" icon (no dedicated thread icon yet) so threads stand out. TODO: add a thread icon.
     item["icon"] = "asset:///images/icons/ic_chat_multiperson.png";
   }
-  // Threads SHARE ChatController with regular text channels (see
-  // DiscordClient::selectChannel() — no special-casing by channelType).
-  // GuildForum/GuildMedia have no messages of their own to open via
-  // ChatCard (each forum "post" IS a thread, parentId points back here) -
-  // used to be "implemented: false" to block this outright, now true
-  // since ServerList.qml knows how to open the right UI (ThreadList.qml,
-  // showing that channel's posts/threads) instead of trying ChatCard.
+  // Threads share ChatController with text channels. GuildForum/GuildMedia have no
+  // messages of their own (each post is a thread), so ServerList.qml opens ThreadList.qml
+  // for them instead of ChatCard.
   item["implemented"] = true;
   item["isForumLike"] = type == DiscordChannel::GuildForum ||
                         type == DiscordChannel::GuildMedia;
@@ -187,19 +180,10 @@ QVariantMap ItemMapper::guildChannelToItem(const QVariantMap &channel) const {
   item["parentId"] = channel.value("parent_id").toString();
   item["unread"] = channel.value("unread").toBool();
   item["mentionCount"] = channel.value("mention_count").toInt();
-  // Fix: GET /guilds/{id}/channels returns every channel in the guild
-  // regardless of whether the current user can actually see it - there
-  // is no "accessible" field in Discord's real payload (that was
-  // dead/always-true code here before: channel.contains("accessible")
-  // was never true, so the fallback of "true" always won and every
-  // channel showed up as visible, even ones the account has no
-  // VIEW_CHANNEL permission for - confirmed via a real BBCord log
-  // where the channel showed in the list but its "channel messages"
-  // REST call came back 403). permission_overwrites is carried through
-  // here unmodified so DiscordClient::onGuildChannelsLoaded() can
-  // compute real per-channel visibility (see PermissionUtils) once it
-  // also has the guild's roles and the current user's role ids - this
-  // mapper has neither, so it can't do that computation itself.
+  // Discord's payload has no "accessible" field: GET /guilds/{id}/channels returns all
+  // channels. permission_overwrites is passed through unmodified so
+  // DiscordClient::onGuildChannelsLoaded() can compute visibility (see PermissionUtils);
+  // this mapper lacks the roles and user id.
   item["permissionOverwrites"] = channel.value("permission_overwrites");
   return item;
 }

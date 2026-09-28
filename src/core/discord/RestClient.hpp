@@ -71,61 +71,32 @@ public:
   void loginWithPassword(const QString &email, const QString &password);
   void submitMfaCode(const QString &ticket, const QString &loginInstanceId,
                      const QString &code);
-  // Retries the login step that most recently failed with a CAPTCHA
-  // challenge (password login or MFA), attaching the token obtained from
-  // solving the hCaptcha widget shown in a WebView. captchaRequired()
-  // reports which step needs it via requestKind ("password" or "mfa").
+  // Retries the login step that failed with a CAPTCHA (password or MFA) using the
+  // hCaptcha token from the WebView. captchaRequired() reports the step via requestKind.
   void submitCaptchaKey(const QString &captchaKey);
   void fetchGuilds(const QString &token, int limit, const QString &afterId);
   void fetchDmChannels(const QString &token, int limit, const QString &afterId);
   void fetchGuildChannels(const QString &token, const QString &guildId,
                           int limit, const QString &afterId);
-  // Fix: READY.guilds[i] does NOT include a "members" field on this
-  // user-token gateway (confirmed via real debug logs - "roles" is
-  // present per guild, "members" is not, even though the old
-  // GUILD_CREATE-based code assumed both would be there together).
-  // Without "members" there's no way to know the current user's OWN
-  // roles in a guild from the gateway alone, which PermissionUtils
-  // needs to compute channel visibility - so fetch it directly via
-  // REST instead. Called once per guild right after loadGuildChannels()
-  // (see GuildChannels.cpp), and again whenever GUILD_MEMBER_UPDATE
-  // fires for the current user (role was changed while the app is
-  // running - see onGatewayDispatch()).
-  // Fix: userId is the CALLER'S OWN numeric snowflake id (from
-  // AppStore::currentUserId()), NOT the literal string "@me" - Discord
-  // rejects "@me" on this route with a 400 "Invalid Form Body" /
-  // NUMBER_TYPE_COERCE error (confirmed via a real response body: this
-  // route needs an actual snowflake, unlike some other "current user"
-  // endpoints that do accept "@me" as a special value).
+  // READY.guilds has no "members" field on user-token gateways, so the user's own
+  // roles (needed by PermissionUtils) are fetched via REST. Called after
+  // loadGuildChannels() and on GUILD_MEMBER_UPDATE for the current user.
+  // userId must be the numeric snowflake (AppStore::currentUserId()), not "@me":
+  // Discord rejects "@me" on this route with a 400.
   void fetchSelfGuildMember(const QString &token, const QString &guildId,
                             const QString &userId);
-  // Threads aren't in the usual /guilds/{id}/channels response
-  // (Discord's REST channel list only returns top-level channels) -
-  // need a separate call to the "active threads" endpoint. NOTE: uses
-  // the CHANNEL-level endpoint (/channels/{channel.id}/threads/active),
-  // NOT the guild-level one (/guilds/{id}/threads/active) - the
-  // guild-level endpoint only works with bot tokens, always returns 403
-  // for user tokens (see detailed comment in
-  // Channel.cpp::fetchActiveThreads()).
+  // Threads are not in /guilds/{id}/channels. Uses the channel-level endpoint
+  // (/channels/{id}/threads/active); the guild-level one is bot-only
+  // (see Channel.cpp::fetchActiveThreads()).
   void fetchActiveThreads(const QString &token, const QString &channelId);
-  // Threads auto-archived by Discord (inactive past
-  // auto_archive_duration) no longer show up in active threads - call
-  // this endpoint separately to see them. "beforeCursor" (empty = first
-  // page) is the id/timestamp of the oldest thread already loaded, used
-  // for pagination to fetch older threads (see activeThreadsLoaded's
-  // "hasMore" counterpart via archivedThreadsLoaded).
+  // Auto-archived threads are not in active threads. beforeCursor (empty = first
+  // page) is the id of the oldest loaded thread, for pagination.
   void fetchArchivedThreads(const QString &token, const QString &channelId,
                             const QString &beforeCursor);
   void fetchChannelMessages(const QString &token, const QString &channelId,
                             int limit, const QString &beforeMessageId);
-  // GET /channels/{channel.id} - a single channel object, including its
-  // own "guild_id" and "name" fields. Used ONLY as a fallback when a
-  // Hub-invoked chat open can't resolve guildId/channelName from
-  // already-cached data (see ApplicationUI::onInvoked()'s comment on
-  // why this happens on a cold start: m_chatGuildByChannelId is empty
-  // before ANY guild has been selected this session, so
-  // guildIdForChannel() has nothing to look up yet). Works for both
-  // guild channels and DMs - DMs simply come back with no "guild_id".
+  // GET /channels/{id}: a single channel with "guild_id" and "name". Only a fallback
+  // for Hub-invoked opens when nothing is cached (cold start); DMs have no "guild_id".
   void fetchChannelInfo(const QString &token, const QString &channelId);
   void sendChannelMessage(const QString &token, const QString &channelId,
                           const QString &content, const QString &nonce,
@@ -146,11 +117,8 @@ Q_SIGNALS:
   void loginSucceeded(const QVariantMap &user, const QString &token);
   void loginFailed(const QString &message);
   void mfaRequired(const QString &ticket, const QString &loginInstanceId);
-  // Emitted when Discord rejects a password-login or MFA request with a
-  // CAPTCHA challenge. sitekey/rqdata/rqtoken come straight from Discord's
-  // response and are exactly what the hCaptcha JS widget needs; requestKind
-  // is "password" or "mfa" so the UI (and submitCaptchaKey()) know which
-  // request to retry once the challenge is solved.
+  // Emitted when Discord answers a password/MFA request with a CAPTCHA challenge.
+  // sitekey/rqdata/rqtoken feed the hCaptcha widget; requestKind is "password" or "mfa".
   void captchaRequired(const QString &requestKind, const QString &sitekey,
                        const QString &rqdata, const QString &rqtoken);
   void guildsLoaded(const QVariantList &guilds);
@@ -161,30 +129,20 @@ Q_SIGNALS:
   // Discord strings) - see fetchSelfGuildMember()/PermissionUtils.
   void selfGuildMemberLoaded(const QString &guildId,
                              const QStringList &roleIds);
-  // Returns the "threads" field of the GET .../threads/active response
-  // as-is (trimmed down from the {threads, members, has_more} object —
-  // see handling in RestClient.cpp) - each item is still a raw channel
-  // object (type 10/11/12), going through ItemMapper::guildChannelToItem()
-  // like regular channels before being stored in AppStore. Keyed by
-  // channelId (the parent channel just fetched), not guildId - since
-  // switching to the channel-level endpoint.
+  // The "threads" field of the threads/active response, each still a raw channel
+  // object (type 10/11/12) to be mapped by ItemMapper::guildChannelToItem().
+  // Keyed by the parent channelId.
   void activeThreadsLoaded(const QString &channelId,
                            const QVariantList &threads);
-  // Unlike activeThreadsLoaded: carries an extra "hasMore" (from the
-  // response's has_more field) so the UI knows whether there's an
-  // older page to load, and "threads" here does NOT get merged into
-  // the active threads cache (m_channelThreadsByParentId) - archived
-  // threads are shown separately from the active list, to avoid mixing
-  // the two concepts.
+  // Extra "hasMore" says whether an older page exists. Not merged into
+  // m_channelThreadsByParentId; archived threads stay separate.
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
   void channelMessagesLoaded(const QString &channelId,
                              const QString &beforeMessageId,
                              const QVariantList &messages);
-  // channelName can be empty for a channel Discord itself has no name
-  // for (a DM has no "name" field at all - only group DMs sometimes
-  // do) - callers should fall back to something sensible rather than
-  // treat empty as an error.
+  // channelName can be empty (DMs have no "name"); callers should fall back
+  // rather than treat it as an error.
   void channelInfoLoaded(const QString &channelId, const QString &guildId,
                          const QString &channelName);
   void channelInfoLoadFailed(const QString &channelId, const QString &message);
@@ -220,12 +178,9 @@ private:
   void failWithMessage(const QString &message);
   void failDataRequest(const QString &message);
   void failChatRequest(const QString &message);
-  // If parsedBody is a CAPTCHA-required response, saves a replayable copy
-  // of the currently in-flight password-login/MFA request, emits
-  // captchaRequired() with the sitekey/rqdata/rqtoken the WebView needs,
-  // finishes the current request as a non-error, and returns true (the
-  // caller must not also call failWithMessage()/etc.). Returns false for
-  // any other response so the caller proceeds with its normal handling.
+  // If parsedBody is a CAPTCHA response: saves a replayable copy of the in-flight
+  // request, emits captchaRequired(), finishes the request as a non-error and returns
+  // true (caller must not fail it). Returns false for other responses.
   bool tryHandleCaptcha(bool keepConnectionAlive,
                         const QVariantMap &parsedBody);
   void succeedWithUser(const QVariantMap &user);
@@ -252,12 +207,8 @@ private:
   int m_timerId;
   int m_pollTicks;
   int m_idleTicks;
-  // Remaining retry attempts for the current logical request before a
-  // "Discord REST timeout" is surfaced to the UI - reset only in
-  // enqueueRequest() (a genuinely new request), NOT in
-  // processNextRequest()/finishRequest(), since both of those also run
-  // on the internal retry path. See requeueCurrentRequestForRetry() and
-  // the timeout-retry block in checkTimeout()/timerEvent().
+  // Remaining retries before "Discord REST timeout" reaches the UI. Reset only in
+  // enqueueRequest(), since processNextRequest()/finishRequest() also run on the retry path.
   int m_timeoutRetriesLeft;
   RequestType m_requestType;
   QString m_token;
@@ -283,15 +234,9 @@ private:
   QString m_mfaCode;
   QString m_fingerprint;
   bool m_awaitingFingerprint;
-  // The most recent hCaptcha token obtained from the WebView challenge
-  // (see captchaRequired()/submitCaptchaKey()). Sent as X-Captcha-Key on
-  // the password-login and MFA requests once set; cleared after each
-  // attempt since a token is single-use.
+  // hCaptcha token from the WebView, sent as X-Captcha-Key; cleared after each attempt (single-use).
   QString m_captchaKey;
-  // The exact request that was in flight when Discord demanded a CAPTCHA,
-  // so submitCaptchaKey() can replay it unchanged (same ticket/email/etc.)
-  // with the solved token attached, instead of the UI having to re-collect
-  // the password or TOTP code from the user.
+  // The request in flight when the CAPTCHA was demanded, replayed by submitCaptchaKey().
   RestRequest m_pendingCaptchaRequest;
   bool m_hasPendingCaptchaRequest;
   QList<RestRequest> m_requestQueue;

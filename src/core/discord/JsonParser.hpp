@@ -30,23 +30,15 @@ public:
   static QByteArray buildGuildSubscribePayload(const QString &guildId,
                                                const QString &channelId,
                                                QString *errorMessage = 0);
-  // Minimal op:14 payload, used ONLY for member-list sync (Members
-  // sheet). Unlike buildGuildSubscribePayload(), it does NOT send the
-  // "guild_subscriptions" field — not needed for fetching a member
-  // list by channel, and suspected to cause Discord's closeCode 4002
-  // (decode error) when sent alongside another subscribe request
-  // already sent for the same guild (see
-  // DiscordGateway::sendMemberListSync()).
+  // Minimal op:14 payload for member-list sync only. Unlike buildGuildSubscribePayload()
+  // it omits "guild_subscriptions", which is not needed here and is suspected of
+  // causing close code 4002 next to another subscribe for the same guild.
   static QByteArray buildMemberListSyncPayload(const QString &guildId,
                                                const QString &channelId,
                                                QString *errorMessage = 0);
-  // op:14 payload WITHOUT "channels" — used to "unsubscribe" a channel
-  // from the member list before resubscribing (see
-  // DiscordGateway::sendMemberListSync()). Discord won't re-send
-  // GUILD_MEMBER_LIST_UPDATE (SYNC) if the subscribe request exactly
-  // matches an existing subscription (same guild_id + same channel
-  // range) - the subscribe state needs to change first to force the
-  // server to treat it as an actual change needing resync.
+  // op:14 payload without "channels": "unsubscribes" before resubscribing, since Discord
+  // does not resend SYNC for a subscribe identical to the existing one
+  // (see DiscordGateway::sendMemberListSync()).
   static QByteArray buildMemberListUnsubscribePayload(
       const QString &guildId, QString *errorMessage = 0);
   static int valueToInt(const QVariant &value, int fallback);

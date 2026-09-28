@@ -16,21 +16,8 @@ Container {
     property string message: ""
     property string messageHtml: ""
     property variant emojiSegments
-    // Fix: emojiOnlyRow.count read back as "[object Object]" on-device
-    // (confirmed via diagnostic logging), not a number - meaning
-    // Container.count either isn't a real property on this Cascades
-    // version, or isn't accessible the way assumed. Every previous
-    // round of this bug (icons accumulating across recycles/reloads)
-    // traces back to this single fact: "while (emojiOnlyRow.count > 0)"
-    // compares a number against an object, which JS resolves to NaN,
-    // and "NaN > 0" is always false - so the clear-loop in
-    // rebuildEmojiOnlyModel() never actually ran, on any call, ever.
-    // Every rebuild only ever added more controls on top of whatever
-    // was already there. Tracking the created controls in this plain
-    // JS array instead sidesteps Container.count/controlAt() entirely -
-    // .push()/.length/array indexing are JS fundamentals with zero
-    // dependency on Cascades' Container API being what past rounds
-    // assumed it was.
+    // Created emoji controls are tracked in this plain JS array; Container.count
+    // returns an object on-device, so a count-based clear loop never ran.
     property variant emojiOnlyItems: []
     property bool emojiOnly: false
     property string replyAuthor: ""
@@ -38,12 +25,8 @@ Container {
     property string replyMessageHtml: ""
     property string replyMessageId: ""
     property bool mentionsCurrentUser: false
-    // Fix: transient flash state for "jump to original message" (tap
-    // a reply-quote box - see replyPreviewTapped below / ChatCard.qml's
-    // scrollToMessage()) - separate from mentionsCurrentUser
-    // (persistent ping highlight) since this one is set briefly by the
-    // parent then cleared, on ANY message regardless of whether it
-    // pings anyone.
+    // Transient flash for "jump to original message" (set briefly by the parent),
+    // separate from the persistent mentionsCurrentUser highlight.
     property bool jumpHighlighted: false
     property string image: ""
     property int imageWidth: 0
@@ -87,23 +70,13 @@ Container {
     rightPadding: ui.du(2.0)
     topPadding: root.compactMessage ? ui.du(0.1) : (root.isGroupStart ? ui.du(1.5) : ui.du(0.1))
     bottomPadding: root.compactMessage ? ui.du(0.1) : (root.isGroupEnd ? ui.du(1.0) : ui.du(0.2))
-    // Fix: Discord highlights a message with a soft yellow tint over
-    // the dark theme background when it @mentions the current user
-    // (directly, via @everyone/@here, or via a role they have - see
-    // "mentionsCurrentUser" in ChatController::prepareMessageForModel())
-    // - this reproduces that. jumpHighlighted (the brief flash when
-    // jumping to a message via its reply-quote box) uses the exact same
-    // color, matching Discord's own behavior of using one highlight
-    // color for both cases. Fully transparent otherwise, so the
-    // background of the chat list itself shows through as normal.
+    // Soft yellow tint when the message mentions the current user (direct,
+    // @everyone/@here or role); jumpHighlighted uses the same color.
     background: (root.mentionsCurrentUser || root.jumpHighlighted) ? Color.create("#3A3427") : Color.Transparent
 
     onJumpHighlightedChanged: {
         if (jumpHighlighted) {
-            // Fix: QtQuick 1.0's Timer (Cascades 10 / QML1) may not have
-            // a restart() method (that's a QML2/Qt5 addition) - toggling
-            // running off then on is the safe QML1-compatible way to
-            // reset interval + re-trigger.
+            // QML1 Timer may lack restart(); toggling running off/on resets it.
             jumpHighlightTimer.running = false;
             jumpHighlightTimer.running = true;
         }
@@ -179,23 +152,9 @@ Container {
                 root.jumpHighlighted = false;
             }
         },
-        // Fix: rebuildEmojiOnlyModel() used to run synchronously from
-        // three different triggers (root.onCreationCompleted,
-        // root.onMessageIdChanged, root.onEmojiSegmentsChanged) on a
-        // recycled ListView delegate (see those handlers above). QML
-        // doesn't guarantee messageId and emojiSegments finish
-        // updating in the same tick when Cascades rebinds a recycled
-        // delegate's properties, so a trigger could fire and read
-        // root.emojiSegments before it had been reassigned to the new
-        // message's value yet - reading the previous message's
-        // segments (or none) despite messageId already reading as the
-        // new message. Routing every trigger through a zero-interval
-        // singleShot Timer instead defers the actual rebuild to the
-        // next event-loop tick, by which point every property
-        // reassignment for this recycle has landed, AND coalesces the
-        // 2-3 near-simultaneous trigger firings into a single rebuild
-        // (each retrigger just restarts the timer - see
-        // scheduleEmojiOnlyRebuild()).
+        // Rebuild is deferred via a zero-interval singleShot Timer: a recycled
+        // delegate's messageId and emojiSegments may not update in the same tick, and the
+        // timer also coalesces the several triggers into one rebuild.
         Timer {
             id: emojiOnlyRebuildTimer
             interval: 0
@@ -204,29 +163,11 @@ Container {
                 root.rebuildEmojiOnlyModel();
             }
         },
-        // Fix: this ComponentDefinition used to live in the nested
-        // emojiOnlyRow Container's own attachedObjects instead of
-        // root's here. On-device log showed a flood of "Error:
-        // Accessing ListItem.view on a node that is not the root node
-        // in a list item visual" warnings the moment the message list
-        // rendered, plus stray large gaps between the emoji icon and
-        // the rest of the bubble (visible in the "1 emoji" screenshot)
-        // - both point at Cascades trying to resolve the ListItem
-        // attached-property context for attachedObjects declared on a
-        // non-root node of a ListView delegate, which this codebase's
-        // own comments elsewhere (see ChatCard.qml's ListItem.view
-        // notes) already flag as invalid; only the delegate's ROOT
-        // node has a valid ListItem context. emojiOnlyRebuildTimer
-        // above was already correctly on root's attachedObjects - this
-        // ComponentDefinition just hadn't been given the same
-        // treatment yet.
+        // Defined on the root node: attachedObjects on a non-root node of a ListView
+        // delegate has no valid ListItem context (causes "Accessing ListItem.view" warnings).
         ComponentDefinition {
             id: emojiOnlyItemDefinition
-            // Every other ComponentDefinition in this codebase
-            // (MainPage.qml, main.qml, LoginPage.qml) uses the full
-            // "asset:///Name.qml" form, not a bare relative filename -
-            // matching that here rather than relying on relative-path
-            // resolution working the same way in this context.
+            // Use the full "asset:///Name.qml" form like the other ComponentDefinitions.
             source: "asset:///EmojiOnlyItem.qml"
         },
         SystemDialog {
@@ -253,22 +194,8 @@ Container {
         root.rebuildAttachmentModel();
     }
 
-    // Fix: MessageBubble is a ListView delegate (see ChatCard.qml's
-    // listItemComponents), so Cascades recycles the same instance
-    // across different messages as the user scrolls instead of
-    // creating a fresh one each time. rebuildEmojiOnlyModel() only
-    // fired off onEmojiSegmentsChanged, and QML property-changed
-    // signals can go stale on a recycled delegate (observed on-device:
-    // jumbo-emoji rows carrying over leftover icons from whatever
-    // message previously occupied this recycled instance, on a
-    // message that has NO emoji at all, with the count varying between
-    // identical reloads - exactly what stale recycled state looks
-    // like). messageId changes on every single recycle with no
-    // exceptions, unlike emojiSegments (whose reference/contents
-    // Cascades' change-detection might treat as equivalent in some
-    // recycle orderings) - rebuilding on it is what actually
-    // guarantees this runs for every message this delegate instance
-    // ever gets bound to.
+    // Delegates are recycled, and property-changed signals can go stale, so rebuild
+    // on messageId, which changes on every recycle.
     onMessageIdChanged: {
         root.scheduleEmojiOnlyRebuild();
     }
@@ -399,16 +326,8 @@ Container {
                 topPadding: ui.du(0.6)
                 bottomPadding: ui.du(0.6)
                 background: Color.create('#151617')
-                // Fix: reply boxes longer than ~2 lines stopped
-                // responding to taps - the tap handler itself was
-                // fine (short replies worked), the multiline HTML
-                // Label below was intercepting the touch once it grew
-                // past a couple of lines instead of letting it reach
-                // the TapHandler on the outer reply Container.
-                // PassThrough here and on the Label makes both act as
-                // transparent to touch, so the tap always reaches the
-                // outer Container regardless of how many lines the
-                // reply preview wraps to.
+                // PassThrough on this Label and the container so taps reach the outer reply
+                // Container even when the multiline preview wraps to many lines.
                 touchPropagationMode: TouchPropagationMode.PassThrough
 
                 Label {
@@ -422,14 +341,8 @@ Container {
                     text: root.replyMessageHtml
                     topMargin: ui.du(-0.3)
                     multiline: true
-                    // Fix: Cascades' Label has no line-count-limiting
-                    // property (confirmed via a real "Cannot assign to
-                    // non-existent property \"maxLineCount\"" QML load
-                    // error - that's a QtQuick2 Text property, not
-                    // available here) - reply previews just wrap fully
-                    // now, relying on touchPropagationMode below to
-                    // keep the tap working regardless of how many
-                    // lines that ends up being.
+                    // Label has no line-limit property (maxLineCount is QtQuick2 only), so previews
+                    // wrap fully; touchPropagationMode keeps taps working.
                     textFormat: TextFormat.Html
                     opacity: 0.85
                     textStyle.fontSize: FontSize.XXSmall
@@ -450,56 +363,18 @@ Container {
             textStyle.color: Color.create("#DCDDDE")
         }
 
-        // Fix: Discord renders a message that's ONLY custom emoji (see
-        // EmojiUtils::isEmojiOnly()) as large "jumbo" emoji with no
-        // surrounding bubble text - this is that path. Cascades' Label
-        // can't draw <img> inline with text (see EmojiUtils.hpp's class
-        // comment), so this is a plain row of ImageViews instead of
-        // trying to reproduce Discord's inline-with-text emoji styling,
-        // which would need rich-text-with-embedded-image support this
-        // toolkit doesn't have. Mixed text+emoji messages fall back to
-        // the ":name:" text rendering in messageHtml above instead of
-        // showing here.
-        //
-        // Fix: originally used QtQuick's Repeater bound to an
-        // ArrayDataModel, copying the attachment-row pattern below -
-        // but Repeater isn't a Cascades type at all (Cascades has no
-        // free-standing repeat-into-layout control; every other list in
-        // this codebase - ChannelMemberList.qml, ServerList.qml,
-        // DmList.qml - uses ListView, which is built for scrolling
-        // lists, not a handful of inline icons in a flow row). That
-        // caused "Repeater is not a type" at asset load and took the
-        // whole ChatCard down with it. Cascades' actual answer for
-        // "build N controls at runtime" is ComponentDefinition.
-        // createObject(), driven from rebuildEmojiOnlyModel() below.
-        //
-        // Fix: this Container used to also have its own
-        // onCreationCompleted: root.rebuildEmojiOnlyModel() - removed,
-        // because as a child of root it necessarily finishes
-        // construction BEFORE root's own onCreationCompleted fires,
-        // i.e. before root.emojiSegments has had any chance to be
-        // bound from ChatCard.qml's ListItemData.emojiSegments yet.
-        // That early, wrong-data rebuild was itself a source of the
-        // "wrong emoji count on a recycled delegate" symptom this
-        // whole block of fixes addresses - root.onCreationCompleted
-        // (via scheduleEmojiOnlyRebuild(), deferred a tick so property
-        // binding has settled) already covers first-creation properly.
+        // Emoji-only messages (EmojiUtils::isEmojiOnly()) render as a row of large
+        // ImageViews, since Label cannot draw inline <img>; mixed text+emoji uses the
+        // ":name:" text form. Controls are created with ComponentDefinition.createObject()
+        // (Cascades has no Repeater) from rebuildEmojiOnlyModel(). No onCreationCompleted
+        // here: it would run before emojiSegments is bound.
         Container {
             id: emojiOnlyRow
             visible: root.emojiOnly
             horizontalAlignment: HorizontalAlignment.Left
             topMargin: root.isGroupStart ? ui.du(0.2) : ui.du(0.1)
-            // Fix: "FlowListLayout" isn't a real Cascades type (this
-            // codebase's other containers only ever use StackLayout /
-            // DockLayout / StackListLayout - see e.g. ChatCard.qml,
-            // MainPage.qml). Referencing a nonexistent QML type doesn't
-            // fail to parse; it silently becomes an untyped object, so
-            // the crash only surfaced later as "Cannot assign object to
-            // property" on the "layout:" assignment itself. A
-            // horizontal StackLayout is Cascades' real equivalent for a
-            // left-to-right row (it just won't auto-wrap to a second
-            // line, unlike a true flow layout - acceptable here since
-            // jumbo-emoji messages are a handful of icons, not dozens).
+            // Horizontal StackLayout (there is no FlowListLayout); it does not wrap,
+            // which is fine for a handful of jumbo emoji.
             layout: StackLayout {
                 orientation: LayoutOrientation.LeftToRight
             }
@@ -517,18 +392,8 @@ Container {
 
             layout: DockLayout {}
 
-            // Fix: this ImageView used to fall back to
-            // root.attachmentUrl (the remote https://cdn.discordapp.com/...
-            // URL) whenever root.image was still empty. Cascades'
-            // ImageView cannot load https, so the log filled with
-            // "Unsupported scheme (https) used in url ... Image loading
-            // aborted" and the preview stayed blank, while the TapHandler
-            // below (which uses attachmentUrl) still opened the preview
-            // sheet normally. root.image is always either a local
-            // file:/// URI from ChatController's image cache
-            // (cachedImageSource()/filePreviewSource()) or empty while
-            // the download is in flight, so bind only to it and show
-            // the ActivityIndicator meanwhile.
+            // Bind only to root.image (a local file:/// URI, or empty while downloading):
+            // ImageView cannot load https URLs, so no attachmentUrl fallback.
             ImageView {
                 visible: root.image !== ""
                 imageSource: root.image
@@ -962,67 +827,22 @@ Container {
     }
 
     function scheduleEmojiOnlyRebuild() {
-        // Fix: avoid depending on a Timer.restart()/.start() method
-        // whose existence in this Cascades version isn't confirmed
-        // anywhere else in the codebase (no prior usage to copy, and
-        // this build already broke twice from assuming an API existed
-        // without checking - see the FlowListLayout and Repeater fixes
-        // above). Toggling "running" off/on is built on the same
-        // interval-restart behavior every Qt-derived Timer documents
-        // (changing a running timer's properties resets its elapsed
-        // time) and needs nothing beyond the "running"/"interval"
-        // properties jumpHighlightTimer above already relies on.
+        // Toggle running off/on to restart the timer (Timer.restart() is not confirmed available).
         emojiOnlyRebuildTimer.running = false;
         emojiOnlyRebuildTimer.running = true;
     }
 
     function rebuildEmojiOnlyModel() {
-        // Fix: was clearing/appending into an ArrayDataModel meant for
-        // a Repeater that Cascades doesn't have (see the comment on
-        // emojiOnlyRow above) - rebuilt to create/destroy real
-        // Container controls directly via ComponentDefinition instead.
-        //
-        // Fix: ROOT CAUSE of the accumulating-icon bug, found via
-        // diagnostic logging - emojiOnlyRow.count read back as the
-        // literal string "[object Object]", not a number.
-        // "while (emojiOnlyRow.count > 0)" was therefore comparing a
-        // number against an object; JS coerces that comparison to
-        // false unconditionally, so the clear loop never executed on
-        // any call, ever, and every rebuild only ever piled more
-        // controls on top of whatever was already in emojiOnlyRow.
-        // That's the actual mechanism behind every symptom seen so far
-        // (1 -> 2 -> 4 icons across reloads, icons on non-emoji
-        // messages after scrolling). Rebuilt to track created controls
-        // in root.emojiOnlyItems, a plain JS array, instead of relying
-        // on Container.count/controlAt() - whether or not those are
-        // real, working Cascades APIs no longer matters, since nothing
-        // here depends on them anymore.
-        //
-        // Fix: try/catch here used to wrap the whole clear loop AND
-        // implicitly gate everything below it (a caught exception hit
-        // "return" before the rebuild half of this function ever ran).
-        // On-device: emoji showed correctly on first open, but
-        // vanished entirely (not duplicated - genuinely gone) after
-        // leaving the chat and scrolling back. That matches this
-        // exactly: back-navigation left a stale, half-torn-down
-        // control in emojiOnlyItems from the PREVIOUS message this
-        // recycled delegate displayed; destroying that one stale
-        // control threw "UIObjectPrivate::notifyMessage: Unable to set
-        // property" (a real, expected error for a half-destroyed
-        // native object - see the original note below), and the catch
-        // block's "return" then skipped rebuilding the CURRENT
-        // message's icons too, even though nothing was wrong with
-        // this message's own data. Each removal is now guarded
-        // individually so one bad leftover control can't take out the
-        // rebuild for the message that owns this call.
+        // Rebuild creates/destroys Container controls via ComponentDefinition and tracks
+        // them in root.emojiOnlyItems (plain JS array) instead of Container.count/controlAt().
+        // Each removal is guarded individually: a half-destroyed leftover control from a
+        // recycled delegate throws, and must not abort the rebuild for the current message.
         for (var j = 0; j < root.emojiOnlyItems.length; ++j) {
             try {
                 emojiOnlyRow.remove(root.emojiOnlyItems[j]);
                 root.emojiOnlyItems[j].destroy();
             } catch (err) {
-                // A control Cascades already tore down itself (see
-                // above) - nothing to clean up for this one entry,
-                // move on to the rest.
+                // Control already torn down by Cascades; nothing to clean up, continue.
             }
         }
         root.emojiOnlyItems = [];

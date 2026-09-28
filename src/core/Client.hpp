@@ -54,46 +54,18 @@ public:
   Q_INVOKABLE void loadMoreGuildChannels();  Q_INVOKABLE void selectHome();
   Q_INVOKABLE void selectGuild(const QString &guildId);
   Q_INVOKABLE void selectChannel(const QString &channelId);
-  // Cached guildId for a specific channelId, if that channel was ever
-  // selected/loaded this session (m_chatGuildByChannelId, see
-  // GuildChannels.cpp::selectChannel()). Returns empty if not found —
-  // meaning that channelId is a DM (guild channels are always inserted
-  // into this map on select), or a guild channel never opened this
-  // session (e.g. opening the app from the Hub during a cold start —
-  // see ApplicationUI::onInvoked()).
+  // Cached guildId for a channelId. Empty for DMs and for guild channels not
+  // opened this session (e.g. cold start from a Hub invoke).
   Q_INVOKABLE QString guildIdForChannel(const QString &channelId) const;
-  // Best-effort channel/DM display name for a channelId, read from
-  // whatever's ALREADY cached client-side - never triggers a network
-  // request. Checks m_dmChannelsById first (global, always populated
-  // once DMs load), then m_allGuildChannels/m_rawSelectedGuildChannels
-  // (only populated for the CURRENTLY SELECTED guild - see
-  // loadGuildChannels()). Returns empty if the channel isn't in either
-  // place yet (e.g. a cold Hub-invoke for a guild channel whose guild
-  // hasn't been selected/loaded this session - see
-  // ApplicationUI::onInvoked(), which falls back to a placeholder
-  // title and relies on guildChannelsChanged to fill this in once
-  // loadGuildChannels() for that guild actually completes).
+  // Best-effort channel/DM display name from client-side caches only (no
+  // network). Empty if not cached yet (e.g. cold Hub invoke).
   Q_INVOKABLE QString channelNameForId(const QString &channelId) const;
-  // Active thread list (mapped through ItemMapper, same shape as items
-  // in guildChannels) for a specific channel. Data comes entirely
-  // through the GATEWAY (THREAD_LIST_SYNC event, see
-  // Client.cpp::onGatewayDispatch()) - NOT via REST, since every REST
-  // "active threads" endpoint (guild-level and channel-level alike) is
-  // rejected by Discord for user tokens ({"message": "Only bots can use
-  // this endpoint.", "code": 20002}, confirmed through repeated
-  // testing). Can be empty if Discord hasn't sent THREAD_LIST_SYNC for
-  // this channel this session yet (this event fires per-guild on
-  // subscribe, not on-demand from the app).
+  // Active threads for a channel. Data arrives only via the gateway
+  // (THREAD_LIST_SYNC); Discord rejects the REST "active threads" endpoints for
+  // user tokens. May be empty until the event arrives.
   Q_INVOKABLE QVariantList threadsForChannel(const QString &channelId) const;
-  // Threads auto-archived by Discord are no longer in
-  // threadsForChannel()/active threads - fetch them separately via REST
-  // (channel-level endpoint /channels/{id}/threads/archived/public,
-  // confirmed working with user tokens, unlike the two "active threads"
-  // endpoints which are bot-only). "beforeCursor" empty = first page;
-  // pass the oldest loaded thread's id to fetch an older page. Result
-  // comes back via the archivedThreadsLoaded signal, NOT stored in
-  // threadsForChannel() (kept separate from active threads, to avoid
-  // mixing the two concepts).
+  // Fetches auto-archived threads via REST (/channels/{id}/threads/archived/public).
+  // Empty beforeCursor = first page; result arrives via archivedThreadsLoaded.
   Q_INVOKABLE void requestArchivedThreads(const QString &channelId,
                                           const QString &beforeCursor);
 
@@ -110,21 +82,11 @@ Q_SIGNALS:
   void loggedInChanged(bool loggedIn);
   void busyChanged(bool busy);
   void statusTextChanged(const QString &statusText);
-  // QML uses a Connections{} on this signal itself (unlike
-  // threadsForChannel() - a read-on-demand function) since
-  // requestArchivedThreads() is an async REST request, needing the
-  // result pushed back to the UI when it arrives, not readable
-  // immediately.
+  // Async REST result, so QML listens via Connections{} instead of reading on demand.
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
-  // Fix: emitted once fetchChannelInfo() (Hub cold-start fallback)
-  // resolves a name, whether from this REST call itself or from cache
-  // becoming available moments later via onChannelInfoLoaded()'s
-  // selectGuild() call triggering the normal guild-channels load.
-  // channelName can legitimately be empty (see channelInfoLoaded()'s
-  // doc comment in RestClient.hpp for why) - main.qml only acts on
-  // this when it's non-empty, same as its existing
-  // onGuildChannelsChanged() self-heal path.
+  // Emitted once fetchChannelInfo() (Hub cold-start fallback) resolves a name.
+  // channelName may be empty; main.qml only acts on non-empty names.
   void channelInfoResolved(const QString &channelId, const QString &guildId,
                            const QString &channelName);
 
@@ -132,22 +94,11 @@ public Q_SLOTS:
   void clearAvatarCacheState();
   Q_INVOKABLE void subscribeToGuildChannel(const QString &channelId,
                                            const QString &guildId);
-  // Force-resends the member-list-sync (op:14) request through
-  // DiscordGateway::sendMemberListSync() — NOT blocked by
-  // subscribeToGuildChannel()'s dedup cache. Called from
-  // MemberListController when the Members sheet opens, since the
-  // channel has almost always already had its subscribeToGuildChannel()
-  // "consumed" earlier when the user opened it (message lazy-load),
-  // which would cause sendLazyRequest() to be dropped by dedup if
-  // called again with the same key.
+  // Force-resends the member-list sync (op 14) request, bypassing the
+  // subscribeToGuildChannel() dedup cache. Called when the Members sheet opens.
   Q_INVOKABLE void requestMemberListSync(const QString &channelId,
                                          const QString &guildId);
-  // Called when the Members sheet closes (MemberListController::
-  // releaseMemberList()). Forwards to
-  // DiscordGateway::clearMemberListSync() to stop auto-resending SYNC
-  // for this channel if the gateway reconnects AFTER the user has
-  // already left the tab (see comment at Gateway.hpp:
-  // m_activeMemberListGuildId/ChannelId).
+  // Called when the Members sheet closes; stops auto-resending SYNC on gateway reconnect.
   Q_INVOKABLE void clearMemberListSync();
   Q_INVOKABLE void loadInitialChatMessages(const QString &channelId,
                                            const QString &guildId);
@@ -165,12 +116,7 @@ public Q_SLOTS:
                                    const QString &content);
   Q_INVOKABLE void deleteChatMessage(const QString &channelId,
                                      const QString &messageId);
-  // Fix: see fetchChannelInfo()'s doc comment in RestClient.hpp - only
-  // needed on the Hub cold-start path, where guildIdForChannel()/
-  // channelNameForId() have nothing cached yet. token comes from
-  // wherever the rest of DiscordClient already stores it (see
-  // m_token/currentToken()-style usage elsewhere in this class) -
-  // callers don't pass it themselves.
+  // Hub cold-start only: resolves guildId/channelName when nothing is cached. Uses the stored token.
   Q_INVOKABLE void fetchChannelInfo(const QString &channelId);
 
 private Q_SLOTS:
@@ -183,22 +129,14 @@ private Q_SLOTS:
   void onDmChannelsLoaded(const QVariantList &channels);
   void onGuildChannelsLoaded(const QString &guildId,
                              const QVariantList &channels);
-  // Fix: needed because READY.guilds[i] has no "members" field on this
-  // user-token gateway - see fetchSelfGuildMember()/
-  // mergeGuildRolesIntoCache() comments. Re-derives accessible channels
-  // once the real role list is in, same as onGuildChannelsLoaded() does
-  // after a fresh channel fetch (see GuildChannels.cpp).
+  // READY.guilds[i] has no "members" field on user-token gateways, so channels
+  // are re-derived once the real role list arrives.
   void onSelfGuildMemberLoaded(const QString &guildId,
                                const QStringList &roleIds);
   void onArchivedThreadsLoaded(const QString &channelId,
                                const QVariantList &threads, bool hasMore);
-  // Fix: companion to fetchChannelInfo() (see its doc comment in
-  // RestClient.hpp) - resolves guildId/channelName for a Hub-invoked
-  // chat that a cold app start couldn't resolve from cache. Selects
-  // the guild (so its channel list loads, same as a normal sidebar
-  // click) and emits channelInfoResolved() so main.qml/MainPage.qml
-  // can push the real name into whatever chat page is currently
-  // showing blank - see channelInfoResolved()'s own doc comment.
+  // Companion to fetchChannelInfo(): selects the guild and emits
+  // channelInfoResolved() so the chat page can show the real name.
   void onChannelInfoLoaded(const QString &channelId, const QString &guildId,
                            const QString &channelName);
   void onChannelInfoLoadFailed(const QString &channelId,
@@ -263,49 +201,20 @@ private:
   bool updateGuildChannelUnread(const QString &channelId, bool unread);
   bool updateGuildChannelMentionCount(const QString &channelId,
                                       int mentionCount);
-  // Clears channelId's own unread/mention flags, then re-derives the
-  // owning guild's white-bar/red-badge state from every channel in
-  // that guild (see the "Fix:" comment on its definition in
-  // GuildChannels.cpp for why the guild-level recompute is needed).
-  // Shared between selectChannel() (cold-open path) and
-  // onGatewayDispatch()'s MESSAGE_CREATE handling (live-message path,
-  // for a mention arriving in the channel the user already has open).
-  // forceGuildBadgeRecompute: normally the guild-level recompute only
-  // runs when this channel's OWN unread/mentionCount fields actually
-  // changed - but a caller that knows the GUILD badge might be stale
-  // independent of that (see onGuildChannelsLoaded()'s
-  // m_pendingUnreadClearChannelId consumer, the one real caller that
-  // passes true here) should force it regardless. Defaults to false so
-  // every existing call site keeps its previous behavior unchanged.
+  // Clears the channel's unread/mention flags, then recomputes the guild's badge.
+  // forceGuildBadgeRecompute: recompute even if this channel's own flags did not
+  // change (default false).
   void clearChannelUnreadStateAndRecomputeGuildBadge(
       const QString &channelId, bool forceGuildBadgeRecompute = false);
   void appendVisibleGuildChannels();
-  // Fix: re-runs PermissionUtils::canViewChannel() over
-  // m_rawSelectedGuildChannels (the unfiltered, already-mapped channel
-  // items for m_selectedGuildId) and rebuilds m_allGuildChannels from
-  // that - shared between onGuildChannelsLoaded() (fresh channel data)
-  // and onSelfGuildMemberLoaded() (fresh role data only, channels
-  // unchanged) since either one arriving can change which channels are
-  // accessible. No-ops if guildId isn't the currently selected guild.
+  // Re-runs PermissionUtils::canViewChannel() over m_rawSelectedGuildChannels and
+  // rebuilds m_allGuildChannels. No-op if guildId is not the selected guild.
   void recomputeAccessibleGuildChannels(const QString &guildId);
-  // Shared between GUILD_CREATE (payload.threads - threads already
-  // present as soon as a guild becomes available, per official Discord
-  // docs) and THREAD_LIST_SYNC (fires on "gains access to a channel",
-  // rarer during normal app usage) - both events carry the same
-  // "threads"/"channel_ids" shape, so the map + cache-merge logic is
-  // combined in one place, see Client.cpp::onGatewayDispatch().
+  // Merges threads from GUILD_CREATE and THREAD_LIST_SYNC (same payload shape).
   void mergeThreadsIntoCache(const QVariantList &rawThreads,
                              const QVariantList &channelIdsToClear);
-  // Shared between READY (payload.guilds[i] - the real source of guild
-  // roles/self-member-roles on this user-token gateway, since
-  // GUILD_CREATE never fires on initial load - see the comment above
-  // the "READY" handling in onGatewayDispatch()) and GUILD_CREATE
-  // (kept as a fallback for the join-a-new-guild-while-running case,
-  // where GUILD_CREATE genuinely is sent per Discord's docs). Parses
-  // "roles" and the current user's entry in "members" out of one raw
-  // guild object and writes them to m_store, same roleMap/roleIds
-  // shape either caller used to build inline before this was factored
-  // out.
+  // Parses "roles" and the current user's member entry from a raw guild object
+  // into m_store. Shared by READY (main source) and GUILD_CREATE (fallback).
   void mergeGuildRolesIntoCache(const QString &guildId,
                                 const QVariantMap &guildRaw);
   void scheduleGuildsCacheSave();
@@ -380,28 +289,11 @@ private:
   QStringList &m_pendingUnreadChannelIds;
   QStringList &m_pendingDmPresenceUserIds;
   QHash<QString, QString> m_chatGuildByChannelId;
-  // Fix: companion to fetchChannelInfo()'s cold-start fallback (see
-  // its doc comment) - clearChannelUnreadStateAndRecomputeGuildBadge()
-  // runs as part of selectChannel(), called BEFORE this REST lookup
-  // resolves, so at that point the guild's channels aren't loaded yet
-  // and the unread/badge clear silently finds nothing to update
-  // (confirmed via a real log: "channelStatusChanged= false" right
-  // after a Hub short-tap opened the chat, with the Hub badge and red
-  // dot both staying lit). Set right before selectGuild() is called
-  // from onChannelInfoLoaded(), consumed once in
-  // onGuildChannelsLoaded() once that guild's channels actually finish
-  // loading, to redo the unread clear now that there's real channel
-  // data to clear it against.
+  // Set before selectGuild() in onChannelInfoLoaded(); consumed in
+  // onGuildChannelsLoaded() to redo the unread clear once channel data exists.
   QString m_pendingUnreadClearChannelId;
-  // Most recent channel requested via requestMemberListSync().
-  // GUILD_MEMBER_LIST_UPDATE (op 14 - unofficial protocol) doesn't
-  // guarantee a root-level "channel_id" field, and the "id" field (list
-  // id) is often "everyone" rather than the channel id — not reliable
-  // for mapping data to the right channel. Since the current flow only
-  // tracks one channel's member list at a time (the Members sheet), the
-  // most recently requested channel is used as a last-resort fallback
-  // when the payload can't self-identify its channel - see
-  // GUILD_MEMBER_LIST_UPDATE handling in Client.cpp.
+  // Last channel requested via requestMemberListSync(), used as a fallback
+  // when a GUILD_MEMBER_LIST_UPDATE payload cannot identify its channel.
   QString m_pendingMemberListChannelId;
   int &m_visibleDmChannelCount;
   int &m_visibleGuildChannelCount;

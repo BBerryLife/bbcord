@@ -38,13 +38,10 @@ public:
   Q_INVOKABLE bool guildFolderExpanded(const QString &folderId) const;
   Q_INVOKABLE void setGuildFolderExpanded(const QString &folderId,
                                           bool expanded);
-  // Copies the current log file to the shared Documents folder
-  // (/accounts/1000/shared/documents/bbcord) so the user can grab it
-  // via file manager, USB, etc. Falls back to the app's own sandbox
-  // (~/data/exported-logs) if the Shared Files permission hasn't been
-  // granted on-device. Returns the saved path (shared or sandbox), or
-  // an empty string on failure (no log, or copy error in both
-  // locations).
+  // Copies the log file to the shared Documents folder
+  // (/accounts/1000/shared/documents/bbcord); falls back to the app sandbox
+  // (~/data/exported-logs) without the Shared Files permission. Returns the saved
+  // path, or "" on failure.
   Q_INVOKABLE QString exportLog();
 
 Q_SIGNALS:

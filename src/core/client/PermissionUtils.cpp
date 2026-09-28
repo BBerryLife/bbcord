@@ -3,9 +3,7 @@
 namespace {
 
 qint64 parseBitfield(const QVariant &value) {
-  // Discord sends allow/deny/permissions as stringified int64s (the
-  // values exceed int32 range) - toLongLong() parses a numeric QString
-  // directly, same convention used for role.permissions in Client.cpp.
+  // allow/deny/permissions are stringified int64s; toLongLong() parses them (as for role.permissions in Client.cpp).
   bool ok = false;
   qint64 parsed = value.toLongLong(&ok);
   return ok ? parsed : 0;
@@ -62,12 +60,8 @@ qint64 applyChannelOverwrites(qint64 basePerms, const QString &guildId,
     }
   }
 
-  // Step 2: role overwrites for the member's other roles - deny bits
-  // across all matching overwrites are combined first, then allow
-  // bits across all matching overwrites, per Discord's documented
-  // permission overwrite resolution order (role overwrites are NOT
-  // applied one role at a time; they're merged as a set before being
-  // applied to the base).
+  // Step 2: role overwrites for the member's other roles. Per Discord's order, all
+  // deny bits are combined first, then all allow bits, before applying to the base.
   qint64 roleDeny = 0;
   qint64 roleAllow = 0;
   for (int i = 0; i < permissionOverwrites.size(); ++i) {

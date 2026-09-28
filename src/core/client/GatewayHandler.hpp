@@ -14,14 +14,11 @@ class DiscordClient;
 class AppStore;
 class QTimer;
 
-// Pre-built result for a Hub notification, following the two agreed
-// formats:
-//   Guild:     title = "Server Name", preview = "Who pinged: content"
-//   DM/group:  title = "Sender Name", preview = "Replied: content"
-// shouldNotify=false means this message isn't worth pushing to the Hub
-// under current rules (no mention of us in a guild; group DM that isn't
-// a reply to us) — all other fields are meaningless when shouldNotify
-// is false.
+// Pre-built Hub notification result.
+//   Guild:    title = "Server Name", preview = "Who pinged: content"
+//   DM/group: title = "Sender Name", preview = "Replied: content"
+// shouldNotify=false means not worth pushing (no mention of us in a guild; group DM
+// not replying to us); other fields are then meaningless.
 struct MentionNotification {
   bool shouldNotify;
   QString sourceId; // channelId — used as the UDS source_id for the Hub entry
@@ -52,12 +49,8 @@ public:
 
   bool gatewayMessageMentionsCurrentUser(const QVariantMap &payload) const;
 
-  // Decides whether a MESSAGE_CREATE payload is worth pushing to the
-  // BlackBerry Hub, and if so, pre-builds its title/preview in the two
-  // agreed formats. Needs the full payload (won't work with the
-  // trimmed-down "light payload" from GatewayEvents.cpp — requires
-  // channel_id/guild_id/author/content/mentions/mention_everyone/
-  // mention_roles/referenced_message all present).
+  // Decides whether a MESSAGE_CREATE is worth pushing to Hub and pre-builds its
+  // title/preview. Needs the full payload, not the "light" one from GatewayEvents.cpp.
   MentionNotification
   buildMentionNotification(const QVariantMap &payload) const;
 

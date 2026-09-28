@@ -29,29 +29,17 @@ public:
   QVariantList allDmChannels;
   QVariantList dmChannels;
   QVariantList allGuildChannels;
-  // Fix: raw mapped channel items (permissionOverwrites intact, before
-  // the "accessible" pass) for the currently selected guild - kept
-  // separately from allGuildChannels (which IS the post-filter/sort
-  // result) so PermissionUtils::canViewChannel() can be re-run without
-  // re-fetching from Discord once the current user's real roles come
-  // back from fetchSelfGuildMember() (see onSelfGuildMemberLoaded() in
-  // GuildChannels.cpp - READY has no "members" field on this gateway,
-  // so roles for the selected guild are usually still unknown/empty
-  // when onGuildChannelsLoaded() first runs and does its own pass).
+  // Raw mapped channel items (permissionOverwrites intact, before the "accessible"
+  // pass) of the selected guild. Kept apart from allGuildChannels so
+  // PermissionUtils::canViewChannel() can be re-run once real roles arrive from
+  // fetchSelfGuildMember() (see onSelfGuildMemberLoaded()).
   QVariantList rawSelectedGuildChannels;
   QVariantList visibleGuildChannels;
-  // Threads are NOT stored in allGuildChannels/visibleGuildChannels:
-  // SortUtils::sortedAccessibleGuildChannels() only nests a channel
-  // under another if parentId points to a CATEGORY - for threads,
-  // parentId points to the parent text/forum channel, so mixing them
-  // in would misclassify threads as root channels. Stored separately,
-  // pre-grouped by parentId (the channel that owns the thread) so the
-  // UI can query "threads of the currently open channel" without
-  // re-filtering the whole list each time.
+  // Threads are stored separately, pre-grouped by parentId (the owning channel):
+  // SortUtils::sortedAccessibleGuildChannels() only nests under CATEGORY parents, so
+  // mixing them into allGuildChannels would misclassify threads as root channels.
   QVariantMap channelThreadsByParentId;
-  // Channel/thread currently open in ChatController - used to tell
-  // "viewing a thread" apart from "viewing its parent channel", for
-  // places the UI needs to know (e.g. back-to-parent button, title).
+  // Channel/thread currently open in ChatController; tells a thread from its parent (e.g. back button, title).
   QString activeThreadChannelId;
   QString activeThreadParentId;
   QVariantMap pendingMentionCountsByGuildId;

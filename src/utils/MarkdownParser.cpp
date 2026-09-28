@@ -91,25 +91,12 @@ QString MarkdownParser::parseInline(const QString &text) {
   int index = 0;
 
   while (index < text.length()) {
-    // Fix: raw custom-emoji tokens ("<:name:id>" / "<a:name:id>") used
-    // to fall through to the generic escapeHtml(1 char) path below,
-    // which rendered them as literal "&lt;:name:id&gt;" text - see the
-    // screenshot that prompted this (a message showing
-    // "<:AYAYA:1552656654070194187>" verbatim). The real emoji image is
-    // rendered separately as an ImageView segment (see EmojiUtils.hpp
-    // and ChatController's "emojiSegments") - this HTML output is only
-    // ever the ":name:" text fallback for it, matching what Discord's
-    // own client shows if an emoji image fails to load. Checking at
-    // every index scan position (not just once up front) keeps this in
-    // step with parseInline's existing one-token-at-a-time loop model.
+    // Raw custom-emoji tokens would otherwise be escaped as literal text; emit only the
+    // ":name:" fallback (the real image is an ImageView segment, see EmojiUtils.hpp).
+    // Checked at every scan position, matching parseInline()'s one-token-at-a-time loop.
     if (text.at(index) == '<') {
-      // Fix: max possible token length is "<a:" + 32-char name (Discord's
-      // emoji-name cap) + ":" + up to 19-digit snowflake + ">" = 56
-      // chars, not the 34 first written here (that number only covered
-      // a short name/id - see findTokens() unit-style check that caught
-      // this). Undersizing this window would silently truncate longer
-      // emoji names out of detection instead of just being slow, since
-      // QRegExp is only run against this slice.
+      // Max token length: "<a:" + 32-char name + ":" + 19-digit snowflake + ">" = 56 chars.
+      // A smaller window would silently miss long emoji names (QRegExp only sees this slice).
       QList<EmojiUtils::EmojiToken> tokens =
           EmojiUtils::findTokens(text.mid(index, 56));
       if (!tokens.isEmpty() && tokens.first().start == 0) {

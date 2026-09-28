@@ -38,27 +38,19 @@ bool memberNameLess(const QVariant &a, const QVariant &b) {
   return nameA.compare(nameB, Qt::CaseInsensitive) < 0;
 }
 
-// "online" shows as a single green icon in the real Discord's Members
-// sheet, "idle"/"dnd" are also treated as active for the "Online" group
-// (only "offline"/empty go into the "Offline" group).
+// "online" shows a green icon; "idle"/"dnd" also count as active. Only "offline"/empty go to "Offline".
 bool isOnlineStatus(const QString &status) {
   return status == "online" || status == "idle" || status == "dnd";
 }
 
-// Fallback color palette for members without a cached avatar yet
-// (loading or failed) — same "blurple" color family Discord uses for
-// default avatars, for visual consistency with the rest of the app
-// instead of one hardcoded purple for everyone like the old mock.
+// Fallback colors for members without a loaded avatar (Discord's default-avatar family).
 const char *kFallbackAvatarColors[] = {
     "#5865F2", "#EB459E", "#57F287", "#FEE75C",
     "#ED4245", "#3BA55D", "#9B84EE", "#00A8FC",
 };
 const int kFallbackAvatarColorCount = 8;
 
-// Picks a stable fallback color based on userId (same user always gets
-// the same color across sheet opens, matching how Discord assigns
-// default avatar colors by hashing the discriminator/id rather than
-// randomizing on every render).
+// Stable fallback color from userId, like Discord's default avatar colors.
 QString fallbackAvatarColorForUserId(const QString &userId) {
   if (userId.isEmpty()) {
     return QString::fromLatin1(kFallbackAvatarColors[0]);
@@ -116,10 +108,8 @@ void MemberListController::requestMemberList(const QString &channelId,
   bool hadCachedList =
       m_store && !m_store->memberListForChannel(safeChannelId).isEmpty();
   if (hadCachedList) {
-    // Sheet reopened for a channel already loaded before — show the
-    // old data immediately instead of a blank screen while waiting for
-    // a new SYNC (if the guild subscribe request was already sent,
-    // Discord may not re-send SYNC if server-side state hasn't changed).
+    // Sheet reopened for an already loaded channel: show the old data at once, since
+    // Discord may not resend SYNC if nothing changed.
     rebuildMemberDataModel();
   } else {
     m_memberDataModel->clear();
@@ -130,20 +120,11 @@ void MemberListController::requestMemberList(const QString &channelId,
     emit isLoadingChanged();
   }
 
-  // DM channels have no guild_id — the Members sheet doesn't apply to
-  // DMs (ChatCard.qml currently only allows opening the Members sheet
-  // from a guild context), but this guard prevents sending an empty
-  // guild-subscribe if called from a DM by mistake. Uses
-  // requestMemberListSync() (NOT subscribeToGuildChannel()) since the
-  // channel has almost always already had its subscribeToGuildChannel()
-  // request "consumed" when the user opened the channel for message
-  // lazy-load — calling subscribeToGuildChannel() again here would get
-  // silently dropped by the dedup cache in
-  // DiscordGateway::sendLazyRequest(), no new SYNC coming back, leaving
-  // the Members sheet empty even though the channel was already open
-  // (confirmed via real logs). requestMemberListSync() calls
-  // DiscordGateway::sendMemberListSync() — same op:14 payload but
-  // bypassing dedup, always sends a fresh request.
+  // DMs have no guild_id and the Members sheet does not apply to them; this guard
+  // avoids an empty guild-subscribe. Uses requestMemberListSync(), not
+  // subscribeToGuildChannel(), whose request was already consumed on channel open and
+  // would be dropped by the sendLazyRequest() dedup cache (sendMemberListSync()
+  // bypasses it).
   qDebug() << "[member-list] requestMemberList channel" << safeChannelId
            << "guild" << safeGuildId << "hadCachedList" << hadCachedList;
   if (!safeGuildId.isEmpty() && m_client) {
@@ -164,10 +145,7 @@ void MemberListController::releaseMemberList() {
   }
   m_loadingAvatarUrls.clear();
 
-  // Tell DiscordGateway the Members sheet has closed, so it stops
-  // auto-resending SYNC for this channel if the gateway reconnects
-  // after the user has left the page (see Gateway.hpp:
-  // m_activeMemberListGuildId).
+  // Tell the gateway the sheet closed so it stops re-sending SYNC after a reconnect (m_activeMemberListGuildId).
   if (m_client) {
     m_client->clearMemberListSync();
   }
@@ -216,9 +194,7 @@ void MemberListController::onGuildRolesChanged(const QString &guildId) {
   if (guildId != m_guildId) {
     return;
   }
-  // A role was just updated (e.g. color or name changed) — rebuild so
-  // the heading/member name color reflects it, reusing the member list
-  // already in hand (no need to wait for a new SYNC).
+  // A role was updated (color/name): rebuild with the member list already in hand, without waiting for a SYNC.
   rebuildMemberDataModel();
 }
 
@@ -230,10 +206,7 @@ void MemberListController::onAvatarImageCached(const QString &url,
 
 void MemberListController::onAvatarImageFailed(const QString &url) {
   m_loadingAvatarUrls.remove(url);
-  // No avatarCached() emit on failure — QML keeps the fallback
-  // avatarColor already on the row, no separate signal needed for
-  // failure since there's nothing for the UI to change (fallback was
-  // already shown from the start).
+  // No avatarCached() on failure; QML keeps the fallback avatarColor already on the row.
 }
 
 QString
@@ -374,14 +347,8 @@ void MemberListController::rebuildMemberDataModel() {
       QString userId = member.value("userId").toString();
       QString remoteAvatarUrl = member.value("avatarUrl").toString();
 
-      // "avatar" here holds ONLY the raw CDN URL (not cached) — QML
-      // must call memberListController.cachedAvatarSource(avatar)
-      // itself once this row actually renders on screen to get the
-      // local file source (or trigger a load if not cached yet), per
-      // the lazy-per-row-visibility design. Not calling
-      // cachedAvatarSource() here (in C++) since that would load every
-      // member's avatar as soon as the model is built, including rows
-      // never scrolled to — defeating the original optimization goal.
+      // avatar holds only the raw CDN URL: QML calls cachedAvatarSource() when the row is
+      // actually shown, so avatars of rows never scrolled to are not loaded.
       QVariantMap memberRow;
       memberRow["type"] = "member";
       memberRow["userId"] = userId;

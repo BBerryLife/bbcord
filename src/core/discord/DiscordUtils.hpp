@@ -11,15 +11,10 @@ namespace DiscordUtils {
 
 QByteArray desktopUserAgent();
 QByteArray desktopUserAgentHeader();
-// Base64-encoded JSON "Super Properties" object describing this client
-// (os/browser/build number/etc.), sent as the X-Super-Properties header on
-// every request the desktop/web client makes - including auth. Discord's
-// anti-abuse systems treat a User-Agent claiming to be a browser but never
-// sending this header as a strong bot/automation signal; the exact field
-// values matter far less than the header simply being present and
-// internally consistent with the User-Agent string. Returns the full
-// header line ("X-Super-Properties: ...\r\n") ready to splice into a
-// request, same convention as desktopUserAgentHeader().
+// Base64 JSON "Super Properties" sent as the X-Super-Properties header by the real
+// client. A browser User-Agent without it looks like automation to Discord; exact
+// values matter less than it being present and consistent with the User-Agent.
+// Returns the full header line ("X-Super-Properties: ...\r\n"), like desktopUserAgentHeader().
 QByteArray superPropertiesHeader();
 
 QString firstLetter(const QString &text);

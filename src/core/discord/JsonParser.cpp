@@ -4,14 +4,9 @@
 
 namespace {
 
-// bb::data::JsonDataAccess flattens a QVariantList nested inside another
-// QVariantList (e.g. channels[id] = [[0, 99]]) into a single flat array
-// instead of an array-of-arrays. Discord's gateway requires the nested
-// form for the "channels" ranges and closes the connection with code 4002
-// (decode error) if it gets the flattened one - see
-// buildGuildSubscribePayload()/buildMemberListSyncPayload(). Since
-// JsonDataAccess can't produce the correct shape, the "channels" field is
-// appended by hand as raw JSON text instead of going through QVariantMap.
+// bb::data::JsonDataAccess flattens nested QVariantLists (channels[id] = [[0, 99]]),
+// but Discord closes the connection with code 4002 unless the nested form is sent.
+// So "channels" is appended by hand as raw JSON text.
 QByteArray injectChannelsField(const QByteArray &payload,
                                const QString &channelId) {
   QByteArray channelIdEscaped =
@@ -20,14 +15,9 @@ QByteArray injectChannelsField(const QByteArray &payload,
   QByteArray channelsField = "\"channels\":{\"" + channelIdEscaped +
                              "\":[[0,99]]},";
 
-  // Insert right after the opening brace of the "d" object. Don't search
-  // for a literal "\"d\":{" - JsonDataAccess may emit spaces around colons
-  // and braces (e.g. {"d" : {...}, "op" : 14} when pretty-printed, or no
-  // spaces at all when compact), and matching the wrong exact spacing here
-  // previously caused this function to silently no-op, dropping the
-  // "channels" field entirely with no error anywhere. Instead, find the
-  // "d" key by its quoted name, then walk forward to that value's first
-  // '{' - this works regardless of whitespace style.
+  // Insert right after the opening brace of "d". Do not search for a literal
+  // "\"d\":{": JsonDataAccess spacing varies, and a mismatch silently dropped
+  // "channels". Find the quoted "d" key, then walk to its value's first '{'.
   int dKeyPos = payload.indexOf("\"d\"");
   if (dKeyPos < 0) {
     return payload;
@@ -250,13 +240,9 @@ QByteArray DiscordJsonParser::buildMemberListUnsubscribePayload(
   QVariantMap data;
   QString safeGuildId = guildId.trimmed();
   data["guild_id"] = safeGuildId;
-  // Deliberately NO "channels" here - the one difference from
-  // buildMemberListSyncPayload(). Sending this first "unsubscribes"
-  // the previously registered channel range for this guild, so the
-  // buildMemberListSyncPayload() call right after is treated by the
-  // server as a NEW subscribe (not a duplicate) and gets answered with
-  // GUILD_MEMBER_LIST_UPDATE (SYNC) - see
-  // DiscordGateway::sendMemberListSync().
+  // Deliberately no "channels": this "unsubscribes" the previous range, so the
+  // following buildMemberListSyncPayload() counts as a new subscribe and gets a SYNC
+  // (see DiscordGateway::sendMemberListSync()).
   data["typing"] = true;
   data["activities"] = true;
   data["threads"] = true;

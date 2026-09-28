@@ -12,93 +12,41 @@
 #include <QStringList>
 #include <QTimer>
 
-// account icon (the BBCord tab in Hub) — a fixed "brand" icon, doesn't
-// change with read/unread state. Must live in the PUBLIC asset folder
-// passed to uds_register_client() (see publicAssetPath()/init()) —
-// declared public="true" separately in bar-descriptor.xml, kept apart
-// from the app's general "assets" folder (see the long comment in
-// bar-descriptor.xml explaining why this folder must stay separate,
-// not nested).
+// Account (tab) icon: fixed brand icon. Must live in the public asset folder
+// passed to uds_register_client() (declared public="true" in bar-descriptor.xml).
 static const char *HUB_ICON_FILE = "HubAccountIcon.png";
-// Per-item icons for each inbox item, changing with read/unread state —
-// both must also be declared public="true" like HUB_ICON_FILE above, or
-// Hub can't read them either (silently falls back to a blank/default
-// icon, no error).
+// Per-item icons for read/unread state; must also be public or Hub shows a blank icon.
 static const char *HUB_ICON_UNREAD_FILE = "HubItemUnread.png";
 static const char *HUB_ICON_READ_FILE   = "HubItemRead.png";
 static const char *HUB_SERVICE_URL = "ch.michioxd.bbcord.hub";
 
-// Fix (short-tap on a Hub item doesn't open the app): changed from
-// "plain/message" to an app-specific vendor mime type. Found by
-// decompiling Beeper10 (build384) - a live, confirmed-working
-// reference app on the exact same device/OS - after extracting its
-// own bar-descriptor.xml and running `strings` on its binary: it uses
-// "application/vnd.beeper10.hub.chat", not a generic type shared
-// across many apps. `strings` also showed it registers NO item
-// action at all (no uds_register_item_context_action anywhere in its
-// binary) - Hub opens it purely via its own default-tap filter
-// matching, driven entirely by this mime type + the matching
-// <property var="uris" value="pim:..."/> tag in its bar-descriptor.xml
-// invoke-target filter (see that file's own comment for the parallel
-// change there). Neither the vendor-mime-type pattern nor the uris
-// property appears anywhere in the official unified_data_source.h
-// header or any BlackBerry sample found during this investigation -
-// every previous fix attempt (target_name, UDS_PLACEMENT, account
-// type, card.previewer targets, disabling the item action entirely)
-// was tried and confirmed via on-device PPS monitoring + [Hub][invoke]
-// logging to make no difference, so this generic-vs-vendor mime type
-// difference is the most concrete, evidence-backed remaining lead.
-// Now used for BOTH the item (below) and the item action (see
-// uds_item_action_data_set_mime_type - updated to match, no longer
-// "text/plain") so long-press and short-tap resolve identically.
+// App-specific vendor mime type (a generic type made short-tap on a Hub
+// item do nothing). Used for both the item and its action.
 static const char *HUB_INVOKE_TARGET = "ch.michioxd.bbcord.invoke";
-// The app's bar-descriptor.xml <id> - kept here for reference/debugging
-// only. NOT a valid invocation-framework target by itself (that's
-// HUB_INVOKE_TARGET, the <invoke-target id> actually declared in
-// bar-descriptor.xml) - see the short-tap fix note in init() below for
-// why conflating the two silently broke short-tap-to-open.
+// The app's <id>. Not a valid invoke target; use HUB_INVOKE_TARGET, the
+// <invoke-target id> declared in bar-descriptor.xml.
 static const char *HUB_APP_ID = "ch.michioxd.bbcord";
 static const char *HUB_MIME_TYPE_MESSAGE = "application/vnd.bbcord.hub.chat";
 
-// Context state bits for an item — MUST match the context_mask of the
-// "Open in BBCord" action (uds_item_action_data_set_context_mask, see
-// init()). Missing the set_context_state call on an item means Hub
-// can't find any matching action for it on tap/long-press — see the
-// full explanation in Zalo10's HubIntegration.cpp.
+// Context state bits; must match the context_mask of the "Open in BBCord"
+// action, or Hub finds no action for the item.
 static const unsigned int HUB_CONTEXT_STATE_READ   = 0x01;
 static const unsigned int HUB_CONTEXT_STATE_UNREAD = 0x02;
 
-// category_id: per the official sample in unified_data_source.h — every
-// item of this account shares one single category, with no special
-// classification meaning beyond being a required field before an item
-// can be "actionable" (see uds_category_added() in init()).
+// All items share a single category (required for actionable items).
 static const long long HUB_CATEGORY_ID = 1;
 
-// Limits init() attempts for the whole app session, at least
-// INIT_RETRY_INTERVAL_MS apart, instead of trying only once and
-// latching permanently. uds_init()/uds_register_client() have been
-// observed failing transiently right at app startup on real devices
-// (the OS's Hub service may not be ready yet) — 5 attempts / 3s apart
-// gives the app about 15s for the service to come up before giving up
-// for that session.
+// Limits init() attempts per session, INIT_RETRY_INTERVAL_MS apart, since the
+// Hub service may not be ready at startup (5 x 3s = ~15s).
 const int HubIntegration::MAX_INIT_ATTEMPTS = 5;
 const qint64 HubIntegration::INIT_RETRY_INTERVAL_MS = 3000;
 
-// Same rationale as MAX_INIT_ATTEMPTS/INIT_RETRY_INTERVAL_MS above, but
-// for mm-renderer (the simulator/device audio service) instead of Hub's
-// UDS service: MediaPlayer's constructor has been observed failing to
-// connect to it ("Unable to connect to MMR") for a stretch right after
-// app startup, with every subsequent call on that same instance then
-// failing too ("MMR context is null" on setSourceUrl/prepare/play).
-// Rather than silently giving up on the ping that happened to trigger
-// this and only trying again whenever the next message arrives, retry
-// the SAME ping a few times a short interval apart.
+// Same idea as above for mm-renderer: MediaPlayer can fail to connect right
+// after startup, so the same ping is retried a few times.
 const int HubIntegration::MAX_PING_RETRIES = 4;
 const int HubIntegration::PING_RETRY_DELAY_MS = 500;
 
-// Maps uds_error_code_t (unified_data_source.h) to a readable name in
-// the log — a raw numeric rc isn't enough to know what went wrong when
-// reading logs on-device without the header on hand.
+// Maps uds_error_code_t to a readable name for logs.
 static QString udsErrorName(int rc)
 {
     switch (rc) {
@@ -131,13 +79,8 @@ HubIntegration::~HubIntegration()
     }
 }
 
-// On BB10, QDir::homePath() returns
-// "/accounts/1000/appdata/<real-app-id>/data" — this formula was
-// confirmed reliable via real runtime logs on-device in Zalo10 (correct
-// in BOTH Debug and Release builds, unlike __progname which was only
-// correct by coincidence in Debug — see "FIX ATTEMPT 11" in Zalo10's
-// HubIntegration.cpp for the full reasoning). This same formula is kept
-// as-is for BBCord.
+// On BB10, QDir::homePath() is "/accounts/1000/appdata/<real-app-id>/data";
+// the app id is derived from it (reliable in Debug and Release builds).
 extern char *__progname;
 
 static QString appIdFromHomePath()
@@ -148,10 +91,7 @@ static QString appIdFromHomePath()
         qDebug() << "[Hub] appId from homePath =" << appId << "(homePath=" << QDir::homePath() << ")";
         return appId;
     }
-    // Fallback: homePath() isn't in the expected shape -> use
-    // __progname as the old formula, better a wrong path than a full
-    // crash (Hub integration is an add-on feature, must never break
-    // other app functionality).
+    // Fallback: use __progname; a wrong path is better than crashing.
     qDebug() << "[Hub] homePath not in expected shape (" << QDir::homePath()
               << "), falling back to __progname for publicAssetPath().";
     return QString::fromLatin1(__progname);
@@ -159,32 +99,14 @@ static QString appIdFromHomePath()
 
 QString HubIntegration::publicAssetPath()
 {
-    // "hub-icons" MUST match EXACTLY the dest in bar-descriptor.xml:
-    // <asset path="hub-icons" public="true">hub-icons</asset>
-    // The name must NOT start with "assets" — see the long comment in
-    // bar-descriptor.xml (lesson from Zalo10: Momentics NDK 10.3.1
-    // appears to block based on a name prefix matching the already
-    // declared "assets" rule).
+    // Must match the dest in bar-descriptor.xml exactly and must not start
+    // with "assets" (NDK 10.3.1 rejects such a name).
     return QString("/apps/%1/public/hub-icons/").arg(appIdFromHomePath());
 }
 
-// On every reinstall (even same version), BB10 can generate a new
-// app-id (the hash suffix changes — see real log: "...testDev_ioxd_
-// bbcordd4b95190"), so publicAssetPath() above then points to a
-// different physical folder. If Hub still holds a service registration
-// (uds_register_client) pointing at the PREVIOUS install's assetPath,
-// account/item icons show broken or blank until an account_removed +
-// re-registration happens with the new assetPath. The current
-// uds_account_removed() remove-before-add (see init() below) only runs
-// ONCE PER APP STARTUP, without distinguishing "just reinstalled" from
-// "normal Nth run" — still correct, but not enough to clean up a stale
-// service registration pointing at the wrong assetPath if Hub caches
-// that registration before account_removed gets a chance to run. This
-// function stores the app-id used on the most recent successful init()
-// in QSettings; if the current app-id differs (or none was ever
-// stored), it's treated as "just reinstalled" and returns true so
-// init() knows to close any old UDS handle before re-registering from
-// scratch, ensuring the asset path always matches the current install.
+// A reinstall can change the app id, leaving Hub with a stale assetPath.
+// Compares the app id of the last successful init() (in QSettings) with the
+// current one and returns true if it changed, so init() re-registers from scratch.
 static bool detectFreshInstallAndRememberAppId(const QString &currentAppId)
 {
     QSettings settings;
@@ -210,19 +132,13 @@ bool HubIntegration::init()
     qint64 now = QDateTime::currentMSecsSinceEpoch();
 
     if (m_initAttemptCount >= MAX_INIT_ATTEMPTS) {
-        // Out of attempts for this session. Only logged once, right at
-        // the moment the threshold is crossed (see where
-        // m_initAttemptCount is incremented below) so this doesn't spam
-        // the log on every subsequent message — here it just no-ops
-        // quietly.
+        // Out of attempts for this session (logged once when the limit is reached).
         return false;
     }
 
     if (m_initAttemptCount > 0 &&
         (now - m_lastInitAttemptMs) < INIT_RETRY_INTERVAL_MS) {
-        // Not due for a retry yet — no-op quietly, no log, to avoid
-        // spamming the log when new messages arrive back-to-back while
-        // waiting out the cooldown.
+        // Not due for a retry yet; no-op without logging.
         return false;
     }
 
@@ -275,11 +191,7 @@ bool HubIntegration::init()
               << "assetPath=" << assetPath
               << "accountId=" << ACCOUNT_ID;
 
-    // Remove-before-add on every startup — per "Fix Attempt 10" in
-    // Zalo10 (ensures Hub always re-resolves icons from the current
-    // running build's assetPath, regardless of the sandbox path
-    // changing between builds). See the full explanation in Zalo10's
-    // HubIntegration.cpp.
+    // Remove-before-add on every startup so Hub re-resolves icons from the current assetPath.
     int removeRc = uds_account_removed(m_udsHandle, ACCOUNT_ID);
     if (isFreshInstall) {
         qDebug() << "[Hub] uds_account_removed (fresh-install cleanup, app-id "
@@ -295,36 +207,12 @@ bool HubIntegration::init()
     uds_account_data_set_name(account, "BBCord");
     uds_account_data_set_description(account, "BBCord notifications");
     uds_account_data_set_icon(account, HUB_ICON_FILE);
-    // Fix (short-tap on a Hub item doesn't open the app): per
-    // uds_account_data_set_target_name()'s own doc comment in
-    // unified_data_source.h, this target_name is "used as a generic
-    // target for all invocation framework actions that are related to
-    // this account" - i.e. it's exactly what a plain tap (no specific
-    // item action) resolves against. It must be the id of an
-    // <invoke-target> actually declared in bar-descriptor.xml
-    // (HUB_INVOKE_TARGET = "ch.michioxd.bbcord.invoke"), NOT the app id
-    // (HUB_APP_ID = "ch.michioxd.bbcord") - those are two different
-    // strings and only the invoke-target id is registered/resolvable by
-    // the invocation framework. Using HUB_APP_ID here meant short-tap
-    // invoked a target that was never registered, so the Hub silently
-    // dropped the request - long-press kept working because the item
-    // context action sets its OWN target explicitly via
-    // uds_item_action_data_set_target(openAction, HUB_INVOKE_TARGET)
-    // a few lines below, bypassing this (wrong) account-level fallback
-    // entirely.
+    // target_name is the generic target for account-level actions, so it must be
+    // an <invoke-target> id (HUB_INVOKE_TARGET), not the app id.
     uds_account_data_set_target_name(account, HUB_INVOKE_TARGET);
-    // false: this account doesn't support composing new messages
-    // directly from Hub (no handler for the "bb.action.CREATE" action
-    // on the app side yet) — only shows + opens to an existing
-    // channel/thread.
+    // false: composing new messages from Hub is not supported.
     uds_account_data_set_supports_compose(account, false);
-    // Reverted back to UDS_ACCOUNT_TYPE_IM: UDS_ACCOUNT_TYPE_SOCIAL was
-    // tried and confirmed (via a live short-tap test with full PPS
-    // monitoring) to make no difference - matches what the type's own
-    // doc comment already said (account-tab ordering only, not
-    // tap/invoke behavior). Reverting to isolate the ACTUAL current
-    // experiment (disabling the item context action entirely, see
-    // below) as the only changed variable this round.
+    // IM account type (ordering of the account tab only; no effect on tap behavior).
     uds_account_data_set_type(account, UDS_ACCOUNT_TYPE_IM);
 
     rc = uds_account_added(m_udsHandle, account);
@@ -348,8 +236,7 @@ bool HubIntegration::init()
               << "(succeeded after" << m_initAttemptCount << "attempts)";
     m_ready = true;
 
-    // category_added() MUST run before any item_added() using that
-    // category_id — see "FIX ATTEMPT 7" in Zalo10's HubIntegration.cpp.
+    // uds_category_added() must run before any item_added() using that category_id.
     {
         uds_category_data_t *category = uds_category_data_create();
         uds_category_data_set_id(category, HUB_CATEGORY_ID);
@@ -362,35 +249,16 @@ bool HubIntegration::init()
                   << "id=" << HUB_CATEGORY_ID;
     }
 
-    // Register "Open in BBCord" — item context action (long-press).
-    // Registered once at the account level, applies to EVERY item of
-    // this account.
-    //
-    // NOTE: this block was TEMPORARILY disabled for one test round to
-    // check whether registering an item context action was itself
-    // suppressing Hub's default short-tap behavior (motivated by
-    // Telega, a working reference app confirmed via notifybar to also
-    // use UDS, having NO long-press menu entry at all). Re-enabled
-    // after that test: disabling this made NO difference to short-tap
-    // (still completely silent - confirmed via full PPS monitoring +
-    // [Hub][invoke] logging), so item actions are NOT the cause. No
-    // reason to keep sacrificing the working long-press behavior for a
-    // hypothesis that's now refuted by direct evidence.
+    // Register the "Open in BBCord" item context action (long-press); it
+    // applies to every item of this account.
     uds_item_action_data_t *openAction = uds_item_action_data_create();
     uds_item_action_data_set_action(openAction, "bb.action.OPEN");
     uds_item_action_data_set_target(openAction, HUB_INVOKE_TARGET);
-    // "service": one of the only 2 valid targetType values per the
-    // official unified_data_source.h header ("card.composer" or
-    // "service") — confirmed in Zalo10's HubIntegration.cpp.
+    // "service" is one of the two valid targetType values ("card.composer" or "service").
     uds_item_action_data_set_type(openAction, "service");
     uds_item_action_data_set_title(openAction, "Open in BBCord");
     uds_item_action_data_set_image_source(openAction, HUB_ICON_FILE);
-    // Fix (short-tap on a Hub item doesn't open the app): changed from
-    // "text/plain" to HUB_MIME_TYPE_MESSAGE (the same vendor mime type
-    // now used on the item itself) - see HUB_MIME_TYPE_MESSAGE's own
-    // comment above for the full Beeper10-decompile reasoning. Using
-    // the same value here and on the item keeps long-press and
-    // short-tap resolving through the identical mime type.
+    // Same vendor mime type as the item, so long-press and short-tap resolve identically.
     uds_item_action_data_set_mime_type(openAction, HUB_MIME_TYPE_MESSAGE);
     uds_item_action_data_set_placement(openAction, UDS_PLACEMENT_DEFAULT);
     uds_item_action_data_set_context_mask(openAction, HUB_CONTEXT_STATE_READ | HUB_CONTEXT_STATE_UNREAD);
@@ -432,27 +300,12 @@ void HubIntegration::upsertThreadItem(const QString &sourceId, const QString &ti
     uds_inbox_item_data_set_unread_count(item, unread);
     uds_inbox_item_data_set_total_count(item, unread);
     uds_inbox_item_data_set_context_state(item, HUB_CONTEXT_STATE_UNREAD);
-    // false (changed from true): fully disables Hub's "alert effect"
-    // bundle for this item — per the official docs
-    // (uds_inbox_item_data_set_notification_state in
-    // unified_data_source.h), true/false is a SHARED switch for banner
-    // + system sound + lock-screen instant preview, sound can't be
-    // separated from banner via this API. Changed to false because the
-    // app already plays ping.m4a itself via playPingSound() (see
-    // Client.cpp) — leaving it true would double up the sound (matches
-    // the reported bug: "2 notification sounds playing at once").
-    // Trade-off: the item row still lands on Hub/badge normally
-    // (uds_item_added/updated doesn't depend on this flag), but Hub's
-    // own banner popup + lock-screen instant preview turn off with it
-    // too, not just the sound — the API doesn't allow a partial
-    // disable. If a banner is needed again later, the only way is to
-    // set this back to true and disable playPingSound() instead (can't
-    // have both sources at once without collision).
+    // false disables Hub's alert bundle (banner, system sound, lock-screen
+    // preview) for this item. The app already plays ping.m4a itself, so true
+    // would play the sound twice. Trade-off: no Hub banner either.
     uds_inbox_item_data_set_notification_state(item, false);
 
-    // Try update first (the more common case — multiple pings on the
-    // same channel/thread), fall back to add on failure — Hub has no
-    // query API to check beforehand whether an item already exists.
+    // Try update first (the common case), fall back to add; Hub has no existence query.
     int rc = uds_item_updated(m_udsHandle, item);
     if (rc != UDS_SUCCESS) {
         rc = uds_item_added(m_udsHandle, item);
@@ -478,10 +331,7 @@ void HubIntegration::markThreadRead(const QString &sourceId)
     if (sourceId.isEmpty() || !m_ready) return;
     if (m_unreadCounts.value(sourceId, 0) == 0) return; // already 0 (or never added), avoid a wasted IPC call
     if (!m_threadItemState.contains(sourceId)) {
-        // No full state has ever been stored for this item — nothing to
-        // reconstruct with, skip instead of sending an update with
-        // missing fields (would reset name/description/timestamp to
-        // empty — see the ThreadItemState struct comment in the .hpp).
+        // No stored state for this item; skip rather than send an update with empty fields.
         return;
     }
 
@@ -495,10 +345,8 @@ void HubIntegration::markThreadRead(const QString &sourceId)
     uds_inbox_item_data_t *item = uds_inbox_item_data_create();
     uds_inbox_item_data_set_account_id(item, ACCOUNT_ID);
     uds_inbox_item_data_set_source_id(item, const_cast<char*>(sourceIdUtf8.constData()));
-    // uds_item_updated() REPLACES THE WHOLE record — must resend ALL
-    // fields, exactly as in the most recent upsertThreadItem() call,
-    // only actually changing the parts that need it (icon: Read;
-    // unread_count: 0; notification_state: false).
+    // uds_item_updated() replaces the whole record: resend all fields as in the
+    // last upsertThreadItem(), changing only icon, unread_count and notification_state.
     uds_inbox_item_data_set_name(item, titleUtf8.constData());
     uds_inbox_item_data_set_description(item, previewUtf8.constData());
     uds_inbox_item_data_set_mime_type(item, HUB_MIME_TYPE_MESSAGE);
@@ -536,18 +384,10 @@ void HubIntegration::removeThreadItem(const QString &sourceId)
 
 void HubIntegration::playPingSound()
 {
-    // Doesn't depend on m_ready/init() — intentional, see the
-    // explanation on the declaration in HubIntegration.hpp. Hub (UDS)
-    // and sound are two independent paths, no reason for a UDS failure
-    // (as has happened before: missing _sys_access_pim_unified
-    // permission, rc=501) to also take down the sound.
+    // Independent of m_ready/init(): a UDS failure (e.g. missing
+    // _sys_access_pim_unified permission) must not silence the sound.
     qDebug() << "[Hub] playPingSound() called";
-    // Fix: reset the retry budget for THIS ping - m_pingRetryCount is
-    // shared state consumed by playOnPingPlayerOrResetForRetry() below,
-    // so without resetting it here, a later ping arriving before the
-    // previous one exhausted its retries (or right after it did) would
-    // inherit however many retries were left over, rather than getting
-    // its own full budget.
+    // Reset the retry budget so each ping gets its own full retries.
     m_pingRetryCount = 0;
     QTimer::singleShot(0, this, SLOT(onPlayPingSoundDeferred()));
 }
@@ -562,14 +402,7 @@ void HubIntegration::onPlayPingSoundDeferred()
     }
 
     if (!m_pingPlayerSourceSet) {
-        // "audio/ping.m4a" (not "assets/audio/ping.m4a"): the "assets"
-        // folder declared in bar-descriptor.xml
-        // (<asset path="assets">assets</asset>) is the root of the
-        // asset:/// scheme and gets stripped from the URL — same
-        // convention used throughout the existing code (e.g.
-        // "asset:///images/icons/first.png" for the real file at
-        // assets/images/icons/first.png, see
-        // MainPageController.cpp/ItemMapper.cpp).
+        // "audio/ping.m4a": the "assets" root is stripped from asset:/// URLs.
         m_pingPlayer->setSourceUrl(QUrl("asset:///audio/ping.m4a"));
         m_pingPlayer->prepare();
         m_pingPlayerSourceSet = true;
@@ -601,30 +434,14 @@ void HubIntegration::playOnPingPlayerOrResetForRetry()
     }
 
     qDebug() << "[Hub] playPingSound failed, mediaError=" << err;
-    // Fix: confirmed via real logs that once MediaPlayer's constructor
-    // fails to connect to mm-renderer, every subsequent call on that
-    // SAME instance (setSourceUrl/prepare/play) keeps failing with
-    // "MMR context is null" too - a player that failed to connect at
-    // construction time doesn't appear to recover on its own.
-    // Discarding it and clearing m_pingPlayerSourceSet means the NEXT
-    // attempt (either the retry scheduled below, or the next ping
-    // whenever it arrives) goes through onPlayPingSoundDeferred()'s
-    // "no player yet" branch again, constructing a genuinely new
-    // MediaPlayer - a fresh attempt at connecting to mm-renderer,
-    // rather than repeating calls on one that's already known to be
-    // broken. deleteLater() rather than delete since this may be
-    // running from within a slot invoked on m_pingPlayer's own
-    // connections.
+    // A player that failed to connect to mm-renderer never recovers, so discard
+    // it and clear m_pingPlayerSourceSet; the next attempt builds a new MediaPlayer.
+    // deleteLater() because this may run inside a slot of m_pingPlayer.
     m_pingPlayer->deleteLater();
     m_pingPlayer = 0;
     m_pingPlayerSourceSet = false;
 
-    // Fix: previously this just gave up on the ping that triggered it -
-    // real logs confirmed mm-renderer can be unreachable for a couple
-    // of seconds right after app/Hub startup, then recover on its own,
-    // so a fixed number of short-interval retries on the SAME ping
-    // gives it a real chance to play once mm-renderer comes up, instead
-    // of staying silent until whatever message happens to arrive next.
+    // mm-renderer can be unreachable for a couple of seconds after startup, so retry the same ping.
     if (m_pingRetryCount < MAX_PING_RETRIES) {
         m_pingRetryCount++;
         qDebug() << "[Hub] retrying playPingSound, attempt" << m_pingRetryCount

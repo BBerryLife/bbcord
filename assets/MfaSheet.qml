@@ -6,17 +6,10 @@ Sheet {
 
     property string ticket: ""
     property string loginInstanceId: ""
-    // Guards against submitting the same one-time ticket twice. Discord's
-    // /auth/mfa/totp ticket is single-use: if the TextField's onSubmitted
-    // (Enter/keyboard submit) and the Verify button's onClicked both fire
-    // for the same tap - which can happen on BB10's virtual keyboard, since
-    // the button becomes enabled the instant the 6th digit is typed and a
-    // "submit" keypress can trigger both handlers before appStore.busy has
-    // had a chance to propagate back and disable anything - the second
-    // request reuses an already-consumed ticket and Discord rejects it with
-    // "Invalid two-factor code" even though the code that was typed was
-    // correct. Track submission locally, synchronously, instead of relying
-    // solely on the round-tripped busy flag.
+    // Guards against submitting the same single-use /auth/mfa/totp ticket twice: on BB10's
+    // virtual keyboard both onSubmitted and the Verify button's onClicked can fire before
+    // appStore.busy propagates, and Discord rejects the reused ticket ("Invalid two-factor
+    // code"). Tracked locally and synchronously.
     property bool submitting: false
 
     function reset() {
@@ -34,9 +27,7 @@ Sheet {
     }
 
     function showMfaFailed(message) {
-        // Only react while this sheet is the thing on screen asking for a
-        // code; otherwise a token/password error elsewhere could pop a
-        // confusing toast on top of the sheet.
+        // Only react while this sheet is on screen asking for a code, so other errors do not toast over it.
         if (!mfaSheet.opened) {
             return
         }
@@ -53,10 +44,8 @@ Sheet {
     onCreationCompleted: {
         discordClient.loginFailed.connect(showMfaFailed)
         discordClient.loginSucceeded.connect(mfaSheet.close)
-        // If Discord demands a CAPTCHA on the MFA step, C++ emits
-        // captchaRequired() instead of loginFailed() (see
-        // tryHandleCaptcha() in RestClient.cpp) - close this sheet so
-        // LoginPage's CaptchaSheet isn't stacked underneath it.
+        // On a CAPTCHA at the MFA step C++ emits captchaRequired() instead of loginFailed();
+        // close this sheet so LoginPage's CaptchaSheet is not stacked under it.
         discordClient.captchaRequired.connect(mfaSheet.close)
     }
 
@@ -98,14 +87,9 @@ Sheet {
                     text: ""
                     visible: !appStore.busy
 
-                    // Fix: same BB10 virtual-keyboard buffering issue as
-                    // LoginPage.qml's emailField/passwordField (see comment
-                    // there) - text can lag behind what onTextChanging
-                    // already sees per keystroke, which kept btnVerify
-                    // greyed out even after typing all 6 digits until an
-                    // unrelated focus change forced the keyboard to commit.
-                    // Mirror the live value into a plain property here too
-                    // and bind/submit against that instead of codeField.text.
+                    // Same BB10 keyboard buffering as LoginPage.qml: text lags behind onTextChanging and
+                    // kept btnVerify disabled after 6 digits. Mirror the live value into a plain property
+                    // and bind/submit against it.
                     property string liveText: ""
 
                     onTextChanging: {

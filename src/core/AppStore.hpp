@@ -32,12 +32,9 @@ class AppStore : public QObject {
   Q_PROPERTY(QVariantList dmChannels READ dmChannels NOTIFY dmChannelsChanged)
   Q_PROPERTY(
       QVariantList guildChannels READ guildChannels NOTIFY guildChannelsChanged)
-  // Active threads for the currently selected guild, grouped by parent
-  // channel (key = parent channelId, value = list of thread items). QML
-  // reads this map via discordClient.threadsForChannel(channelId)
-  // instead of binding directly to this Q_PROPERTY — mainly exposed to
-  // fire the changed signal (channelThreadsChanged) so ChatCard knows
-  // to call threadsForChannel() again.
+  // Active threads of the selected guild by parent channelId. QML reads them via
+  // discordClient.threadsForChannel(); this property mainly exposes
+  // channelThreadsChanged.
   Q_PROPERTY(QVariantMap channelThreadsByParentId READ channelThreadsByParentId
                  NOTIFY channelThreadsChanged)
   Q_PROPERTY(
@@ -88,20 +85,10 @@ public:
   Q_INVOKABLE void selectHome();
   Q_INVOKABLE void selectGuild(const QString &guildId);
   Q_INVOKABLE void selectChannel(const QString &channelId);
-  // Fix: clears ONLY the channel selection, keeping the guild selection
-  // intact - needed for backRequested on the chat page (see
-  // ChatController::closeChannel()/MainPage.qml's openChat()): the
-  // user backed out of the channel but is still sitting inside that
-  // guild's channel list, so selectGuild()/selectHome() (which also
-  // clear/change the guild) are the wrong tool here. Before this
-  // existed, backing out of a channel left m_selectedChannelId
-  // pointing at the channel the user just left, so every
-  // "is the user currently looking at this channel" check elsewhere
-  // (the guild-badge recompute, GatewayHandler's isCurrentlyOpenChannel
-  // guard, etc.) kept treating a non-mention message that arrived
-  // AFTER the user left as if they were still reading it live - no
-  // unread mark, so the channel/server badge never lit up for it,
-  // confirmed as a real bug via logs.
+  // Clears only the channel selection, keeping the guild (used by backRequested on
+  // the chat page, see ChatController::closeChannel()). Without it,
+  // "is the user looking at this channel" checks (guild-badge recompute,
+  // GatewayHandler's isCurrentlyOpenChannel) kept treating later messages as read.
   Q_INVOKABLE void clearChannelSelection();
   Q_INVOKABLE QVariantList messagesForChannel(const QString &channelId) const;
   Q_INVOKABLE bool isChatInitialLoaded(const QString &channelId) const;
@@ -113,42 +100,23 @@ public:
   Q_INVOKABLE QString newestChatMessageId(const QString &channelId) const;
   Q_INVOKABLE void clearSession();
 
-  // Current user's role IDs in a specific guild — loaded from the
-  // "member" field (self member object) of the GUILD_CREATE payload,
-  // see DiscordClient::onGatewayGuildCreate() (Guilds.cpp). Used to
-  // determine if a message's role-mention (mention_roles) targets us,
-  // for the Hub notification feature. Returns an empty list if there's
-  // no data for that guild yet (no GUILD_CREATE received, or not
-  // logged in).
+  // Current user's role IDs in a guild (from the self member object). Used to
+  // detect role mentions for Hub notifications. Empty if no data yet.
   Q_INVOKABLE QStringList currentUserRoleIdsForGuild(const QString &guildId) const;
-  // Fix: whether channelId has a message that arrived while some OTHER
-  // guild was open (or before any guild was ever opened this session)
-  // - updateGuildChannelUnread() in GuildChannels.cpp can only mark a
-  // channel unread if it's already present in the currently-loaded
-  // m_allGuildChannels/m_visibleGuildChannels, which isn't the case
-  // for a channel in a guild the user hasn't opened yet. This tracks
-  // that fact independently so onGuildChannelsLoaded() can apply it
-  // once the channel's guild actually gets loaded - see
-  // markChannelUnread()/clearChannelUnread() below.
+  // Whether channelId got a message while another guild was open (or before any
+  // guild was opened). updateGuildChannelUnread() cannot mark it then, so it is
+  // tracked here and applied by onGuildChannelsLoaded().
   Q_INVOKABLE bool isChannelMarkedUnread(const QString &channelId) const;
 
-  // Full role list (id/name/color/position/hoisted) for a guild, loaded
-  // from the "roles" field of the GUILD_CREATE payload — see
-  // DiscordClient::onGatewayGuildCreate() (Guilds.cpp). Each item is a
-  // QVariantMap with keys: id, name, color ("#RRGGBB" or empty),
-  // position, hoisted. Used by ChannelMemberList.qml to show role
-  // name/color for members. Returns an empty list if there's no data
-  // for that guild yet.
+  // Full role list for a guild (from "roles"). Items are QVariantMaps: id, name,
+  // color ("#RRGGBB" or empty), position, hoisted. Used by ChannelMemberList.qml.
+  // Empty if no data yet.
   Q_INVOKABLE QVariantList guildRolesForGuild(const QString &guildId) const;
 
-  // Flattened member list (see DiscordMember in Models.hpp) for a
-  // channel, loaded from the GUILD_MEMBER_LIST_UPDATE opcode ("SYNC"
-  // op) — see DiscordClient::onGatewayDispatch() (Client.cpp). Keyed by
-  // channelId (not guildId) since Discord scopes the member list by
-  // channel permission overwrites, not the whole guild. Each item is a
-  // QVariantMap with keys: userId, displayName, avatarUrl, status,
-  // primaryRoleId. Returns an empty list if there's no data yet (sheet
-  // never opened, or SYNC hasn't arrived).
+  // Flattened member list (DiscordMember) for a channel, from the GUILD_MEMBER_LIST_UPDATE
+  // "SYNC" op. Keyed by channelId, since Discord scopes member lists by channel
+  // permissions. Items: userId, displayName, avatarUrl, status, primaryRoleId.
+  // Empty if no data yet.
   Q_INVOKABLE QVariantList memberListForChannel(const QString &channelId) const;
 
 public Q_SLOTS:
@@ -194,25 +162,15 @@ public Q_SLOTS:
   void clearChatCache();
   void setCurrentUserRoleIdsForGuild(const QString &guildId,
                                      const QStringList &roleIds);
-  // Fix: mark/clear a channel's "has an unseen message from a guild
-  // that wasn't open when it arrived" state - see
-  // isChannelMarkedUnread() above for why this exists separately from
-  // the unread flag directly on the channel's own QVariantMap entry.
+  // Mark/clear a channel's "unseen message from a guild that was not open" state (see isChannelMarkedUnread()).
   void markChannelUnread(const QString &channelId);
   void clearChannelUnread(const QString &channelId);
 
-  // Overwrites the full role list for a guild (full replace, not a
-  // per-item patch — matching Discord's GUILD_CREATE behavior: each
-  // time this event arrives it's treated as the full current state).
-  // Called by DiscordClient on GUILD_CREATE.
+  // Full replace of a guild's role list (not a per-item patch).
   void setGuildRoles(const QString &guildId, const QVariantList &roles);
 
-  // Overwrites the full member list for a channel — only called for
-  // the "SYNC" op of GUILD_MEMBER_LIST_UPDATE (a full snapshot). The
-  // "INSERT"/"UPDATE"/"DELETE" ops (incremental changes while the sheet
-  // is open) are NOT handled in this version — accepted trade-off to
-  // keep the change scope small and safe; revisit if realtime presence
-  // in the Members sheet is needed.
+  // Full replace of a channel's member list; only for the "SYNC" op (a full snapshot).
+  // INSERT/UPDATE/DELETE incremental ops are not handled.
   void setMemberListForChannel(const QString &channelId,
                                const QVariantList &members);
 
@@ -269,8 +227,7 @@ private:
   QMap<QString, QStringList> m_currentUserRoleIdsByGuildId;
   QMap<QString, QVariantList> m_guildRolesByGuildId;
   QMap<QString, QVariantList> m_memberListByChannelId;
-  // Fix: see isChannelMarkedUnread()/markChannelUnread()/
-  // clearChannelUnread() in this header for why this exists.
+  // Channels marked unread while another guild was open (see markChannelUnread()).
   QSet<QString> m_unreadChannelIds;
 };
 

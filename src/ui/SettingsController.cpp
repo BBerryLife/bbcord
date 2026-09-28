@@ -151,21 +151,9 @@ QString SettingsController::exportLog() {
       QString("bbcord-log-%1.log")
           .arg(QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss"));
 
-  // Fix: /accounts/1000/shared/documents is only reachable once the
-  // user has actually granted the "Shared Files" permission via
-  // Settings > App Permissions on-device - the <permission
-  // access_shared> entry in bar-descriptor.xml only REQUESTS that
-  // permission at install time, it doesn't grant it, and a sideloaded
-  // dev-mode install commonly needs it granted (or re-granted)
-  // manually. Deleting and letting the app recreate destDir doesn't
-  // help when the failure is a permission the app was never given
-  // rather than a stale/broken directory - mkpath() fails identically
-  // either way. Falling back to the app's own sandbox (QDir::homePath,
-  // already proven writable elsewhere - see
-  // ChatController::attachmentImageCachePath()'s use of it for the
-  // image cache) means exportLog() still produces a usable file
-  // instead of silently returning empty, and the returned path itself
-  // tells the caller which case happened.
+  // /accounts/1000/shared/documents needs the "Shared Files" permission granted on
+  // device (<permission access_shared> only requests it). If mkpath() fails, fall back
+  // to the app sandbox (QDir::homePath); the returned path shows which case applied.
   QDir sharedDir("/accounts/1000/shared/documents/bbcord");
   if (sharedDir.exists() || sharedDir.mkpath(".")) {
     QString sharedPath = sharedDir.absoluteFilePath(destFileName);

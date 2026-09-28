@@ -52,10 +52,8 @@ void DiscordRestClient::fetchSelfGuildMember(const QString &token,
     return;
   }
 
-  // Fix: "@me" is NOT accepted here - confirmed via a real 400 response
-  // ({"errors":{"user_id":{"_errors":[{"code":"NUMBER_TYPE_COERCE",
-  // "message":"Value \"@me\" is not snowflake."}]}}}) - this route
-  // needs the caller's actual numeric user id.
+  // Use the caller's numeric user id: "@me" is rejected with a 400
+  // (NUMBER_TYPE_COERCE, "not snowflake").
   request.requestPath = QString("/api/v9/guilds/%1/members/%2")
                             .arg(request.guildId)
                             .arg(safeUserId);
@@ -67,19 +65,9 @@ void DiscordRestClient::fetchSelfGuildMember(const QString &token,
 
 void DiscordRestClient::fetchActiveThreads(const QString &token,
                                            const QString &channelId) {
-  // Fix: GET /guilds/{id}/threads/active (used previously) always
-  // returns 403 "Invalid Discord token" with a USER token (email/
-  // password login), no matter how correct the token/permissions are -
-  // confirmed through repeated real-world testing (log: every guild
-  // returns 403, including guilds with admin rights). This is NOT a
-  // code bug: this guild-level endpoint only works with BOT tokens by
-  // Discord's own design (see community discussion in
-  // discord.js-selfbot-v13 issue #1137 - "only bot accounts can fetch
-  // active threads [at guild level]"). The CHANNEL-level endpoint
-  // (GET /channels/{channel.id}/threads/active) has no such
-  // restriction and works fine with user tokens - switched to calling
-  // this instead, per channel that needs its threads, rather than once
-  // for the whole guild.
+  // Uses the channel-level endpoint (/channels/{id}/threads/active), called per channel:
+  // the guild-level one (/guilds/{id}/threads/active) is bot-only and returns 403 for
+  // user tokens.
   RestRequest request;
   request.token = token.trimmed();
   request.channelId = channelId.trimmed();
@@ -98,15 +86,8 @@ void DiscordRestClient::fetchActiveThreads(const QString &token,
 void DiscordRestClient::fetchArchivedThreads(const QString &token,
                                              const QString &channelId,
                                              const QString &beforeCursor) {
-  // Threads auto-archived by Discord (inactive past
-  // auto_archive_duration) are NO LONGER in active threads/
-  // THREAD_LIST_SYNC - need this separate endpoint to see them. Unlike
-  // active threads (only a channel-level version exists, and both
-  // active variants are confirmed working with user tokens) - this
-  // archived endpoint is also in the /channels/{id}/... group
-  // (channel-level, not guild-level), same group as the channel-level
-  // active threads endpoint confirmed NOT blocked as bot-only, so it's
-  // safe to assume it works with user tokens too.
+  // Auto-archived threads are not in active threads/THREAD_LIST_SYNC; this channel-level
+  // endpoint (not bot-only) lists them.
   RestRequest request;
   request.token = token.trimmed();
   request.channelId = channelId.trimmed();

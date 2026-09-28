@@ -6,11 +6,8 @@ QList<EmojiUtils::EmojiToken>
 EmojiUtils::findTokens(const QString &content) {
   QList<EmojiToken> tokens;
 
-  // <a:name:id> or <:name:id> - name is Discord's emoji-name charset
-  // (letters, digits, underscore), id is the snowflake. QRegExp (not
-  // QRegularExpression - Qt4/Cascades10 toolchain, same constraint noted
-  // throughout the rest of this codebase's regex usage, e.g. Models.cpp's
-  // role-mention pattern).
+  // <a:name:id> or <:name:id>: name is letters/digits/underscore, id is the snowflake.
+  // QRegExp is used (not QRegularExpression) because of the Qt4/Cascades 10 toolchain.
   QRegExp pattern("<(a?):(\\w+):(\\d+)>");
   int searchIndex = 0;
 

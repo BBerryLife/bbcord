@@ -1,11 +1,7 @@
 import bb.cascades 1.4
 
-// Active thread list for a channel. Doesn't use a dedicated C++
-// controller since the data is already available via
-// discordClient.threadsForChannel(channelId) (Q_INVOKABLE, see
-// GuildChannels.cpp::threadsForChannel()) - simple enough to load
-// straight into an ArrayDataModel at the QML level, no need for another
-// ListItemProvider/Controller just to relay the same data.
+// Active thread list for a channel. Loads discordClient.threadsForChannel()
+// straight into an ArrayDataModel; no dedicated C++ controller needed.
 Page {
 	id: threadListPage
 
@@ -14,35 +10,18 @@ Page {
 	property string channelName: "general"
 	property alias title: titleBar.title
 
-	// Fix: "visible: threadDataModel.size() === 0" (used previously)
-	// calls size() directly inside a declarative binding expression -
-	// same bug class as "enabled: field.text.length" in
-	// LoginPage.qml/MfaSheet.qml (see that fix history): a declarative
-	// binding isn't guaranteed to re-evaluate when the model's CONTENT
-	// changes via append()/clear(), it's only reliable when depending
-	// on a property with a proper NOTIFY signal. Uses this explicit
-	// property instead, updated right after every reload(), to make
-	// sure the UI re-renders at the right time.
+	// Explicit property instead of "visible: threadDataModel.size() === 0": bindings
+	// do not re-evaluate on append()/clear(), only on properties with NOTIFY signals.
+	// Updated after every reload().
 	property int threadCount: 0
 
-	// A second line of defense, independent of whether disconnect()
-	// runs at the right time (see cleanup() below) - in case the
-	// NavigationPane gets popped some other way (e.g. the system's
-	// physical back button) without going through either backRequested
-	// or threadSelected, where cleanup() is called explicitly.
-	// Fully self-managed here (not relying on some framework
-	// "isValid"/lifecycle API I'm not sure exists), set to false in
-	// cleanup() and checked right at the top of reload() before
-	// touching threadDataModel.
+	// Guard against the page being popped some other way (e.g. hardware back)
+	// without cleanup(); set false in cleanup() and checked at the top of reload().
 	property bool _isActive: true
 
-	// Archived threads: kept entirely separate from threadDataModel
-	// (active threads) - Discord returns these as two different
-	// concepts through two different sources (passive gateway vs
-	// on-demand REST), mixing them would easily confuse which state is
-	// active/archived. archivedHasMore controls showing/hiding the
-	// "Load older threads" button; archivedCursor is the oldest loaded
-	// thread's id, used as "before" for the next page.
+	// Archived threads are kept separate from threadDataModel (gateway vs REST).
+	// archivedHasMore shows/hides "Load older threads"; archivedCursor is the oldest
+	// loaded thread id, used as "before" for the next page.
 	property bool archivedLoading: false
 	property bool archivedHasMore: false
 	property string archivedCursor: ""
@@ -72,11 +51,7 @@ Page {
 		}
 	]
 
-	// Reloads the thread list every time this sheet is opened, and
-	// whenever AppStore.channelThreadsByParentId changes (a new thread
-	// created, another active thread loaded) while the sheet is open —
-	// avoids the list going stale if the backend updates threads while
-	// the user is viewing the sheet.
+	// Reloads on open and whenever AppStore.channelThreadsByParentId changes while open.
 	function reload() {
 		if (!threadListPage._isActive) {
 			return
@@ -95,31 +70,16 @@ Page {
 	}
 
 	onCreationCompleted: {
-		// Same caveat as ChannelMemberList.qml/MainPage.qml:
-		// createObject() runs onCreationCompleted() BEFORE the
-		// channelId property gets assigned by the caller (see
-		// MainPage.qml::openChat()) - don't call reload() here, call it
-		// again explicitly after the property has a real value
-		// (threadListPage.requestThreadsNow(), called from
-		// MainPage.qml).
+		// createObject() runs onCreationCompleted() before channelId is assigned, so
+		// do not reload() here; MainPage.qml calls requestThreadsNow() afterwards.
 		appStore.channelThreadsChanged.connect(threadListPage.reload)
 		discordClient.archivedThreadsLoaded.connect(threadListPage.onArchivedThreadsResult)
 	}
 
-	// Fix: Cascades' "Page" has NO "onDestruction" signal (that's a
-	// QtQuick Component API, doesn't exist here) - declaring it breaks
-	// parsing for the whole file (confirmed bug via real logs before).
-	// Used to use onBackRequested to disconnect, BUT that signal only
-	// fires on the titleBar's actual back button - when the user taps a
-	// thread (threadSelected), MainPage.qml calls navigationPane.pop()
-	// directly WITHOUT going through backRequested, so disconnect never
-	// runs in that case. Observed real-world effect: ReferenceError
-	// "Can't find variable: threadListPage" when THREAD_LIST_SYNC fires
-	// after the page has already been popped/destroyed, trying to call
-	// reload() on an object that no longer exists. Pulled cleanup into
-	// its own function, called explicitly from EVERY place that pops
-	// this page (see MainPage.qml), not just the back button. Applies
-	// the same lesson to archivedThreadsLoaded too (same risk).
+	// Page has no onDestruction, and onBackRequested only fires for the title bar's
+	// back button, not when MainPage.qml pops the page directly. cleanup() is called
+	// explicitly from every place that pops the page, so a late THREAD_LIST_SYNC or
+	// archivedThreadsLoaded does not hit a destroyed object.
 	function cleanup() {
 		threadListPage._isActive = false
 		appStore.channelThreadsChanged.disconnect(threadListPage.reload)
@@ -127,30 +87,14 @@ Page {
 	}
 
 	function requestThreadsNow() {
-		// Fix: there's NO discordClient.requestThreadsForChannel() to
-		// call anymore - that function (channel-level REST) was
-		// removed since Discord confirmed rejecting it with the exact
-		// same "Only bots can use this endpoint." error (code 20002),
-		// same as the guild-level endpoint tried earlier. Threads now
-		// arrive entirely PASSIVELY through the gateway
-		// (THREAD_LIST_SYNC event, handled in
-		// Client.cpp::onGatewayDispatch(), flowing in automatically
-		// when the guild gets subscribed) - here it just needs to read
-		// the existing cache, there's nothing left to actively
-		// "request". reload() is also already called automatically
-		// every time appStore.channelThreadsChanged fires (connected in
-		// onCreationCompleted), so the list will self-update on the
-		// next THREAD_LIST_SYNC, even after this call.
+		// Threads arrive passively via THREAD_LIST_SYNC (the channel-level REST endpoint
+		// is bot-only), so this only reads the cache. reload() also runs on
+		// appStore.channelThreadsChanged.
 		reload()
 	}
 
-	// Unlike active threads (passive via gateway) - archived threads
-	// must be ACTIVELY requested via REST (endpoint
-	// /channels/{id}/threads/archived/public, different from the two
-	// bot-only "active threads" endpoints confirmed earlier). Called
-	// when tapping "Load older threads", or automatically the first
-	// time if the channel has never had an archive-fetch (archivedCursor
-	// empty and not currently loading).
+	// Archived threads must be requested via REST (/channels/{id}/threads/archived/public).
+	// Called by "Load older threads", and automatically the first time if never fetched.
 	function loadOlderThreads() {
 		if (threadListPage.archivedLoading || threadListPage.channelId === "") {
 			return
@@ -165,13 +109,7 @@ Page {
 		}
 		threadListPage.archivedLoading = false
 		threadListPage.archivedHasMore = hasMore
-		// Appended directly into threadDataModel (the same list as
-		// active threads) instead of a separate ListView/model - much
-		// simpler than building distinct "Active"/"Archived" section
-		// headers in Cascades (no reliable precedent in this codebase
-		// to do that correctly), and the user just needs to see ALL
-		// posts, without necessarily needing a strict active/archived
-		// split in the UI.
+		// Appended into threadDataModel (same list as active threads) instead of building section headers.
 		for (var i = 0; i < threads.length; ++i) {
 			threadDataModel.append(threads[i])
 		}
@@ -185,22 +123,9 @@ Page {
 		horizontalAlignment: HorizontalAlignment.Fill
 		verticalAlignment: VerticalAlignment.Fill
 
-		// Fix: the "Load older threads" Button below already had
-		// leftMargin/rightMargin/bottomMargin set, but it was STILL
-		// showing flush against the screen edges (confirmed via a real
-		// screenshot - button spans full width, sits right at the
-		// bottom). Root cause: this Container uses StackLayout, and in
-		// Cascades a StackLayout child's own margin controls SPACING
-		// BETWEEN SIBLINGS along the stack axis, not necessarily an
-		// inset from the CONTAINER's own edge - with no sibling after
-		// it, the Button's bottomMargin had nothing to push against.
-		// bottomPadding on the Container itself is what actually
-		// reserves that space at the true bottom edge, same way
-		// leftPadding/rightPadding already do on other Containers in
-		// this file (see the thread-row ListItemComponent's Container
-		// a bit further down). Kept the Button's own margins too - they
-		// still matter for the top spacing above it and are harmless to
-		// leave in.
+		// Container bottomPadding: in a StackLayout a child's margin only spaces it from
+		// siblings, so the Button's bottomMargin had no effect at the container edge.
+		// The Button's own margins still give top spacing.
 		bottomPadding: ui.du(1.5)
 
 		layout: StackLayout {}
@@ -220,15 +145,8 @@ Page {
 			verticalAlignment: VerticalAlignment.Fill
 			visible: threadListPage.threadCount > 0
 
-			// Fix: "onTouch" isn't a valid signal on ListItemComponent
-			// (that's just a factory defining the delegate, not itself
-			// a control that receives touch events) - declaring it
-			// breaks parsing the same way the earlier "onDestruction"
-			// bug did ("Cannot assign to non-existent property"),
-			// ThreadList.qml fails to create. The whole codebase
-			// (ServerList.qml, ChatCard.qml, DmList.qml) uses
-			// ListView.onTriggered to handle tapping an item - follows
-			// that same pattern instead of onTouch on the delegate.
+			// ListItemComponent has no onTouch; use ListView.onTriggered like ServerList.qml,
+			// ChatCard.qml and DmList.qml.
 			onTriggered: {
 				var item = threadDataModel.data(indexPath);
 				threadListPage.threadSelected(item.id, item.name);
@@ -268,35 +186,19 @@ Page {
 			]
 		}
 
-		// Posts older than the auto-archive window (Discord archives
-		// them automatically, no longer in active threads/
-		// THREAD_LIST_SYNC - see the requestArchivedThreads() comment
-		// in Client.hpp) - tap to actively fetch more via REST,
-		// paginated using archivedCursor.
+		// Posts past the auto-archive window are fetched via REST on tap, paginated by archivedCursor.
 		Button {
 			text: threadListPage.archivedLoading ? qsTr("Loading...") : qsTr("Load older threads")
-			// Fix: was HorizontalAlignment.Fill, stretching the button
-			// to the full container width (minus left/rightMargin) -
-			// switched to Center so it sizes to its own text/padding
-			// instead, like a normal action button rather than a
-			// full-width bar.
+			// Center alignment so the button sizes to its text instead of filling the width.
 			horizontalAlignment: HorizontalAlignment.Center
 			topMargin: ui.du(1.0)
-			// leftMargin/rightMargin no longer do anything now that the
-			// button isn't Fill-width (nothing left/right of it to
-			// push against) - left in place, harmless, in case Fill is
-			// ever restored later.
+			// leftMargin/rightMargin have no effect while the button is not Fill-width; kept in case Fill returns.
 			leftMargin: ui.du(2.0)
 			rightMargin: ui.du(2.0)
 			bottomMargin: ui.du(1.5)
 			enabled: !threadListPage.archivedLoading
-			// Shown even when threadCount === 0 (a channel may have no
-			// active threads left but still have archived ones) - only
-			// fully hidden once confirmed there are no more pages
-			// (archivedHasMore turns false, see
-			// onArchivedThreadsResult()). archivedCursor === "" means
-			// NEVER tapped/loaded before - still shown so the user can
-			// tap it proactively.
+			// Shown even when threadCount === 0 (archived threads may remain); hidden only
+			// once archivedHasMore is false. archivedCursor === "" means never loaded.
 			visible: threadListPage.archivedCursor !== "" ? threadListPage.archivedHasMore : true
 
 			onClicked: {

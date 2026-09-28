@@ -74,17 +74,9 @@ ApplicationUI::ApplicationUI()
   // initial load
   onSystemLanguageChanged();
 
-  // Receives the InvokeRequest from BlackBerry Hub when the user taps/
-  // long-presses an item in the BBCord tab (see HubIntegration.cpp +
-  // bar-descriptor.xml <invoke-target id="ch.michioxd.bbcord.invoke">,
-  // type application). A separate card.previewer target/initCardUI()
-  // path was tried for short-tap and removed again - see
-  // bar-descriptor.xml's invoke-target comment for why (a decompiled
-  // working reference app, Beeper10, proved a card isn't required; the
-  // actual fix was an app-specific vendor mime type). initCardUI()
-  // below is dead code now (InvokeCard should never actually occur)
-  // but left in place rather than deleted, in case a card path is
-  // ever needed again - it's harmless if unreached.
+  // Receives the InvokeRequest from BlackBerry Hub (tap/long-press on a BBCord tab
+  // item; invoke-target "ch.michioxd.bbcord.invoke"). initCardUI() below is unused now
+  // (no card.previewer target) but kept for a possible card path.
   m_pInvokeManager = new bb::system::InvokeManager(this);
   bool invokeConnected = QObject::connect(
       m_pInvokeManager,
@@ -108,10 +100,7 @@ ApplicationUI::ApplicationUI()
   QObject::connect(m_settingsController, SIGNAL(cacheCleared()),
                    m_chatController, SLOT(clearMediaCacheState()));
 
-  // InvokeCard should no longer actually occur (no card.previewer
-  // target is declared anymore - see bar-descriptor.xml), but the
-  // branch is left in place as a harmless safety net rather than
-  // removed.
+  // InvokeCard should not occur (no card.previewer target); kept as a safety net.
   if (startupMode == bb::system::ApplicationStartupMode::InvokeCard) {
     initCardUI();
   } else {
@@ -144,38 +133,16 @@ void ApplicationUI::initFullUI() {
 }
 
 void ApplicationUI::initCardUI() {
-  // See the doc comment on this method's declaration in
-  // applicationui.hpp for the full "why a card" reasoning. This is
-  // deliberately as small as possible: no controllers, no other
-  // context properties - the card's ENTIRE job is to show a one-line
-  // placeholder for a moment and call finishCardAndHandoff()
-  // (Q_INVOKABLE, below) once it has actually been drawn, which then
-  // does the exact same sourceId-parsing + selectGuild/selectChannel
-  // work onInvoked() already does for long-press, then cardDone().
-  //
-  // At construction time here (before Hub has even resized/shown the
-  // card window) we do NOT yet have the InvokeRequest's data - it
-  // arrives separately via the invoked() signal -> onInvoked() slot,
-  // same as every other startup mode. onInvoked() below stashes it in
-  // m_cardInvokeData/m_cardInvokeDataReady when running in card mode
-  // instead of navigating immediately; QML calls
-  // finishCardAndHandoff() once it's ready (setting
-  // m_cardHandoffReady) - performCardHandoffIfReady() runs the actual
-  // handoff once BOTH flags are set, regardless of which one lands
-  // first.
+  // Minimal card UI: shows a placeholder, then QML calls finishCardAndHandoff().
+  // The InvokeRequest data arrives separately via onInvoked(), which stashes it in
+  // m_cardInvokeData/m_cardInvokeDataReady; performCardHandoffIfReady() runs the
+  // handoff once both flags are set, in either order.
   QmlDocument *qml =
       QmlDocument::create("asset:///HubPreviewCard.qml").parent(this);
   qml->setContextProperty("applicationUI", this);
   AbstractPane *root = qml->createRootObject<AbstractPane>();
-  // Defensive: if HubPreviewCard.qml ever fails to load (a QML syntax/
-  // type error - this is exactly what happened during development,
-  // see the fix for the "Timer is not a type" error, git-blame this
-  // line), createRootObject() returns 0 and setScene(0) would leave
-  // the card with no UI, no Timer running, and therefore no way to
-  // ever call finishCardAndHandoff() - i.e. exactly the "screen goes
-  // dark and hangs" symptom this fix is meant to prevent. Call the
-  // handoff directly in that case instead of leaving the user stuck on
-  // a dead black screen.
+  // If HubPreviewCard.qml fails to load, createRootObject() returns 0 and the card
+  // would hang on a black screen; call the handoff directly in that case.
   if (root == 0) {
     qDebug() << "[Hub][invoke] initCardUI() - HubPreviewCard.qml failed to"
                 " load (createRootObject returned 0) - calling"
@@ -208,12 +175,8 @@ void ApplicationUI::onSystemLanguageChanged() {
 }
 
 void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {
-  // BlackBerry Hub builds the InvokeRequest itself when the user taps/
-  // long-presses an item in the BBCord tab. sourceId (which is the
-  // channelId, see HubIntegration::upsertThreadItem) lives in data() as
-  // JSON:
-  //   { "attributes": { "sourceId": "<channelId>", ... } }
-  // NOT in uri() (Hub always leaves uri() empty for self-built invokes).
+  // The InvokeRequest data() is JSON {"attributes": {"sourceId": "<channelId>", ...}};
+  // uri() is always empty for Hub-built invokes.
   qDebug() << "[Hub][invoke] onInvoked() fired - target=" << request.target()
            << "action=" << request.action()
            << "mimeType=" << request.mimeType()
@@ -224,9 +187,7 @@ void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {
   if (m_pInvokeManager != 0 &&
       m_pInvokeManager->startupMode() ==
           bb::system::ApplicationStartupMode::InvokeCard) {
-    // Card mode (see initCardUI()): don't navigate yet, just stash the
-    // data - performCardHandoffIfReady() does the actual work once the
-    // card UI has confirmed it's been shown (m_cardHandoffReady).
+    // Card mode: only stash the data; performCardHandoffIfReady() acts once the card UI is shown.
     m_cardInvokeData = request.data();
     m_cardInvokeDataReady = true;
     qDebug() << "[Hub][invoke] card mode - stashed data, deferring to"
@@ -257,21 +218,9 @@ void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {
     return;
   }
 
-  // Fix: this WAS "acceptable since it's a rare case" per the comment
-  // below - turned out to be the COMMON case, not rare: any cold app
-  // start (app not already running when the Hub notification is
-  // tapped) has an entirely empty m_chatGuildByChannelId, so guildId
-  // comes back empty here basically every time the app is launched
-  // via Hub (confirmed via a real log: "resolved guildId= \"\"" right
-  // after "[Hub] init() attempt 1 / 5" - i.e. on the very first
-  // invoke of a fresh process). Without a guildId, selectGuild() never
-  // ran, that guild's channels never loaded, and the chat title stayed
-  // permanently blank with nothing to self-heal it. Falls back to
-  // DiscordClient::fetchChannelInfo() (GET /channels/{id} - resolves
-  // both guildId and name in one REST call) whenever the cache comes
-  // back empty; DiscordClient::onChannelInfoLoaded() then selects the
-  // guild itself once the response arrives, same as the line below
-  // does synchronously when the cache DID have it.
+  // On a cold start m_chatGuildByChannelId is empty, so guildId is usually empty
+  // here. Fall back to fetchChannelInfo() (GET /channels/{id}, resolves guildId and
+  // name); onChannelInfoLoaded() then selects the guild.
   QString guildId = m_discordClient->guildIdForChannel(channelId);
   qDebug() << "[Hub][invoke] channelId=" << channelId << "resolved guildId="
            << guildId << "(empty is OK for a DM or a channel never opened"
@@ -285,19 +234,13 @@ void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {
   }
   m_discordClient->selectChannel(channelId);
   qDebug() << "[Hub][invoke] selectChannel(" << channelId << ") called - done.";
-  // Fix: selectChannel() above only updates backend state - it never
-  // pushes any QML page on its own (confirmed: short-tap was opening
-  // the app to the main server/DM list, not into the actual chat).
-  // main.qml listens for this and calls openChat() on the actual
-  // NavigationPane/MainPage - see hubOpenChannelRequested's own doc
-  // comment in applicationui.hpp for the full reasoning.
+  // selectChannel() only updates backend state; main.qml listens for this signal
+  // and calls openChat() (see hubOpenChannelRequested in applicationui.hpp).
   emit hubOpenChannelRequested(channelId, guildId);
 }
 
 void ApplicationUI::finishCardAndHandoff() {
-  // Called from HubPreviewCard.qml's Component.onCompleted - see that
-  // file's own comment for why it waits one event-loop turn before
-  // calling this instead of calling it synchronously at load.
+  // Called from HubPreviewCard.qml's Component.onCompleted after one event-loop turn (see that file).
   qDebug() << "[Hub][invoke] finishCardAndHandoff() called from QML.";
   m_cardHandoffReady = true;
   performCardHandoffIfReady();
@@ -329,11 +272,7 @@ void ApplicationUI::performCardHandoffIfReady() {
         m_discordClient->selectGuild(guildId);
       }
       m_discordClient->selectChannel(channelId);
-      // Fix: kept in sync with the same fix in onInvoked() above - see
-      // hubOpenChannelRequested's doc comment in applicationui.hpp.
-      // This branch is currently unreachable in practice (no
-      // card.previewer target is declared anymore - see
-      // bar-descriptor.xml), but kept correct rather than left stale.
+      // Kept in sync with onInvoked(); currently unreachable (no card.previewer target).
       emit hubOpenChannelRequested(channelId, guildId);
     }
   } else {
@@ -342,9 +281,7 @@ void ApplicationUI::performCardHandoffIfReady() {
                 " closing the card.";
   }
 
-  // Tell Hub/Navigator we're done - this is what actually closes the
-  // card and (per the long-press behavior this is meant to replicate)
-  // brings BBCord's real app window to the foreground.
+  // Tells Hub/Navigator we are done: closes the card and brings the real app window forward.
   if (m_pInvokeManager != 0) {
     bb::system::CardDoneMessage doneMessage;
     doneMessage.setReason("opened");
@@ -355,9 +292,7 @@ void ApplicationUI::performCardHandoffIfReady() {
 
 void ApplicationUI::onCardResizeRequested(
     const bb::system::CardResizeMessage &message) {
-  // See the doc comment on this slot's declaration in
-  // applicationui.hpp - intentionally a no-op, just here to be
-  // connected so Hub's card sizing handshake completes normally.
+  // Intentionally a no-op; connected so Hub's card sizing handshake completes (see applicationui.hpp).
   Q_UNUSED(message);
   qDebug() << "[Hub][invoke] onCardResizeRequested() fired.";
 }
