@@ -1,6 +1,7 @@
 #include "AttachmentImageCacheWorker.hpp"
 
 #include <QByteArray>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -127,6 +128,7 @@ void AttachmentImageCacheWorker::requestImage(const QString &url,
     return;
   }
 
+  qDebug() << "[image-cache] start" << connectUrl << requestPath;
   m_activeDownloads.insert(connection, context);
   startTimerIfNeeded();
 }
@@ -244,6 +246,10 @@ void AttachmentImageCacheWorker::finishDownload(
     }
   }
 
+  qDebug() << "[image-cache] finish ok=" << ok << "success=" << success
+           << "failed=" << context->failed << "status=" << context->status
+           << "bytes=" << context->body.size()
+           << "cancelled=" << wasCancelled << "host=" << context->host;
   if (ok) {
     emit imageCached(context->url, context->filePath);
   } else {
@@ -310,6 +316,20 @@ void AttachmentImageCacheWorker::imageEventHandler(
     struct mg_http_message *message =
         static_cast<struct mg_http_message *>(eventData);
     context->status = mg_http_status(message);
+    {
+      struct mg_str *ct = mg_http_get_header(message, "Content-Type");
+      QString contentType =
+          ct != NULL ? QString::fromLatin1(ct->buf, static_cast<int>(ct->len))
+                     : QString("<none>");
+      QByteArray head(message->body.buf,
+                      static_cast<int>(message->body.len < 12
+                                           ? message->body.len
+                                           : 12));
+      qDebug() << "[image-cache] response status=" << context->status
+               << "content-type=" << contentType
+               << "bodyLen=" << static_cast<qint64>(message->body.len)
+               << "magic=" << head.toHex();
+    }
     if (context->status == 200 && message->body.len > 0) {
       context->body =
           QByteArray(message->body.buf, static_cast<int>(message->body.len));
@@ -323,6 +343,14 @@ void AttachmentImageCacheWorker::imageEventHandler(
   }
 
   case MG_EV_ERROR:
+    qDebug() << "[image-cache] MG_EV_ERROR"
+             << (eventData != NULL ? static_cast<const char *>(eventData)
+                                   : "<null>")
+             << "host=" << context->host;
+    context->failed = true;
+    context->worker->finishDownload(connection, false);
+    break;
+
   case MG_EV_CLOSE:
     context->failed = true;
     context->worker->finishDownload(connection, false);

@@ -1,7 +1,8 @@
 1
-56
+57
 About.qml
 audio/connected.ogg
+audio/connecting.ogg
 audio/error.ogg
 audio/ping.m4a
 CaptchaSheet.qml

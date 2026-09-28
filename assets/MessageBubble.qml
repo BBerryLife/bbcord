@@ -517,9 +517,21 @@ Container {
 
             layout: DockLayout {}
 
+            // Fix: this ImageView used to fall back to
+            // root.attachmentUrl (the remote https://cdn.discordapp.com/...
+            // URL) whenever root.image was still empty. Cascades'
+            // ImageView cannot load https, so the log filled with
+            // "Unsupported scheme (https) used in url ... Image loading
+            // aborted" and the preview stayed blank, while the TapHandler
+            // below (which uses attachmentUrl) still opened the preview
+            // sheet normally. root.image is always either a local
+            // file:/// URI from ChatController's image cache
+            // (cachedImageSource()/filePreviewSource()) or empty while
+            // the download is in flight, so bind only to it and show
+            // the ActivityIndicator meanwhile.
             ImageView {
-                visible: root.image !== "" || root.attachmentUrl !== ""
-                imageSource: root.image !== "" ? root.image : root.attachmentUrl
+                visible: root.image !== ""
+                imageSource: root.image
                 preferredWidth: ui.du(root.displayImageWidth())
                 preferredHeight: ui.du(root.displayImageHeight())
                 minWidth: ui.du(root.displayImageWidth())
@@ -540,7 +552,7 @@ Container {
             ]
 
             ActivityIndicator {
-                visible: root.imageLoading && root.image === "" && root.attachmentUrl === ""
+                visible: root.imageLoading && root.image === ""
                 running: visible
                 horizontalAlignment: HorizontalAlignment.Center
                 verticalAlignment: VerticalAlignment.Center

@@ -6,6 +6,7 @@
 #include "../core/models/Models.hpp"
 #include "../utils/EmojiUtils.hpp"
 
+#include <QDebug>
 #include <bb/system/Clipboard>
 #include <bb/system/InvokeManager>
 #include <bb/system/InvokeRequest>
@@ -78,9 +79,26 @@ QString discordPreviewUrl(const QString &url, int originalWidth,
                      previewHeight);
   parsed.removeAllQueryItems("width");
   parsed.removeAllQueryItems("height");
+  parsed.removeAllQueryItems("format");
   parsed.addQueryItem("width", QString::number(previewWidth));
   parsed.addQueryItem("height", QString::number(previewHeight));
-  return parsed.toString();
+  // Fix: media.discordapp.net's resize proxy returns WebP by default
+  // (confirmed on-device: content-type image/webp, magic "RIFF....WEBP"),
+  // but the result is cached to a file with the ORIGINAL extension
+  // (.png) and Cascades' ImageView can't decode WebP, so the inline
+  // preview stayed blank while the full-size view (which loads the
+  // original cdn.discordapp.com PNG) worked. Ask the proxy for PNG
+  // explicitly. Discord only honors format=png|jpeg|webp on this host.
+  parsed.addQueryItem("format", "png");
+
+  // Fix: attachment URLs from the gateway end with a trailing "&"
+  // (e.g. "...&hm=<hash>&"), so appending query items produced
+  // "...&&width=512". Collapse any run of "&" so the URL is clean.
+  QString result = parsed.toString();
+  while (result.contains("&&")) {
+    result.replace("&&", "&");
+  }
+  return result;
 }
 } // namespace
 
@@ -547,6 +565,7 @@ void ChatController::requestCachedImage(const QString &url) {
     return;
   }
 
+  qDebug() << "[image-cache] request" << safeUrl << "->" << path;
   m_loadingAttachmentImages.insert(safeUrl);
   QMetaObject::invokeMethod(m_imageWorker, "requestImage", Qt::QueuedConnection,
                             Q_ARG(QString, safeUrl), Q_ARG(QString, path),
@@ -761,6 +780,7 @@ void ChatController::onChatAvatarChanged(const QString &userId,
 
 void ChatController::onAttachmentImageCached(const QString &url,
                                              const QString &path) {
+  qDebug() << "[image-cache] cached" << url << "->" << path;
   m_loadingAttachmentImages.remove(url);
   QString source = filePreviewSource(path);
   m_cachedAttachmentImages.insert(url, source);
@@ -769,6 +789,7 @@ void ChatController::onAttachmentImageCached(const QString &url,
 }
 
 void ChatController::onAttachmentImageFailed(const QString &url) {
+  qDebug() << "[image-cache] FAILED" << url;
   m_loadingAttachmentImages.remove(url);
   updateAttachmentImageInModel(url, QString(), false, true);
   emit attachmentImageFailed(url);

@@ -194,23 +194,23 @@
 <context>
     <name>ChatController</name>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="325"/>
-        <location filename="../src/ui/ChatController.cpp" line="1426"/>
+        <location filename="../src/ui/ChatController.cpp" line="343"/>
+        <location filename="../src/ui/ChatController.cpp" line="1447"/>
         <source>Maximum 10 attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1411"/>
+        <location filename="../src/ui/ChatController.cpp" line="1432"/>
         <source>Attachment file not found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1421"/>
+        <location filename="../src/ui/ChatController.cpp" line="1442"/>
         <source>Attachment is too large</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1460"/>
+        <location filename="../src/ui/ChatController.cpp" line="1481"/>
         <source>%1 files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -417,16 +417,16 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="552"/>
-        <location filename="../assets/MessageBubble.qml" line="618"/>
-        <location filename="../assets/MessageBubble.qml" line="1147"/>
+        <location filename="../assets/MessageBubble.qml" line="564"/>
+        <location filename="../assets/MessageBubble.qml" line="630"/>
+        <location filename="../assets/MessageBubble.qml" line="1159"/>
         <source>Open attachment: </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="552"/>
-        <location filename="../assets/MessageBubble.qml" line="618"/>
-        <location filename="../assets/MessageBubble.qml" line="1147"/>
+        <location filename="../assets/MessageBubble.qml" line="564"/>
+        <location filename="../assets/MessageBubble.qml" line="630"/>
+        <location filename="../assets/MessageBubble.qml" line="1159"/>
         <source>Open image: </source>
         <translation type="unfinished"></translation>
     </message>
