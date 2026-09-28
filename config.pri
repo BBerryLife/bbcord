@@ -52,6 +52,7 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/ThreadList.qml) \
         $$quote($$BASEDIR/assets/UserSheet.qml) \
         $$quote($$BASEDIR/assets/audio/connected.ogg) \
+        $$quote($$BASEDIR/assets/audio/connecting.ogg) \
         $$quote($$BASEDIR/assets/audio/error.ogg) \
         $$quote($$BASEDIR/assets/audio/ping.m4a) \
         $$quote($$BASEDIR/assets/components/SettingItem.qml) \
