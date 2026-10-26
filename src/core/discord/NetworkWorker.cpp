@@ -264,6 +264,17 @@ void DiscordNetworkWorker::editChannelMessage(const QString &token,
   m_chatWriteClient.editChannelMessage(token, channelId, messageId, content);
 }
 
+void DiscordNetworkWorker::sendTyping(const QString &token,
+                                      const QString &channelId) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "sendTyping", Qt::QueuedConnection,
+                              Q_ARG(QString, token), Q_ARG(QString, channelId));
+    return;
+  }
+
+  m_chatWriteClient.sendTyping(token, channelId);
+}
+
 void DiscordNetworkWorker::deleteChannelMessage(const QString &token,
                                                 const QString &channelId,
                                                 const QString &messageId) {

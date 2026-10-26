@@ -390,8 +390,11 @@ void MessageCache::insertSorted(ChannelState &state,
     return;
   }
 
+  // Pending (not yet confirmed) messages always go last: their id is a locally built
+  // snowflake, and a skewed device clock must not slot them into the middle of the
+  // list.
   int insertAt = state.orderedIds.size();
-  for (int i = 0; i < state.orderedIds.size(); ++i) {
+  for (int i = 0; i < state.orderedIds.size() && !message.pending; ++i) {
     if (compareMessageIds(message.id, state.orderedIds.at(i)) < 0) {
       insertAt = i;
       break;

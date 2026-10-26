@@ -497,6 +497,11 @@ Page {
                     // is updated explicitly via a signal.
                     onTextChanging: {
                         chatPage.hasComposedText = text.length > 0;
+                        // Typing indicator, like the official client (not while
+                        // editing an existing message). Throttled in C++.
+                        if (text.length > 0 && chatPage.editingMessageId === "") {
+                            chatController.notifyTyping();
+                        }
                     }
                 }
 

@@ -111,6 +111,8 @@ public Q_SLOTS:
   Q_INVOKABLE QString avatarSourceForUser(const QString &userId) const;
   Q_INVOKABLE void loadUserAvatar(const QString &userId,
                                   const QString &avatarHash);
+  // Throttled by the caller (ChatController); best effort, never reports errors.
+  Q_INVOKABLE void sendChatTyping(const QString &channelId);
   Q_INVOKABLE void editChatMessage(const QString &channelId,
                                    const QString &messageId,
                                    const QString &content);

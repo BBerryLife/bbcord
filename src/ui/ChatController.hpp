@@ -78,6 +78,9 @@ public:
   Q_INVOKABLE int addPendingAttachments(const QVariantList &filePaths);
   Q_INVOKABLE void removePendingAttachment(int index);
   Q_INVOKABLE void clearPendingAttachment();
+  // Call while the user is composing; sends a throttled "typing" ping like the
+  // official client does (roughly every 8 s while text is being entered).
+  Q_INVOKABLE void notifyTyping();
   Q_INVOKABLE QString sendMessage(const QString &content,
                                   const QString &replyMessageId,
                                   const QString &replyAuthor,
@@ -107,6 +110,7 @@ Q_SIGNALS:
   void sendMessageRequested(const QString &channelId, const QString &content,
                             const QString &nonce, const QString &replyMessageId,
                             const QStringList &attachmentPaths);
+  void typingRequested(const QString &channelId);
   void editMessageRequested(const QString &channelId, const QString &messageId,
                             const QString &content);
   void deleteMessageRequested(const QString &channelId,
@@ -173,6 +177,8 @@ private:
   QString m_pendingAttachmentPreview;
   QString m_pendingAttachmentError;
   bool m_pendingAttachmentIsImage;
+  qint64 m_lastTypingSentMs;
+  QString m_lastTypingChannelId;
 };
 
 #endif /* ChatController_HPP_ */

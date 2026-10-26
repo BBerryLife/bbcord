@@ -101,7 +101,8 @@ ChatController::ChatController(DiscordClient *client, AppStore *store,
     : QObject(parent), m_client(client), m_store(store),
       m_chatDataModel(new bb::cascades::ArrayDataModel(this)),
       m_pendingAttachmentsModel(new bb::cascades::ArrayDataModel(this)),
-      m_imageThread(0), m_imageWorker(0), m_pendingAttachmentIsImage(false) {
+      m_imageThread(0), m_imageWorker(0), m_pendingAttachmentIsImage(false),
+      m_lastTypingSentMs(0) {
   if (m_client) {
     connect(this, SIGNAL(initialMessagesRequested(QString, QString)), m_client,
             SLOT(loadInitialChatMessages(QString, QString)));
@@ -113,6 +114,8 @@ ChatController::ChatController(DiscordClient *client, AppStore *store,
                                     QStringList)),
         m_client,
         SLOT(sendChatMessage(QString, QString, QString, QString, QStringList)));
+    connect(this, SIGNAL(typingRequested(QString)), m_client,
+            SLOT(sendChatTyping(QString)));
     connect(this, SIGNAL(editMessageRequested(QString, QString, QString)),
             m_client, SLOT(editChatMessage(QString, QString, QString)));
     connect(this, SIGNAL(deleteMessageRequested(QString, QString)), m_client,
@@ -420,6 +423,26 @@ QString ChatController::sendMessage(const QString &content,
                             message.replyMessageId, attachmentPaths);
   clearPendingAttachment();
   return pendingId;
+}
+
+void ChatController::notifyTyping() {
+  // The official client re-sends the typing event about every 8-10 s while the user
+  // keeps typing; a Discord typing indicator lasts ~10 s.
+  const qint64 kTypingIntervalMs = 8000;
+  QString channelId = safeCurrentChannelId();
+  if (channelId.isEmpty() || !m_store) {
+    return;
+  }
+
+  qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+  if (channelId == m_lastTypingChannelId && m_lastTypingSentMs != 0 &&
+      nowMs - m_lastTypingSentMs < kTypingIntervalMs) {
+    return;
+  }
+
+  m_lastTypingSentMs = nowMs;
+  m_lastTypingChannelId = channelId;
+  emit typingRequested(channelId);
 }
 
 void ChatController::editMessage(const QString &messageId,
@@ -783,7 +806,16 @@ QString ChatController::safeCurrentChannelId() const {
 }
 
 QString ChatController::buildPendingMessageId() const {
-  return QString("pending-%1").arg(QDateTime::currentMSecsSinceEpoch());
+  // Real Discord clients send a numeric snowflake as the message nonce; a
+  // non-numeric value such as "pending-<ms>" is an easy automation tell. Build a
+  // snowflake from the current time (ms since the Discord epoch, 2015-01-01) plus a
+  // per-process counter in the low 12 bits so two sends in the same ms never collide.
+  static quint64 counter = 0;
+  const quint64 kDiscordEpochMs = 1420070400000ULL;
+  quint64 nowMs = static_cast<quint64>(QDateTime::currentMSecsSinceEpoch());
+  quint64 snowflake =
+      ((nowMs - kDiscordEpochMs) << 22) | (counter++ & 0xFFFULL);
+  return QString::number(snowflake);
 }
 
 QVariantMap ChatController::findCachedMessage(const QString &messageId) const {

@@ -249,6 +249,14 @@ QByteArray DiscordUtils::desktopUserAgentHeader() {
   return QByteArray("User-Agent: ") + desktopUserAgent() + QByteArray("\r\n");
 }
 
+int DiscordUtils::clientBuildNumber() { return 400000; }
+
+QString DiscordUtils::clientBrowserName() { return QString("Chrome"); }
+
+QString DiscordUtils::clientBrowserVersion() { return QString("149.0.0.0"); }
+
+QString DiscordUtils::clientLocale() { return QString("en-US"); }
+
 QByteArray DiscordUtils::superPropertiesHeader() {
   // Mirrors the User-Agent (Chrome 149 on Windows 10/11); mismatched headers can
   // trigger Discord's risk scoring. Values need not be exact (see DiscordUtils.hpp).
@@ -258,18 +266,18 @@ QByteArray DiscordUtils::superPropertiesHeader() {
   // "Invalid Form Body". Every field below is a plain string/int.
   QVariantMap properties;
   properties["os"] = QString("Windows");
-  properties["browser"] = QString("Chrome");
+  properties["browser"] = clientBrowserName();
   properties["device"] = QString("");
-  properties["system_locale"] = QString("en-US");
+  properties["system_locale"] = clientLocale();
   properties["browser_user_agent"] = QString::fromUtf8(desktopUserAgent());
-  properties["browser_version"] = QString("149.0.0.0");
+  properties["browser_version"] = clientBrowserVersion();
   properties["os_version"] = QString("10");
   properties["referrer"] = QString("");
   properties["referring_domain"] = QString("");
   properties["referrer_current"] = QString("");
   properties["referring_domain_current"] = QString("");
   properties["release_channel"] = QString("stable");
-  properties["client_build_number"] = 400000;
+  properties["client_build_number"] = clientBuildNumber();
 
   bb::data::JsonDataAccess json;
   QByteArray propertiesJson;
@@ -277,6 +285,13 @@ QByteArray DiscordUtils::superPropertiesHeader() {
 
   QByteArray encoded = propertiesJson.toBase64();
   return QByteArray("X-Super-Properties: ") + encoded + QByteArray("\r\n");
+}
+
+QByteArray DiscordUtils::apiClientHeaders() {
+  return superPropertiesHeader() + QByteArray("X-Discord-Locale: ") +
+         clientLocale().toUtf8() + QByteArray("\r\n") +
+         QByteArray("Accept-Language: ") + clientLocale().toUtf8() +
+         QByteArray(",en;q=0.9\r\n");
 }
 
 QString DiscordUtils::firstLetter(const QString &text) {

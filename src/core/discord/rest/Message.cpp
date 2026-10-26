@@ -311,3 +311,27 @@ QByteArray DiscordRestClient::buildMultipartMessageBody(
   }
   return body;
 }
+
+void DiscordRestClient::sendTyping(const QString &token,
+                                   const QString &channelId) {
+  RestRequest request;
+  request.token = token.trimmed();
+  request.channelId = channelId.trimmed();
+  if (request.token.isEmpty() || request.channelId.isEmpty()) {
+    return;
+  }
+
+  // One queued typing ping per channel is enough.
+  for (int i = 0; i < m_requestQueue.size(); ++i) {
+    if (m_requestQueue.at(i).type == TypingRequest &&
+        m_requestQueue.at(i).channelId == request.channelId) {
+      return;
+    }
+  }
+
+  request.requestMethod = "POST";
+  request.requestPath =
+      QString("/api/v9/channels/%1/typing").arg(request.channelId);
+  request.type = TypingRequest;
+  enqueueRequest(request);
+}

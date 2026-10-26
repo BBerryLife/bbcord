@@ -17,19 +17,27 @@ void DiscordRestClient::sendApiRequest(struct mg_connection *connection) {
   QByteArray hostBytes = hostHeader(apiBaseUrl()).toUtf8();
   QByteArray tokenBytes = m_token.toUtf8();
   QByteArray userAgent = DiscordUtils::desktopUserAgent();
+  QByteArray clientHeaders = DiscordUtils::apiClientHeaders();
   QByteArray methodBytes =
       m_requestMethod.isEmpty() ? QByteArray("GET") : m_requestMethod.toUtf8();
   if (m_requestBody.isEmpty()) {
+    // A body-less POST (e.g. typing) still needs an explicit Content-Length: 0.
+    QByteArray lengthHeader = methodBytes == "POST" || methodBytes == "PUT"
+                                  ? QByteArray("Content-Length: 0\r\n")
+                                  : QByteArray();
     mg_printf(connection,
               "%s %s HTTP/1.1\r\n"
               "Host: %s\r\n"
               "Authorization: %s\r\n"
               "User-Agent: %s\r\n"
+              "%s"
+              "%s"
               "Accept: application/json\r\n"
               "Connection: keep-alive\r\n\r\n",
               methodBytes.constData(), pathBytes.constData(),
               hostBytes.constData(), tokenBytes.constData(),
-              userAgent.constData());
+              userAgent.constData(), clientHeaders.constData(),
+              lengthHeader.constData());
     return;
   }
 
@@ -41,13 +49,15 @@ void DiscordRestClient::sendApiRequest(struct mg_connection *connection) {
             "Host: %s\r\n"
             "Authorization: %s\r\n"
             "User-Agent: %s\r\n"
+            "%s"
             "Accept: application/json\r\n"
             "Content-Type: %s\r\n"
             "Content-Length: %d\r\n"
             "Connection: keep-alive\r\n\r\n",
             methodBytes.constData(), pathBytes.constData(),
             hostBytes.constData(), tokenBytes.constData(),
-            userAgent.constData(), contentTypeBytes.constData(),
+            userAgent.constData(), clientHeaders.constData(),
+            contentTypeBytes.constData(),
             static_cast<int>(m_requestBody.size()));
   mg_send(connection, m_requestBody.constData(),
           static_cast<size_t>(m_requestBody.size()));

@@ -3,8 +3,10 @@
 #include "JsonParser.hpp"
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QDebug>
 #include <QSettings>
+#include <QTimer>
 #include <QUrl>
 
 extern "C" {
@@ -28,6 +30,15 @@ const int kKeepAliveIdleTimeoutTicks = 300;
 // network stack), so retry once transparently before surfacing "Discord REST
 // timeout". Only this timeout path retries; other errors fail immediately.
 const int kMaxTimeoutRetries = 1;
+
+// Minimum gap between two message POSTs. A human cannot send faster than this, and
+// bursts of identical-looking sends are what Discord's DM spam checks react to.
+const int kMinSendIntervalMs = 1000;
+// A 429 is a rejection (nothing was posted), so re-sending is safe: do it at most
+// this many times, and only when Discord asks for a short wait. Longer waits are
+// shown to the user instead of being hammered.
+const int kMaxRateLimitRetries = 2;
+const int kMaxAutoRetryAfterMs = 30000;
 
 // Mongoose's default 3s DNS timeout is too short on mobile/BB10 Wi-Fi and fails
 // mid-use (e.g. while typing the MFA code); raised for slower networks.
@@ -113,7 +124,8 @@ DiscordRestClient::DiscordRestClient(QObject *parent)
       m_idleTicks(0), m_timeoutRetriesLeft(kMaxTimeoutRetries),
       m_requestType(NoRequest), m_awaitingFingerprint(false),
       m_hasPendingCaptchaRequest(false), m_isProcessing(false),
-      m_requestSent(false), m_finished(true) {
+      m_requestSent(false), m_finished(true), m_nextSendAllowedMs(0),
+      m_sendDelayScheduled(false), m_rateLimitRetriesLeft(kMaxRateLimitRetries) {
   m_mgr = new mg_mgr;
   mg_mgr_init(m_mgr);
   m_mgr->dnstimeout = kDnsTimeoutMs;
@@ -203,7 +215,15 @@ void DiscordRestClient::timerEvent(QTimerEvent *event) {
       m_connection = NULL;
       m_connectionUrl.clear();
 
-      if (m_timeoutRetriesLeft > 0) {
+      // A message POST that was already written to the socket may have reached
+      // Discord even though the response was lost (typical with a dead keep-alive
+      // socket). Re-sending it would post a duplicate, which looks like spam in DMs,
+      // so only retry sends that never left the device; otherwise surface the error
+      // and let the user resend explicitly.
+      bool sendAlreadyTransmitted =
+          m_requestSent && (m_requestType == SendMessageRequest ||
+                            m_requestType == UploadMessageRequest);
+      if (m_timeoutRetriesLeft > 0 && !sendAlreadyTransmitted) {
         // Retry the same request. Build it from the m_request*/m_login*/m_mfa* fields
         // before finishRequest(), which clears them (including wiping m_loginPassword).
         --m_timeoutRetriesLeft;
@@ -215,7 +235,21 @@ void DiscordRestClient::timerEvent(QTimerEvent *event) {
         return;
       }
 
-      failWithMessage("Discord REST timeout");
+      // Route the timeout to the right failure channel. Sends/edits/deletes must reach
+      // the chat UI (so the pending message is marked failed, not left spinning), and
+      // data requests must not be reported as a login failure.
+      if (m_requestType == LoginRequest || m_requestType == PasswordLoginRequest ||
+          m_requestType == MfaTotpRequest) {
+        failWithMessage("Discord REST timeout");
+      } else if (m_requestType == ChannelMessagesRequest ||
+                 m_requestType == SendMessageRequest ||
+                 m_requestType == UploadMessageRequest ||
+                 m_requestType == EditMessageRequest ||
+                 m_requestType == DeleteMessageRequest) {
+        failChatRequest("Discord REST timeout");
+      } else {
+        failDataRequest("Discord REST timeout");
+      }
     }
   } else {
     stopTimerIfIdle();
@@ -231,11 +265,17 @@ void DiscordRestClient::eventHandler(struct mg_connection *connection,
   }
 }
 
+void DiscordRestClient::resumeQueue() {
+  m_sendDelayScheduled = false;
+  processNextRequest();
+}
+
 void DiscordRestClient::enqueueRequest(const RestRequest &request) {
   // Reset the retry budget only here, the one place a genuinely new request enters
   // the queue. Resetting in processNextRequest()/finishRequest() would make the
   // retry loop infinite.
   m_timeoutRetriesLeft = kMaxTimeoutRetries;
+  m_rateLimitRetriesLeft = kMaxRateLimitRetries;
   m_requestQueue.append(request);
   processNextRequest();
 }
@@ -320,6 +360,24 @@ QString DiscordRestClient::cdnRequestPath(const QString &requestPath) const {
 void DiscordRestClient::processNextRequest() {
   if (m_isProcessing || m_requestQueue.isEmpty()) {
     return;
+  }
+
+  // Pace message sends: if the next request is a send that would go out too soon after
+  // the previous one (or Discord asked us to wait after a 429), hold the queue and
+  // resume from a timer.
+  bool nextIsSend = m_requestQueue.first().type == SendMessageRequest ||
+                    m_requestQueue.first().type == UploadMessageRequest;
+  if (nextIsSend) {
+    qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs < m_nextSendAllowedMs) {
+      if (!m_sendDelayScheduled) {
+        m_sendDelayScheduled = true;
+        QTimer::singleShot(static_cast<int>(m_nextSendAllowedMs - nowMs) + 1,
+                           this, SLOT(resumeQueue()));
+      }
+      return;
+    }
+    m_nextSendAllowedMs = nowMs + kMinSendIntervalMs;
   }
 
   RestRequest restRequest = m_requestQueue.takeFirst();
@@ -501,6 +559,13 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
     QByteArray body = httpBodyToBytes(message);
     bool keepConnectionAlive = responseAllowsKeepAlive(message);
 
+    if (m_requestType == TypingRequest) {
+      // Best effort: whatever the answer (204, 429, error), nothing to report.
+      finishRequest(keepConnectionAlive);
+      processNextRequest();
+      break;
+    }
+
     if (m_requestType == AvatarRequest || m_requestType == GuildIconRequest) {
       qDebug() << "[discord-rest] avatar status" << status;
       if (status == 200) {
@@ -605,6 +670,37 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
         }
         processNextRequest();
         break;
+      }
+
+      if (sending && status == 429 && m_rateLimitRetriesLeft > 0) {
+        // Rejected, not posted: safe to re-send once Discord's requested wait is over.
+        double retryAfterSec = 0.0;
+        QString rateParseError;
+        QVariantMap rateBody =
+            DiscordJsonParser::parseObject(body, &rateParseError);
+        if (rateParseError.isEmpty()) {
+          retryAfterSec = rateBody.value("retry_after").toDouble();
+        }
+        if (retryAfterSec <= 0.0) {
+          struct mg_str *retryHeader = mg_http_get_header(message, "Retry-After");
+          if (retryHeader != NULL) {
+            retryAfterSec =
+                QString::fromUtf8(retryHeader->buf,
+                                  static_cast<int>(retryHeader->len))
+                    .toDouble();
+          }
+        }
+        int waitMs = static_cast<int>(retryAfterSec * 1000.0) + 250;
+        if (retryAfterSec > 0.0 && waitMs <= kMaxAutoRetryAfterMs) {
+          --m_rateLimitRetriesLeft;
+          qDebug() << "[discord-rest] send rate limited, retrying in" << waitMs
+                   << "ms";
+          m_nextSendAllowedMs = QDateTime::currentMSecsSinceEpoch() + waitMs;
+          requeueCurrentRequestForRetry();
+          finishRequest(keepConnectionAlive);
+          processNextRequest();
+          break;
+        }
       }
 
       failChatRequest(
@@ -1053,6 +1149,11 @@ void DiscordRestClient::failWithMessage(const QString &message) {
   if (m_finished) {
     return;
   }
+  if (m_requestType == TypingRequest) {
+    finishRequest();
+    processNextRequest();
+    return;
+  }
 
   QString safeMessage = message.trimmed();
   if (safeMessage.isEmpty()) {
@@ -1068,6 +1169,11 @@ void DiscordRestClient::failDataRequest(const QString &message) {
   if (m_finished) {
     return;
   }
+  if (m_requestType == TypingRequest) {
+    finishRequest();
+    processNextRequest();
+    return;
+  }
 
   QString safeMessage = message.trimmed();
   if (safeMessage.isEmpty()) {
@@ -1081,6 +1187,11 @@ void DiscordRestClient::failDataRequest(const QString &message) {
 
 void DiscordRestClient::failChatRequest(const QString &message) {
   if (m_finished) {
+    return;
+  }
+  if (m_requestType == TypingRequest) {
+    finishRequest();
+    processNextRequest();
     return;
   }
 

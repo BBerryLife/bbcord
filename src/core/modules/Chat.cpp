@@ -152,6 +152,18 @@ void DiscordClient::sendChatMessage(const QString &channelId,
   }
 }
 
+void DiscordClient::sendChatTyping(const QString &channelId) {
+  QString safeChannelId = channelId.trimmed();
+  if (safeChannelId.isEmpty() || m_token.trimmed().isEmpty() ||
+      m_networkWorker == 0) {
+    return;
+  }
+
+  QMetaObject::invokeMethod(m_networkWorker, "sendTyping",
+                            Qt::QueuedConnection, Q_ARG(QString, m_token),
+                            Q_ARG(QString, safeChannelId));
+}
+
 void DiscordClient::editChatMessage(const QString &channelId,
                                     const QString &messageId,
                                     const QString &content) {

@@ -40,6 +40,7 @@ public Q_SLOTS:
                           const QStringList &attachmentPaths);
   void editChannelMessage(const QString &token, const QString &channelId,
                           const QString &messageId, const QString &content);
+  void sendTyping(const QString &token, const QString &channelId);
   void deleteChannelMessage(const QString &token, const QString &channelId,
                             const QString &messageId);
   void downloadAvatar(const QString &userId, const QString &avatarHash,

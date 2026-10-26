@@ -1,5 +1,7 @@
 #include "JsonParser.hpp"
 
+#include "DiscordUtils.hpp"
+
 #include <bb/data/JsonDataAccess>
 
 namespace {
@@ -96,21 +98,22 @@ QVariantList DiscordJsonParser::parseArray(const QByteArray &bytes,
 QByteArray DiscordJsonParser::buildIdentifyPayload(const QString &token,
                                                    QString *errorMessage) {
   QVariantMap properties;
+  // Must stay identical to DiscordUtils::superPropertiesHeader() (REST): same
+  // browser, version, UA and build number on both channels.
   properties["os"] = "Windows";
-  properties["browser"] = "Discord Client";
+  properties["browser"] = DiscordUtils::clientBrowserName();
   properties["device"] = "";
-  properties["system_locale"] = "en-US";
+  properties["system_locale"] = DiscordUtils::clientLocale();
   properties["browser_user_agent"] =
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, "
-      "like Gecko) Chrome/149.0.0.0 Safari/537.36";
-  properties["browser_version"] = "149.0.0.0";
+      QString::fromUtf8(DiscordUtils::desktopUserAgent());
+  properties["browser_version"] = DiscordUtils::clientBrowserVersion();
   properties["os_version"] = "10";
   properties["referrer"] = "";
   properties["referring_domain"] = "";
   properties["referrer_current"] = "";
   properties["referring_domain_current"] = "";
   properties["release_channel"] = "stable";
-  properties["client_build_number"] = 375000;
+  properties["client_build_number"] = DiscordUtils::clientBuildNumber();
   properties["client_event_source"] = QVariant();
 
   QVariantMap data;

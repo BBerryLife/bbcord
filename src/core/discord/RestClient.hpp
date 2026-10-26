@@ -28,6 +28,7 @@ enum RequestType {
   UploadMessageRequest,
   EditMessageRequest,
   DeleteMessageRequest,
+  TypingRequest,
   AvatarRequest,
   GuildIconRequest,
   SelfGuildMemberRequest
@@ -106,6 +107,9 @@ public:
                           const QString &messageId, const QString &content);
   void deleteChannelMessage(const QString &token, const QString &channelId,
                             const QString &messageId);
+  // Fire-and-forget "user is typing" ping (POST /channels/{id}/typing). Failures are
+  // silent; at most one is queued per channel.
+  void sendTyping(const QString &token, const QString &channelId);
   void downloadAvatar(const QString &userId, const QString &avatarHash,
                       const QString &outputPath);
   void downloadGuildIcon(const QString &guildId, const QString &iconHash,
@@ -162,6 +166,10 @@ Q_SIGNALS:
 
 protected:
   virtual void timerEvent(QTimerEvent *event);
+
+private Q_SLOTS:
+  // Fired by the send-pacing timer; resumes a queue held back by processNextRequest().
+  void resumeQueue();
 
 private:
   static void eventHandler(struct mg_connection *connection, int event,
@@ -243,6 +251,12 @@ private:
   bool m_isProcessing;
   bool m_requestSent;
   bool m_finished;
+  // Send pacing: earliest time (ms since epoch) the next message POST may go out, and
+  // whether a resumeQueue() timer is already pending.
+  qint64 m_nextSendAllowedMs;
+  bool m_sendDelayScheduled;
+  // Remaining automatic retries after an HTTP 429 on a send. Reset only in enqueueRequest().
+  int m_rateLimitRetriesLeft;
 };
 
 #endif /* RestClient_HPP_ */

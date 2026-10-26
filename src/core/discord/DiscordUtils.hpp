@@ -16,6 +16,17 @@ QByteArray desktopUserAgentHeader();
 // values matter less than it being present and consistent with the User-Agent.
 // Returns the full header line ("X-Super-Properties: ...\r\n"), like desktopUserAgentHeader().
 QByteArray superPropertiesHeader();
+// Single source of truth for the client identity, so the REST headers
+// (X-Super-Properties) and the gateway IDENTIFY properties never disagree. Update the
+// build number here when it gets stale.
+int clientBuildNumber();
+QString clientBrowserName();
+QString clientBrowserVersion();
+QString clientLocale();
+// Extra headers a normal client sends on every authenticated REST request
+// (X-Super-Properties, X-Discord-Locale, Accept-Language), as complete header lines
+// ending in "\r\n". Not for the CDN requests.
+QByteArray apiClientHeaders();
 
 QString firstLetter(const QString &text);
 QString firstTwoWordLetters(const QString &text);
