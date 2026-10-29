@@ -103,6 +103,7 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/core/AvatarCacheWorker.cpp) \
         $$quote($$BASEDIR/src/core/Client.cpp) \
         $$quote($$BASEDIR/src/core/HubIntegration.cpp) \
+        $$quote($$BASEDIR/src/core/HubShared.cpp) \
         $$quote($$BASEDIR/src/core/client/AvatarManager.cpp) \
         $$quote($$BASEDIR/src/core/client/AvatarState.cpp) \
         $$quote($$BASEDIR/src/core/client/CacheManager.cpp) \
@@ -152,6 +153,8 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/core/AvatarCacheWorker.hpp) \
         $$quote($$BASEDIR/src/core/Client.hpp) \
         $$quote($$BASEDIR/src/core/HubIntegration.hpp) \
+        $$quote($$BASEDIR/src/core/HubShared.hpp) \
+        $$quote($$BASEDIR/src/core/ServiceHandoff.hpp) \
         $$quote($$BASEDIR/src/core/client/AvatarManager.hpp) \
         $$quote($$BASEDIR/src/core/client/AvatarState.hpp) \
         $$quote($$BASEDIR/src/core/client/CacheManager.hpp) \

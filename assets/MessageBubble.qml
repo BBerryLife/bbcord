@@ -25,8 +25,9 @@ Container {
     property string replyMessageHtml: ""
     property string replyMessageId: ""
     property bool mentionsCurrentUser: false
-    // Transient flash for "jump to original message" (set briefly by the parent),
-    // separate from the persistent mentionsCurrentUser highlight.
+    // Transient flash for "jump to original message", bound by the parent to the page's
+    // highlightedMessageId (which the page clears), separate from the persistent
+    // mentionsCurrentUser highlight.
     property bool jumpHighlighted: false
     property string image: ""
     property int imageWidth: 0
@@ -71,16 +72,10 @@ Container {
     topPadding: root.compactMessage ? ui.du(0.1) : (root.isGroupStart ? ui.du(1.5) : ui.du(0.1))
     bottomPadding: root.compactMessage ? ui.du(0.1) : (root.isGroupEnd ? ui.du(1.0) : ui.du(0.2))
     // Soft yellow tint when the message mentions the current user (direct,
-    // @everyone/@here or role); jumpHighlighted uses the same color.
-    background: (root.mentionsCurrentUser || root.jumpHighlighted) ? Color.create("#3A3427") : Color.Transparent
-
-    onJumpHighlightedChanged: {
-        if (jumpHighlighted) {
-            // QML1 Timer may lack restart(); toggling running off/on resets it.
-            jumpHighlightTimer.running = false;
-            jumpHighlightTimer.running = true;
-        }
-    }
+    // @everyone/@here or role).
+    // The jump flash is a clearly visible blue tint (the soft yellow one was too easy to
+    // miss in a long chat).
+    background: root.jumpHighlighted ? Color.create("#3B4A8F") : (root.mentionsCurrentUser ? Color.create("#3A3427") : Color.Transparent)
 
     layout: StackLayout {
         orientation: LayoutOrientation.LeftToRight
@@ -143,14 +138,6 @@ Container {
     attachedObjects: [
         ArrayDataModel {
             id: attachmentModel
-        },
-        Timer {
-            id: jumpHighlightTimer
-            interval: 1500
-            repeat: false
-            onTriggered: {
-                root.jumpHighlighted = false;
-            }
         },
         // Rebuild is deferred via a zero-interval singleShot Timer: a recycled
         // delegate's messageId and emojiSegments may not update in the same tick, and the

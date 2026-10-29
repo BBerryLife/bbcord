@@ -18,6 +18,7 @@
 
 #include "core/AppStore.hpp"
 #include "core/Client.hpp"
+#include "core/ServiceHandoff.hpp"
 #include "core/discord/JsonParser.hpp"
 #include "ui/AboutController.hpp"
 #include "ui/ChatController.hpp"
@@ -39,6 +40,7 @@
 #include <bb/system/InvokeManager>
 #include <bb/system/InvokeRequest>
 
+#include <QCoreApplication>
 #include <QDebug>
 
 using namespace bb::cascades;
@@ -58,7 +60,7 @@ ApplicationUI::ApplicationUI()
       m_serverListController(
           new ServerListController(m_discordClient, m_appStore, this)),
       m_aboutController(new AboutController(this)),
-      m_cardHandoffReady(false), m_cardInvokeDataReady(false) {
+      m_cardHandoffReady(false), m_cardInvokeDataReady(false), m_exitHandled(false) {
   // prepare the localization
   m_pTranslator = new QTranslator(this);
   m_pLocaleHandler = new LocaleHandler(this);
@@ -92,6 +94,16 @@ ApplicationUI::ApplicationUI()
   qDebug() << "[Hub][invoke] InvokeManager connected (invoked=" << invokeConnected
            << ", cardResizeRequested=" << resizeConnected << ") startupMode="
            << startupMode;
+
+  // Handoff with the BBCordHeadless service: while this UI is alive it owns the Discord
+  // gateway; when it goes away the service takes over (see ServiceHandoff.hpp).
+  ServiceHandoff::markUiAlive();
+  pingHandoffService(ServiceHandoff::ACTION_UI_OPENED);
+  QObject::connect(bb::cascades::Application::instance(), SIGNAL(manualExit()), this,
+                   SLOT(onManualExit()));
+  // manualExit() does not fire when the app is swiped closed, so also hook aboutToQuit().
+  QObject::connect(QCoreApplication::instance(), SIGNAL(aboutToQuit()), this,
+                   SLOT(onAboutToQuit()));
 
   QObject::connect(m_settingsController, SIGNAL(cacheCleared()),
                    m_discordClient, SLOT(clearAvatarCacheState()));
@@ -172,6 +184,41 @@ void ApplicationUI::onSystemLanguageChanged() {
   if (m_pTranslator->load(file_name, "app/native/qm")) {
     QCoreApplication::instance()->installTranslator(m_pTranslator);
   }
+}
+
+void ApplicationUI::pingHandoffService(const char *action) {
+  bb::system::InvokeTargetReply *reply =
+      ServiceHandoff::pingService(m_pInvokeManager, action);
+  if (!reply) {
+    return;
+  }
+  connect(reply, SIGNAL(finished()), this, SLOT(onServicePingFinished()));
+}
+
+void ApplicationUI::onServicePingFinished() {
+  bb::system::InvokeTargetReply *reply =
+      qobject_cast<bb::system::InvokeTargetReply *>(sender());
+  if (!reply) {
+    return;
+  }
+  // error() == 0 means Navigator accepted the invoke (even if it had to start the service).
+  qDebug() << "[Handoff] service ping finished, error=" << reply->error();
+  reply->deleteLater();
+}
+
+void ApplicationUI::onAboutToQuit() {
+  if (m_exitHandled) {
+    return;
+  }
+  m_exitHandled = true;
+  // The pid file is what the service polls; the invoke wakes it up (or starts it).
+  ServiceHandoff::markUiGone();
+  pingHandoffService(ServiceHandoff::ACTION_UI_CLOSED);
+}
+
+void ApplicationUI::onManualExit() {
+  onAboutToQuit();
+  bb::cascades::Application::instance()->quit();
 }
 
 void ApplicationUI::onInvoked(const bb::system::InvokeRequest &request) {

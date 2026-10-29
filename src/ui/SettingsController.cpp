@@ -139,6 +139,28 @@ bool SettingsController::resetDiscordBackend() {
   return apiChanged && cdnChanged;
 }
 
+// Exports the headless service's log next to the app log, so one export covers both. The
+// service writes <home>/bbcord_service.log (see BBCordHeadless/src/main.cpp). If it is not
+// there the service never ran, which is itself the answer, so a note is written instead.
+static void exportServiceLog(const QString &destDirPath, const QString &stamp) {
+  QString src = QDir::homePath() + "/bbcord_service.log";
+  QString dest = QDir(destDirPath).absoluteFilePath(
+      QString("bbcord-service-log-%1.log").arg(stamp));
+  if (QFile::exists(dest)) {
+    QFile::remove(dest);
+  }
+  if (QFile::exists(src) && QFile::copy(src, dest)) {
+    return;
+  }
+  QFile note(dest);
+  if (note.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    note.write(QString("No service log at %1 - the BBCordHeadless service has "
+                       "not run (or could not write its log).\n")
+                   .arg(src)
+                   .toUtf8());
+  }
+}
+
 QString SettingsController::exportLog() {
   QString logPath = Logger::logFilePath();
   QFileInfo logInfo(logPath);
@@ -161,6 +183,8 @@ QString SettingsController::exportLog() {
       QFile::remove(sharedPath);
     }
     if (QFile::copy(logPath, sharedPath)) {
+      exportServiceLog(sharedDir.absolutePath(),
+                       QFileInfo(destFileName).baseName().mid(11));
       return sharedPath;
     }
     qWarning() << "[settings] failed to copy log to" << sharedPath
@@ -188,6 +212,8 @@ QString SettingsController::exportLog() {
     qWarning() << "[settings] failed to copy log to" << sandboxPath;
     return QString();
   }
+  exportServiceLog(sandboxDir.absolutePath(),
+                   QFileInfo(destFileName).baseName().mid(11));
   return sandboxPath;
 }
 

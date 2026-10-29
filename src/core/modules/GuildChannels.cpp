@@ -3,6 +3,8 @@
 #include "../AppStore.hpp"
 #include "../Client.hpp"
 #include "../HubIntegration.hpp"
+#include "../client/AvatarManager.hpp"
+#include "../client/CacheManager.hpp"
 #include "../client/ItemMapper.hpp"
 #include "../client/PermissionUtils.hpp"
 #include "../client/SortUtils.hpp"
@@ -184,6 +186,59 @@ void DiscordClient::selectChannel(const QString &channelId) {
 
   scheduleGuildsCacheSave();
   scheduleDmChannelsCacheSave();
+}
+
+void DiscordClient::setHeadlessMode(bool headless) {
+  if (m_avatarManager != 0) {
+    m_avatarManager->setEnabled(!headless);
+  }
+  if (m_cacheManager != 0) {
+    m_cacheManager->setReadOnly(headless);
+  }
+  if (m_hubIntegration != 0) {
+    m_hubIntegration->setServiceMode(headless);
+  }
+}
+
+bool DiscordClient::applyHubItemAction(const QString &action,
+                                       const QString &channelId) {
+  // The headless service has already updated Hub (and its persisted item state); this
+  // only mirrors the action in the app's own unread state.
+  QString safeChannelId = channelId.trimmed();
+  if (safeChannelId.isEmpty()) {
+    return false;
+  }
+
+  if (action == QLatin1String(HubShared::ACTION_MARK_READ)) {
+    if (m_store) {
+      m_store->clearChannelUnread(safeChannelId);
+    }
+    // forceGuildBadgeRecompute: the channel flag may already be clear while the guild
+    // badge is stale. No-op for a channel this session does not list (e.g. a DM).
+    clearChannelUnreadStateAndRecomputeGuildBadge(safeChannelId, true);
+    return true;
+  }
+
+  if (action == QLatin1String(HubShared::ACTION_MARK_UNREAD)) {
+    // A channel that is open right now would show as unread while being read.
+    if (m_store && m_store->selectedChannelId() != safeChannelId) {
+      // Recorded independently so it also applies once its guild is opened (see
+      // AppStore::markChannelUnread()).
+      m_store->markChannelUnread(safeChannelId);
+      bool changed = updateGuildChannelUnread(safeChannelId, true);
+      if (changed) {
+        m_store->setGuildChannels(m_visibleGuildChannels);
+      }
+      QString ownerGuildId = m_chatGuildByChannelId.value(safeChannelId).trimmed();
+      if (!ownerGuildId.isEmpty()) {
+        updateGuildUnread(ownerGuildId, true);
+      }
+    }
+    return true;
+  }
+
+  // ACTION_DELETE: the Hub row is gone; the in-app state does not depend on it.
+  return action == QLatin1String(HubShared::ACTION_DELETE);
 }
 
 void DiscordClient::clearChannelUnreadStateAndRecomputeGuildBadge(

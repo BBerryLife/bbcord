@@ -29,21 +29,45 @@
     <id>ch.michioxd.bbcord</id>
     <configuration name="Device-Debug">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="arm/o.le-v7-g/BBCord" entry="true" type="Qnx/Elf">BBCord</asset>
+       <entryPointType>Qnx/Elf</entryPointType>
+       <asset entryPointId="BBCord" path="arm/o.le-v7-g/BBCord" entry="true" type="Qnx/Elf">BBCord</asset>
+       <asset entryPointId="BBCordHeadless" path="../BBCordHeadless/arm/BBCordHeadless" type="Qnx/Elf">BBCordHeadless</asset>
     </configuration>
     <configuration name="Device-Release">
        <entryPointType>Qnx/Cascades</entryPointType>
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="arm/o.le-v7/BBCord.so" entry="true" type="Qnx/Elf">BBCord.so</asset>
+       <asset entryPointId="BBCord" path="arm/o.le-v7/BBCord.so" entry="true" type="Qnx/Elf">BBCord.so</asset>
+       <asset entryPointId="BBCordHeadless" path="../BBCordHeadless/arm/BBCordHeadless" type="Qnx/Elf">BBCordHeadless</asset>
     </configuration>
     <configuration name="Device-Profile">
        <platformArchitecture>armle-v7</platformArchitecture>
-       <asset path="arm-p/o.le-v7-g/BBCord" entry="true" type="Qnx/Elf">BBCord</asset>
+       <entryPointType>Qnx/Elf</entryPointType>
+       <asset entryPointId="BBCord" path="arm-p/o.le-v7-g/BBCord" entry="true" type="Qnx/Elf">BBCord</asset>
+       <asset entryPointId="BBCordHeadless" path="../BBCordHeadless/arm/BBCordHeadless" type="Qnx/Elf">BBCordHeadless</asset>
     </configuration>
     <configuration name="Simulator-Debug">
        <platformArchitecture>x86</platformArchitecture>
-       <asset path="x86/o-g/BBCord" entry="true" type="Qnx/Elf">BBCord</asset>
+       <entryPointType>Qnx/Elf</entryPointType>
+       <asset entryPointId="BBCord" path="x86/o-g/BBCord" entry="true" type="Qnx/Elf">BBCord</asset>
+       <asset entryPointId="BBCordHeadless" path="../BBCordHeadless/x86/BBCordHeadless" type="Qnx/Elf">BBCordHeadless</asset>
     </configuration>
+
+    <!-- Two entry points: the UI (BBCord) and the headless service (BBCordHeadless project,
+         built separately; compiles the BBCord core from src/). While the UI is closed the
+         service keeps the Discord gateway connected so DMs/mentions still reach Hub, and it
+         handles Hub's Mark Read / Mark Unread / Delete in the background instead of
+         launching the UI. -->
+    <entryPoint id="BBCord">
+        <name>BBCord</name>
+    </entryPoint>
+
+    <entryPoint id="BBCordHeadless">
+        <name>BBCord Service</name>
+        <entryPointType>Qnx/Elf</entryPointType>
+        <permission system="true">_sys_run_headless</permission>
+        <!-- Keep the service alive in the background (it holds the gateway connection). -->
+        <permission system="true">_sys_headless_nostop</permission>
+    </entryPoint>
 
     <!-- The name that is displayed in the BlackBerry 10 application installer.
          May have multiple values for each language. See samples or xsd schema file. Optional. -->
@@ -145,9 +169,45 @@
         <invoke-target-name>BBCord</invoke-target-name>
         <icon><image>icon.png</image></icon>
         <type>application</type>
+        <entry-point-id>BBCord</entry-point-id>
         <filter>
             <action>bb.action.OPEN</action>
             <action>bb.action.VIEW</action>
+            <!-- Do NOT declare MARKREAD / MARKUNREAD / DELETE here: they belong to the
+                 service's <invoke-target> below. If the UI declared them too, an invoke
+                 without an explicit target (Hub's built-in Delete button) could land in
+                 the UI and launch it. -->
+            <mime-type>application/vnd.bbcord.hub.chat</mime-type>
+            <property var="uris" value="pim:application/vnd.bbcord.hub.chat"/>
+        </filter>
+    </invoke-target>
+
+    <!-- Headless service (HubShared::SERVICE_TARGET). Starts at boot (STARTED) and handles the
+         two handoff actions the UI sends when it opens/closes (ids must match
+         ServiceHandoff.hpp). It is also the Hub account target: short taps and the item
+         actions land here, in the background. OPEN/VIEW are forwarded to the UI target above;
+         MARKREAD / MARKUNREAD / DELETE are handled without any UI. -->
+    <invoke-target id="ch.michioxd.bbcord.service">
+        <invoke-target-type>application.headless</invoke-target-type>
+        <invoke-target-name>BBCord Service</invoke-target-name>
+        <entry-point-id>BBCordHeadless</entry-point-id>
+        <filter>
+            <action>bb.action.system.STARTED</action>
+            <mime-type>application/vnd.blackberry.system.event.STARTED</mime-type>
+            <property var="uris" value="data://local"/>
+        </filter>
+        <filter>
+            <action>ch.michioxd.bbcord.service.UI_OPENED</action>
+            <action>ch.michioxd.bbcord.service.UI_CLOSED</action>
+            <mime-type>*</mime-type>
+            <property var="uris" value="headless:"/>
+        </filter>
+        <filter>
+            <action>bb.action.OPEN</action>
+            <action>bb.action.VIEW</action>
+            <action>bb.action.MARKREAD</action>
+            <action>bb.action.MARKUNREAD</action>
+            <action>bb.action.DELETE</action>
             <mime-type>application/vnd.bbcord.hub.chat</mime-type>
             <property var="uris" value="pim:application/vnd.bbcord.hub.chat"/>
         </filter>
@@ -173,6 +233,7 @@
     <permission system="true">run_native</permission>
     <permission>access_internet</permission>
     <permission system="true">_sys_run_headless</permission>
+    <permission system="true">_sys_headless_nostop</permission>
     <permission>access_shared</permission>
     <permission>use_camera</permission>
     <permission>post_notification</permission>

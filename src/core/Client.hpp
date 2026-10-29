@@ -120,6 +120,15 @@ public Q_SLOTS:
                                      const QString &messageId);
   // Hub cold-start only: resolves guildId/channelName when nothing is cached. Uses the stored token.
   Q_INVOKABLE void fetchChannelInfo(const QString &channelId);
+  // Runs this client for the headless service: no avatar downloads, no bootstrap-cache
+  // writes (those belong to the UI), Hub in service mode. Call before autoLogin().
+  void setHeadlessMode(bool headless);
+
+  // The headless service handled a Hub item action (HubShared::ACTION_MARK_READ /
+  // ACTION_MARK_UNREAD / ACTION_DELETE) on this channel's item. Hub is already updated;
+  // this mirrors it in the in-app unread state. Connected to
+  // HubIntegration::itemActionFromService. Returns false for any other action.
+  bool applyHubItemAction(const QString &action, const QString &channelId);
 
 private Q_SLOTS:
   void onRestLoginSucceeded(const QVariantMap &user, const QString &token);

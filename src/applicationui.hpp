@@ -61,6 +61,11 @@ private Q_SLOTS:
   void onInvoked(const bb::system::InvokeRequest &request);
   // Hub resizes the card window after creation; nothing needs redrawing, so this can be a no-op.
   void onCardResizeRequested(const bb::system::CardResizeMessage &message);
+  // The UI is going away (swipe-close, manual exit or quit): hand the Discord gateway
+  // over to the BBCordHeadless service so DMs/mentions keep arriving in Hub.
+  void onAboutToQuit();
+  void onManualExit();
+  void onServicePingFinished();
 
 Q_SIGNALS:
   // Asks main.qml to open the chat page (selectChannel() only updates backend
@@ -69,6 +74,9 @@ Q_SIGNALS:
                                 const QString &guildId);
 
 private:
+  // Tells the headless service the UI opened/closed (ServiceHandoff::ACTION_*).
+  void pingHandoffService(const char *action);
+
   // Builds the normal full UI from main.qml (every startup except a Hub card).
   void initFullUI();
   // Builds a tiny placeholder scene from HubPreviewCard.qml. Hub resolves a short
@@ -96,6 +104,7 @@ private:
   //   m_cardInvokeDataReady / m_cardInvokeData: stashed by onInvoked() in card mode
   bool m_cardHandoffReady;
   bool m_cardInvokeDataReady;
+  bool m_exitHandled;
   QByteArray m_cardInvokeData;
   // Parses sourceId, selects the guild/channel and calls cardDone(), once both the
   // card UI is shown and the invoke data has arrived.

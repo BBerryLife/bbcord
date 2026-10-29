@@ -124,19 +124,13 @@ Page {
                             ownMessage: ListItemData.ownMessage === true
                             deleteAllowed: ListItemData.deleteAllowed === true
 
-                            // Connections is non-visual, so it goes in attachedObjects (not a direct child of
-                            // a Cascades Container). Its target is ListItem.view, since "chatPage" is not
-                            // resolvable from delegate scope; highlightedMessageId is the alias added above.
-                            attachedObjects: [
-                                Connections {
-                                    target: ListItem.view
-                                    onHighlightedMessageIdChanged: {
-                                        if (ListItem.view.highlightedMessageId !== "" && ListItem.view.highlightedMessageId === messageId) {
-                                            jumpHighlighted = true;
-                                        }
-                                    }
-                                }
-                            ]
+                            // A binding, not a signal handler: the target delegate often does not
+                            // exist yet when the jump starts (the list is virtualized and scrolls
+                            // with an animation), so a one-shot onHighlightedMessageIdChanged missed
+                            // it. A binding is evaluated when the delegate is created or recycled
+                            // too. "chatPage" is not resolvable from delegate scope; highlightedMessageId
+                            // is the alias on the ListView, cleared by chatPage's jumpHighlightTimer.
+                            jumpHighlighted: ListItem.view.highlightedMessageId !== "" && ListItem.view.highlightedMessageId === ListItemData.id
 
                             onEditRequested: {
                                 ListItem.view.startEdit(messageId, message);
@@ -558,6 +552,15 @@ Page {
     }
 
     attachedObjects: [
+        // Long enough to cover the scroll animation plus a moment to spot the message.
+        Timer {
+            id: jumpHighlightTimer
+            interval: 3000
+            repeat: false
+            onTriggered: {
+                chatPage.highlightedMessageId = "";
+            }
+        },
         FilePicker {
             id: attachmentPicker
             title: qsTr("Attach files")
@@ -653,10 +656,13 @@ Page {
         }
 
         messageList.scrollToItem([ index ], ScrollAnimation.Default);
-        // Clear first: assigning the same id again would not re-fire
-        // onHighlightedMessageIdChanged for delegates.
+        // Set before the target delegate may exist; delegates bind to this id (see the
+        // jumpHighlighted binding), then the timer clears it. Restart the timer so a
+        // second tap on the same quote flashes again.
         highlightedMessageId = "";
         highlightedMessageId = messageId;
+        jumpHighlightTimer.running = false;
+        jumpHighlightTimer.running = true;
     }
 
     function clearForChannelSwitch() {

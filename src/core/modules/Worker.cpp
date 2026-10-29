@@ -38,6 +38,10 @@ void DiscordClient::initializeManagers() {
   if (m_hubIntegration == 0) {
     // Do not call init() here: HubIntegration lazy-inits on the first upsertThreadItem(), avoiding UDS IPC cost at startup.
     m_hubIntegration = new HubIntegration(this);
+    // Mark Read / Mark Unread / Delete chosen in Hub are handled by the headless service;
+    // this mirrors them in the app's unread state while the app is running.
+    connect(m_hubIntegration, SIGNAL(itemActionFromService(QString, QString)), this,
+            SLOT(applyHubItemAction(QString, QString)));
   }
 }
 

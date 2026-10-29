@@ -156,37 +156,37 @@
 <context>
     <name>ChatCard</name>
     <message>
-        <location filename="../assets/ChatCard.qml" line="252"/>
+        <location filename="../assets/ChatCard.qml" line="246"/>
         <source>Loading more messages...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="307"/>
+        <location filename="../assets/ChatCard.qml" line="301"/>
         <source>Replying to </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="339"/>
+        <location filename="../assets/ChatCard.qml" line="333"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="406"/>
+        <location filename="../assets/ChatCard.qml" line="400"/>
         <source>File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="481"/>
+        <location filename="../assets/ChatCard.qml" line="475"/>
         <source>Message </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="537"/>
+        <location filename="../assets/ChatCard.qml" line="531"/>
         <source>Editing message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="563"/>
+        <location filename="../assets/ChatCard.qml" line="566"/>
         <source>Attach files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -361,72 +361,72 @@
 <context>
     <name>MessageBubble</name>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="96"/>
+        <location filename="../assets/MessageBubble.qml" line="91"/>
         <source>Reply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="104"/>
+        <location filename="../assets/MessageBubble.qml" line="99"/>
         <source>Copy message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="113"/>
+        <location filename="../assets/MessageBubble.qml" line="108"/>
         <source>Open attachment</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="122"/>
+        <location filename="../assets/MessageBubble.qml" line="117"/>
         <source>Edit</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="131"/>
-        <location filename="../assets/MessageBubble.qml" line="177"/>
+        <location filename="../assets/MessageBubble.qml" line="126"/>
+        <location filename="../assets/MessageBubble.qml" line="164"/>
         <source>Delete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="175"/>
+        <location filename="../assets/MessageBubble.qml" line="162"/>
         <source>Delete message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="176"/>
+        <location filename="../assets/MessageBubble.qml" line="163"/>
         <source>Delete this message?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="178"/>
+        <location filename="../assets/MessageBubble.qml" line="165"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="283"/>
+        <location filename="../assets/MessageBubble.qml" line="270"/>
         <source>failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="283"/>
+        <location filename="../assets/MessageBubble.qml" line="270"/>
         <source>sending</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="283"/>
+        <location filename="../assets/MessageBubble.qml" line="270"/>
         <source>edited</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="429"/>
-        <location filename="../assets/MessageBubble.qml" line="495"/>
-        <location filename="../assets/MessageBubble.qml" line="979"/>
+        <location filename="../assets/MessageBubble.qml" line="416"/>
+        <location filename="../assets/MessageBubble.qml" line="482"/>
+        <location filename="../assets/MessageBubble.qml" line="966"/>
         <source>Open attachment: </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="429"/>
-        <location filename="../assets/MessageBubble.qml" line="495"/>
-        <location filename="../assets/MessageBubble.qml" line="979"/>
+        <location filename="../assets/MessageBubble.qml" line="416"/>
+        <location filename="../assets/MessageBubble.qml" line="482"/>
+        <location filename="../assets/MessageBubble.qml" line="966"/>
         <source>Open image: </source>
         <translation type="unfinished"></translation>
     </message>
@@ -643,7 +643,7 @@
 <context>
     <name>SettingsController</name>
     <message>
-        <location filename="../src/ui/SettingsController.cpp" line="281"/>
+        <location filename="../src/ui/SettingsController.cpp" line="307"/>
         <source>%1 B</source>
         <translation type="unfinished"></translation>
     </message>

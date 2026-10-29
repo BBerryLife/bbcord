@@ -62,7 +62,7 @@ QString presenceColor(const QString &status) {
 
 CacheManager::CacheManager(DiscordClient *client, AppStore *store,
                            QObject *parent)
-    : QObject(parent), m_client(client), m_store(store) {}
+    : QObject(parent), m_readOnly(false), m_client(client), m_store(store) {}
 CacheManager::~CacheManager() {}
 void CacheManager::loadBootstrapCache(
     QVariantList &guilds, QVariantList &allDmChannels,
@@ -134,6 +134,9 @@ void CacheManager::loadBootstrapCache(
 }
 
 void CacheManager::saveGuildsCache(const QVariantList &guilds) const {
+  if (m_readOnly) {
+    return;
+  }
   QVariantMap root;
   root["version"] = kCacheSchemaVersion;
   root["guilds"] = guilds;
@@ -145,6 +148,9 @@ void CacheManager::saveGuildsCache(const QVariantList &guilds) const {
 
 void CacheManager::saveDmChannelsCache(
     const QVariantList &allDmChannels) const {
+  if (m_readOnly) {
+    return;
+  }
   QVariantMap root;
   root["version"] = kCacheSchemaVersion;
   root["channels"] = dmChannelsForCache(allDmChannels);
@@ -155,6 +161,9 @@ void CacheManager::saveDmChannelsCache(
 }
 
 void CacheManager::clearBootstrapCache() const {
+  if (m_readOnly) {
+    return;
+  }
   QFile::remove(guildsCachePath());
   QFile::remove(dmChannelsCachePath());
 }

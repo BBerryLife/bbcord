@@ -15,6 +15,8 @@ public:
                         QObject *parent = 0);
 
   virtual ~CacheManager();
+  // The headless service must not write the bootstrap caches the UI reads at startup.
+  void setReadOnly(bool readOnly) { m_readOnly = readOnly; }
   void loadBootstrapCache(QVariantList &guilds, QVariantList &allDmChannels,
                           QVariantMap &avatarSourcesByUserId,
                           QString &selectedGuildId, bool &bootstrapCacheLoaded,
@@ -32,6 +34,7 @@ private:
   void saveCacheFileAsync(const QString &path, const QVariantMap &root) const;
   QVariantList dmChannelsForCache(const QVariantList &allDmChannels) const;
   QVariantList dmChannelsFromCache(const QVariantList &channels) const;
+  bool m_readOnly;
   DiscordClient *m_client;
   AppStore *m_store;
 };

@@ -11,7 +11,7 @@ AvatarManager::AvatarManager(DiscordClient *client,
                              DiscordNetworkWorker *networkWorker,
                              AvatarCacheWorker *avatarCacheWorker,
                              QObject *parent)
-    : QObject(parent), m_client(client), m_networkWorker(networkWorker),
+    : QObject(parent), m_enabled(true), m_client(client), m_networkWorker(networkWorker),
       m_avatarCacheWorker(avatarCacheWorker) {}
 
 AvatarManager::~AvatarManager() {}
@@ -28,6 +28,9 @@ void AvatarManager::loadCurrentUserAvatar(const DiscordUser &user,
                                           QString &loadingAvatarUserId2,
                                           QQueue<QVariantMap> &pendingAvatars,
                                           QStringList &queuedAvatarUserIds) {
+  if (!m_enabled) {
+    return;
+  }
   if (user.id.isEmpty() || user.avatarHash.isEmpty()) {
     return;
   }
@@ -73,6 +76,9 @@ void AvatarManager::queueDmAvatar(
     QStringList &loadedAvatarUserIds, QVariantMap &avatarCacheRequests,
     QStringList &queuedAvatarUserIds, QString &loadingAvatarUserId,
     QString &loadingAvatarUserId2, QQueue<QVariantMap> &pendingAvatars) {
+  if (!m_enabled) {
+    return;
+  }
   QString safeChannelId = channelId.trimmed();
   QString safeUserId = userId.trimmed();
   QString safeAvatarHash = avatarHash.trimmed();
@@ -145,6 +151,9 @@ void AvatarManager::queueGuildIcon(
     QStringList &loadedGuildIconIds, QVariantMap &guildIconCacheRequests,
     QStringList &queuedGuildIconIds, QString &loadingGuildIconId,
     QString &loadingGuildIconId2, QQueue<QVariantMap> &pendingGuildIcons) {
+  if (!m_enabled) {
+    return;
+  }
   QString safeGuildId = guildId.trimmed();
   QString safeIconHash = iconHash.trimmed();
   if (safeGuildId.isEmpty() || safeIconHash.isEmpty()) {

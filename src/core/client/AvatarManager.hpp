@@ -20,6 +20,9 @@ public:
                          QObject *parent = 0);
 
   virtual ~AvatarManager();
+  // Disabled in the headless service: nobody looks at avatars there, and fetching a few
+  // hundred of them in the background only costs battery and data.
+  void setEnabled(bool enabled) { m_enabled = enabled; }
   void setWorkers(DiscordNetworkWorker *networkWorker,
                   AvatarCacheWorker *avatarCacheWorker);
   void loadCurrentUserAvatar(const DiscordUser &user,
@@ -58,6 +61,7 @@ private:
   QString guildIconCachePath(const QString &guildId,
                              const QString &iconHash) const;
 
+  bool m_enabled;
   DiscordClient *m_client;
   DiscordNetworkWorker *m_networkWorker;
   AvatarCacheWorker *m_avatarCacheWorker;

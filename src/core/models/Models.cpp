@@ -265,6 +265,22 @@ QVariantMap DiscordMessage::toVariantMap() const {
   data["replyMessage"] = replyContent;
   QString resolvedReplyContent = resolveMentions(
       replyContent, replyMentions, replyMentionRoles, replyMentionChannels);
+  // The quote box above a reply is only a hint to the original message. Label has no
+  // line limit, so a long (or many-line) original made the box huge; cap it here, on
+  // the resolved text before toHtml() so no HTML tag can be cut in half.
+  {
+    const int kReplyPreviewMaxChars = 120;
+    QString preview = resolvedReplyContent.simplified(); // newlines/runs of spaces -> one space
+    if (preview.length() > kReplyPreviewMaxChars) {
+      preview = preview.left(kReplyPreviewMaxChars);
+      // Do not leave half of a surrogate pair (emoji) at the cut.
+      if (preview.at(preview.length() - 1).isHighSurrogate()) {
+        preview.chop(1);
+      }
+      preview = preview.trimmed() + QString::fromUtf8("\xe2\x80\xa6");
+    }
+    resolvedReplyContent = preview;
+  }
   data["replyMessageHtml"] = MarkdownParser::toHtml(resolvedReplyContent);
   data["pending"] = pending;
   data["failed"] = failed;
