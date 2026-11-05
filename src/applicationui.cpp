@@ -19,6 +19,7 @@
 #include "core/AppStore.hpp"
 #include "core/Client.hpp"
 #include "core/ServiceHandoff.hpp"
+#include "core/ServiceSession.hpp"
 #include "core/discord/JsonParser.hpp"
 #include "ui/AboutController.hpp"
 #include "ui/ChatController.hpp"
@@ -42,6 +43,7 @@
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QTimer>
 
 using namespace bb::cascades;
 
@@ -99,6 +101,13 @@ ApplicationUI::ApplicationUI()
   // gateway; when it goes away the service takes over (see ServiceHandoff.hpp).
   ServiceHandoff::markUiAlive();
   pingHandoffService(ServiceHandoff::ACTION_UI_OPENED);
+  // Keep the service's notification profile fresh while the UI runs: the service can only
+  // RESUME (not IDENTIFY, see ServiceSession.hpp), so it depends on this data and on the
+  // gateway session file being current when the UI goes away.
+  QTimer *profileTimer = new QTimer(this);
+  profileTimer->setInterval(30000);
+  QObject::connect(profileTimer, SIGNAL(timeout()), this, SLOT(saveServiceProfile()));
+  profileTimer->start();
   QObject::connect(bb::cascades::Application::instance(), SIGNAL(manualExit()), this,
                    SLOT(onManualExit()));
   // manualExit() does not fire when the app is swiped closed, so also hook aboutToQuit().
@@ -211,9 +220,14 @@ void ApplicationUI::onAboutToQuit() {
     return;
   }
   m_exitHandled = true;
+  saveServiceProfile();
   // The pid file is what the service polls; the invoke wakes it up (or starts it).
   ServiceHandoff::markUiGone();
   pingHandoffService(ServiceHandoff::ACTION_UI_CLOSED);
+}
+
+void ApplicationUI::saveServiceProfile() {
+  ServiceSession::saveProfile(m_appStore);
 }
 
 void ApplicationUI::onManualExit() {

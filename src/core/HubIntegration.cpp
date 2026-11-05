@@ -3,7 +3,10 @@
 #include <bb/pim/unified/unified_data_source.h>
 #include <bb/multimedia/MediaPlayer>
 
+#include <QCoreApplication>
 #include <QDebug>
+#include <QFile>
+#include <QUrl>
 #include <QByteArray>
 #include <QLatin1String>
 #include <QDateTime>
@@ -371,11 +374,9 @@ void HubIntegration::upsertThreadItem(const QString &sourceId, const QString &ti
     uds_inbox_item_data_set_total_count(item, unread);
     uds_inbox_item_data_set_context_state(item, HUB_CONTEXT_STATE_UNREAD);
     // false disables Hub's alert bundle (banner, system sound, lock-screen
-    // preview) for this item. The app already plays ping.m4a itself, so true
+    // preview) for this item. Both the UI and the service play ping.m4a themselves, so true
     // would play the sound twice. Trade-off: no Hub banner either.
-    // The UI plays its own ping (false). The service has no player, so it lets Hub raise
-    // the alert (banner / LED / sound as configured in Hub).
-    uds_inbox_item_data_set_notification_state(item, m_serviceMode);
+    uds_inbox_item_data_set_notification_state(item, false);
 
     // Try update first (the common case), fall back to add; Hub has no existence query.
     int rc = uds_item_updated(m_udsHandle, item);
@@ -472,7 +473,6 @@ void HubIntegration::removeThreadItem(const QString &sourceId)
 
 void HubIntegration::playPingSound()
 {
-    if (m_serviceMode) return; // Hub alerts instead (see upsertThreadItem())
     // Independent of m_ready/init(): a UDS failure (e.g. missing
     // _sys_access_pim_unified permission) must not silence the sound.
     qDebug() << "[Hub] playPingSound() called";
@@ -492,7 +492,15 @@ void HubIntegration::onPlayPingSoundDeferred()
 
     if (!m_pingPlayerSourceSet) {
         // "audio/ping.m4a": the "assets" root is stripped from asset:/// URLs.
-        m_pingPlayer->setSourceUrl(QUrl("asset:///audio/ping.m4a"));
+        if (m_serviceMode) {
+            // The headless process has no Cascades "asset:///" scheme: use the file inside
+            // the installed package (<app>/native/assets/audio/ping.m4a).
+            QString path = QCoreApplication::applicationDirPath() + "/assets/audio/ping.m4a";
+            qDebug() << "[Hub] service ping file" << path << "exists" << QFile::exists(path);
+            m_pingPlayer->setSourceUrl(QUrl::fromLocalFile(path));
+        } else {
+            m_pingPlayer->setSourceUrl(QUrl("asset:///audio/ping.m4a"));
+        }
         m_pingPlayer->prepare();
         m_pingPlayerSourceSet = true;
         qDebug() << "[Hub] source set + prepare() called, will retry play() in 300ms";

@@ -348,6 +348,8 @@ void DiscordGatewayWorker::cancelAll() {
     return;
   }
 
-  m_gateway.disconnectFromGateway();
+  // Not disconnectFromGateway(): its close frame would invalidate the session that the
+  // headless service is about to RESUME.
+  m_gateway.dropConnection();
   emit cancelAllFinished();
 }

@@ -25,6 +25,10 @@ public:
                                  QString *errorMessage = 0);
   static QVariantList parseArray(const QByteArray &bytes,
                                  QString *errorMessage = 0);
+  // op 6 RESUME: {"op":6,"d":{"token","session_id","seq"}}
+  static QByteArray buildResumePayload(const QString &token,
+                                       const QString &sessionId, int sequence,
+                                       QString *errorMessage);
   static QByteArray buildIdentifyPayload(const QString &token,
                                          QString *errorMessage = 0);
   static QByteArray buildGuildSubscribePayload(const QString &guildId,

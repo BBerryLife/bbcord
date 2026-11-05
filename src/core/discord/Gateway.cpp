@@ -2,6 +2,10 @@
 
 #include "DiscordUtils.hpp"
 #include "JsonParser.hpp"
+#include "../ServiceSession.hpp"
+
+#include <QDateTime>
+#include <QUrl>
 
 #include <QByteArray>
 #include <QDebug>
@@ -23,7 +27,9 @@ const int kGatewayDnsTimeoutMs = 10000;
 } // namespace
 
 DiscordGateway::DiscordGateway(QObject *parent)
-    : QObject(parent), m_connection(NULL), m_timerId(0), m_dnsRetriesLeft(0),
+    : QObject(parent), m_connection(NULL), m_timerId(0),
+      m_pollIntervalMs(kGatewayPollIntervalMs), m_resumeRequested(false),
+      m_heartbeatWatchdog(false), m_awaitingAck(false), m_abruptClose(false), m_lastPersistMs(0), m_dnsRetriesLeft(0),
       m_lastPollMs(0), m_zstreamReady(false), m_sequence(-1),
       m_heartbeatIntervalMs(0), m_nextHeartbeatMs(0), m_state(Disconnected) {
   m_mgr = new mg_mgr;
@@ -35,6 +41,11 @@ DiscordGateway::DiscordGateway(QObject *parent)
 }
 
 DiscordGateway::~DiscordGateway() {
+  // No WebSocket close frame: closing cleanly invalidates the session at Discord, while a
+  // dropped socket leaves it resumable for a while, which is exactly what the handoff to
+  // the headless service needs (see ServiceSession.hpp).
+  persistSession(true);
+  m_abruptClose = true;
   disconnectFromGateway();
   if (m_zstreamReady) {
     inflateEnd(&m_zstream);
@@ -58,13 +69,83 @@ void DiscordGateway::connectToGateway(const QString &token) {
   beginConnectAttempt();
 }
 
+void DiscordGateway::dropConnection() {
+  persistSession(true);
+  m_abruptClose = true;
+  disconnectFromGateway();
+  m_abruptClose = false;
+}
+
+void DiscordGateway::setPollIntervalMs(int ms) {
+  m_pollIntervalMs = ms > 0 ? ms : kGatewayPollIntervalMs;
+  if (m_timerId != 0) {
+    killTimer(m_timerId);
+    m_timerId = startTimer(m_pollIntervalMs);
+  }
+}
+
+void DiscordGateway::resumeGateway(const QString &token,
+                                   const QString &sessionId,
+                                   const QString &resumeUrl, int sequence) {
+  disconnectFromGateway();
+  m_token = token.trimmed();
+  if (m_token.isEmpty() || sessionId.isEmpty() || sequence < 0) {
+    emit error("Cannot resume: missing token or session");
+    return;
+  }
+
+  // Fresh socket = fresh zlib-stream context; the sequence/session carry over.
+  m_compressedBuffer.clear();
+  if (m_zstreamReady) {
+    inflateReset(&m_zstream);
+  }
+  m_sentLazyRequests.clear();
+  m_pendingLazyRequests.clear();
+  m_heartbeatIntervalMs = 0;
+  m_nextHeartbeatMs = 0;
+  m_sessionId = sessionId;
+  m_resumeGatewayUrl = resumeUrl.trimmed();
+  m_sequence = sequence;
+  m_resumeRequested = true;
+  m_awaitingAck = false;
+  m_dnsRetriesLeft = kMaxDnsRetries;
+  qDebug() << "[discord-gateway] resuming session seq" << m_sequence;
+  beginConnectAttempt();
+}
+
+void DiscordGateway::persistSession(bool force) {
+  if (m_sessionId.isEmpty() || m_sequence < 0 || m_resumeRequested) {
+    return;
+  }
+  qint64 now = QDateTime::currentMSecsSinceEpoch();
+  if (!force && now - m_lastPersistMs < 5000) {
+    return;
+  }
+  m_lastPersistMs = now;
+  ServiceSession::saveGateway(m_sessionId, m_resumeGatewayUrl, m_sequence);
+}
+
 void DiscordGateway::beginConnectAttempt() {
   setState(Connecting);
+
+  // RESUME must go to the url Discord gave in READY; a normal connect to the default one.
+  QByteArray url(kGatewayUrl);
+  QByteArray host(kGatewayHost);
+  if (m_resumeRequested && m_resumeGatewayUrl.startsWith("wss://")) {
+    QUrl parsed(m_resumeGatewayUrl);
+    if (!parsed.host().isEmpty()) {
+      host = parsed.host().toUtf8();
+      url = QByteArray("wss://") + host +
+            QByteArray("/?v=10&encoding=json&compress=zlib-stream");
+    }
+  }
+  m_urlBytes = url;
+  m_hostBytes = host;
 
   QByteArray headers = DiscordUtils::desktopUserAgentHeader() +
                        QByteArray("Origin: https://discord.com\r\n");
 
-  m_connection = mg_ws_connect(m_mgr, kGatewayUrl, DiscordGateway::eventHandler,
+  m_connection = mg_ws_connect(m_mgr, m_urlBytes.constData(), DiscordGateway::eventHandler,
                                this, headers.constData());
 
   if (m_connection == NULL) {
@@ -74,7 +155,7 @@ void DiscordGateway::beginConnectAttempt() {
   }
 
   if (m_timerId == 0) {
-    m_timerId = startTimer(kGatewayPollIntervalMs);
+    m_timerId = startTimer(m_pollIntervalMs);
   }
 }
 
@@ -86,7 +167,8 @@ void DiscordGateway::disconnectFromGateway() {
 
   if (m_connection != NULL) {
     m_connection->fn_data = NULL;
-    if (!m_connection->is_closing && m_connection->is_websocket) {
+    if (!m_abruptClose && !m_connection->is_closing &&
+        m_connection->is_websocket) {
       mg_ws_send(m_connection, "", 0, WEBSOCKET_OP_CLOSE);
     }
 
@@ -234,9 +316,9 @@ void DiscordGateway::timerEvent(QTimerEvent *event) {
   qint64 nowMs = mg_millis();
   if (m_lastPollMs != 0) {
     qint64 gapMs = nowMs - m_lastPollMs;
-    if (gapMs > kGatewayPollIntervalMs * 3) {
+    if (gapMs > m_pollIntervalMs * 3 && m_pollIntervalMs <= 50) {
       qDebug() << "[discord-gateway] timer gap" << gapMs
-               << "ms (expected ~" << kGatewayPollIntervalMs << "ms) - "
+               << "ms (expected ~" << m_pollIntervalMs << "ms) - "
                   "poll may be processing coalesced data";
     }
   }
@@ -253,6 +335,14 @@ void DiscordGateway::timerEvent(QTimerEvent *event) {
 }
 
 void DiscordGateway::sendHeartbeat() {
+  if (m_heartbeatWatchdog && m_awaitingAck && m_connection != NULL) {
+    qDebug() << "[discord-gateway] heartbeat not acknowledged - dropping connection";
+    m_awaitingAck = false;
+    m_connection->is_closing = 1; // MG_EV_CLOSE follows and emits closed()
+    emit error("Gateway heartbeat not acknowledged");
+    return;
+  }
+  m_awaitingAck = true;
   QString sequence = m_sequence >= 0 ? QString::number(m_sequence) : "null";
   sendJsonText(QString("{\"op\":1,\"d\":%1}").arg(sequence));
   m_nextHeartbeatMs = mg_millis() + m_heartbeatIntervalMs;
@@ -273,6 +363,18 @@ void DiscordGateway::sendIdentify() {
   sendJsonText(QString::fromUtf8(payload.constData(), payload.size()));
 }
 
+void DiscordGateway::sendResume() {
+  QString errorMessage;
+  QByteArray payload = DiscordJsonParser::buildResumePayload(
+      m_token, m_sessionId, m_sequence, &errorMessage);
+  if (!errorMessage.isEmpty() || payload.isEmpty()) {
+    emit error(QString("Gateway resume JSON error: %1").arg(errorMessage));
+    return;
+  }
+  qDebug() << "[discord-gateway] resume sent seq" << m_sequence;
+  sendJsonText(QString::fromUtf8(payload.constData(), payload.size()));
+}
+
 void DiscordGateway::sendJsonText(const QString &text) {
   if (m_connection == NULL || !m_connection->is_websocket ||
       m_connection->is_closing) {
@@ -288,7 +390,7 @@ void DiscordGateway::initializeTls(struct mg_connection *connection) {
   if (connection != NULL && connection->is_tls) {
     struct mg_tls_opts opts;
     memset(&opts, 0, sizeof(opts));
-    opts.name = mg_str(kGatewayHost);
+    opts.name = mg_str(m_hostBytes.constData());
     opts.skip_verification = true;
     mg_tls_init(connection, &opts);
   }
@@ -309,6 +411,8 @@ void DiscordGateway::resetSession() {
   m_nextHeartbeatMs = 0;
   m_sessionId.clear();
   m_resumeGatewayUrl.clear();
+  m_resumeRequested = false;
+  m_awaitingAck = false;
   m_compressedBuffer.clear();
   if (m_zstreamReady) {
     inflateReset(&m_zstream);

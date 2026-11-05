@@ -95,6 +95,33 @@ QVariantList DiscordJsonParser::parseArray(const QByteArray &bytes,
   return parsed.toList();
 }
 
+QByteArray DiscordJsonParser::buildResumePayload(const QString &token,
+                                                 const QString &sessionId,
+                                                 int sequence,
+                                                 QString *errorMessage) {
+  QVariantMap data;
+  data["token"] = token;
+  data["session_id"] = sessionId;
+  data["seq"] = sequence;
+  QVariantMap root;
+  root["op"] = 6;
+  root["d"] = data;
+
+  bb::data::JsonDataAccess json;
+  QByteArray payload;
+  json.saveToBuffer(root, &payload);
+  if (json.hasError()) {
+    if (errorMessage != 0) {
+      *errorMessage = json.error().errorMessage();
+    }
+    return QByteArray();
+  }
+  if (errorMessage != 0) {
+    errorMessage->clear();
+  }
+  return payload;
+}
+
 QByteArray DiscordJsonParser::buildIdentifyPayload(const QString &token,
                                                    QString *errorMessage) {
   QVariantMap properties;

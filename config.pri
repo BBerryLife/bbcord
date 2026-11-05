@@ -155,6 +155,7 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/core/HubIntegration.hpp) \
         $$quote($$BASEDIR/src/core/HubShared.hpp) \
         $$quote($$BASEDIR/src/core/ServiceHandoff.hpp) \
+        $$quote($$BASEDIR/src/core/ServiceSession.hpp) \
         $$quote($$BASEDIR/src/core/client/AvatarManager.hpp) \
         $$quote($$BASEDIR/src/core/client/AvatarState.hpp) \
         $$quote($$BASEDIR/src/core/client/CacheManager.hpp) \

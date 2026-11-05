@@ -66,6 +66,10 @@ private Q_SLOTS:
   void onAboutToQuit();
   void onManualExit();
   void onServicePingFinished();
+  // Writes what the headless service needs to take over the gateway session when this UI
+  // closes (own user id, guild/DM names, own roles; see ServiceSession.hpp). The session id
+  // and sequence number are written by DiscordGateway itself.
+  void saveServiceProfile();
 
 Q_SIGNALS:
   // Asks main.qml to open the chat page (selectChannel() only updates backend

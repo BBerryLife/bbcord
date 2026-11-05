@@ -33,6 +33,26 @@ public:
   virtual ~DiscordGateway();
 
   Q_INVOKABLE void connectToGateway(const QString &token);
+  // Reconnects to an EXISTING session with op 6 RESUME instead of IDENTIFY, so Discord
+  // sends no READY (~5 MB) - only the events missed since `sequence`. Used by the headless
+  // service (3 MB heap limit) to take over the session the UI left (ServiceSession.hpp),
+  // and to reconnect after a network drop. If Discord refuses the session,
+  // sessionInvalid() is emitted and nothing else is sent.
+  Q_INVOKABLE void resumeGateway(const QString &token, const QString &sessionId,
+                                 const QString &resumeUrl, int sequence);
+  // Poll period of the mongoose loop. 10 ms (default) suits the UI; an always-on
+  // background service should use a much larger value to stay off the CPU.
+  // Closes the socket WITHOUT a WebSocket close frame (after saving the session for the
+  // service). A clean close makes Discord invalidate the session, so a RESUME would be
+  // refused. Used when the UI shuts down.
+  void dropConnection();
+  void setPollIntervalMs(int ms);
+  // Opt-in (the headless service): if a heartbeat is still unanswered when the next one is
+  // due, the connection is dead without TCP noticing; drop it so the owner can RESUME.
+  void setHeartbeatWatchdog(bool enabled) { m_heartbeatWatchdog = enabled; }
+  QString sessionId() const { return m_sessionId; }
+  QString resumeGatewayUrl() const { return m_resumeGatewayUrl; }
+  int sequence() const { return m_sequence; }
   Q_INVOKABLE void disconnectFromGateway();
   Q_INVOKABLE void sendLazyRequest(const QString &guildId,
                                    const QString &channelId);
@@ -56,6 +76,9 @@ Q_SIGNALS:
   void dispatchReceived(const QString &eventName, const QVariantMap &payload);
   void error(const QString &message);
   void closed();
+  // Discord rejected a RESUME (op 9): the session is gone and only a full IDENTIFY
+  // (a new READY) can replace it.
+  void sessionInvalid();
 
 protected:
   void timerEvent(QTimerEvent *event);
@@ -73,6 +96,9 @@ private:
                       int sequence);
   void sendHeartbeat();
   void sendIdentify();
+  void sendResume();
+  // Saves session_id / url / seq for the service (ServiceSession.hpp). Throttled unless force.
+  void persistSession(bool force);
   void sendJsonText(const QString &text);
   void initializeTls(struct mg_connection *connection);
   void setState(ConnectionState state);
@@ -85,6 +111,14 @@ private:
   mg_mgr *m_mgr;
   mg_connection *m_connection;
   int m_timerId;
+  int m_pollIntervalMs;
+  bool m_resumeRequested;   // the next HELLO answers with RESUME instead of IDENTIFY
+  bool m_heartbeatWatchdog;
+  bool m_awaitingAck;
+  bool m_abruptClose;       // destructor: drop the socket without a close frame
+  qint64 m_lastPersistMs;
+  QByteArray m_urlBytes;    // mongoose keeps the pointers, so these must outlive connect
+  QByteArray m_hostBytes;
   int m_dnsRetriesLeft;
   qint64 m_lastPollMs; // for the timer-gap diagnostic in timerEvent()
   QString m_token;

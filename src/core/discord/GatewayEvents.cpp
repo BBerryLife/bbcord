@@ -1,6 +1,7 @@
 #include "Gateway.hpp"
 
 #include "JsonParser.hpp"
+#include "../ServiceSession.hpp"
 
 #include <QByteArray>
 #include <QDebug>
@@ -381,10 +382,27 @@ void DiscordGateway::handleTextMessage(const char *data, int length) {
   QByteArray bytes(data, length);
 
   QString fastEventName = DiscordJsonParser::extractStringField(bytes, "t");
+
+  if (fastEventName == "RESUMED") {
+    // Answer to our op 6: the session is back, and any events missed were replayed before
+    // this one. No READY follows.
+    int sequence = extractSequence(bytes);
+    if (sequence >= 0) {
+      m_sequence = sequence;
+    }
+    m_resumeRequested = false;
+    qDebug() << "[discord-gateway] RESUMED seq" << m_sequence;
+    setState(Ready);
+    emit ready(m_sessionId);
+    persistSession(true);
+    return;
+  }
+
   if (!fastEventName.isEmpty() && !shouldParseDispatch(fastEventName)) {
     int sequence = extractSequence(bytes);
     if (sequence >= 0) {
       m_sequence = sequence;
+      persistSession(false);
     }
     return;
   }
@@ -393,6 +411,7 @@ void DiscordGateway::handleTextMessage(const char *data, int length) {
     int sequence = extractSequence(bytes);
     if (sequence >= 0) {
       m_sequence = sequence;
+      persistSession(false);
     }
 
     QString channelId =
@@ -514,12 +533,23 @@ void DiscordGateway::handleTextMessage(const char *data, int length) {
     handleHello(payload.data);
     break;
   case 11:
+    m_awaitingAck = false;
     break;
   case 7:
     emit error("Discord gateway requested reconnect");
     break;
   case 9:
-    emit error("Discord gateway invalid session");
+    if (m_resumeRequested) {
+      // Our RESUME was refused (session expired or never existed). IDENTIFY would need a
+      // READY the headless service cannot hold, so report it and let the owner decide.
+      qDebug() << "[discord-gateway] RESUME refused (invalid session)";
+      m_resumeRequested = false;
+      m_sessionId.clear();
+      // The session file is left for the owner: the service may retry with it.
+      emit sessionInvalid();
+    } else {
+      emit error("Discord gateway invalid session");
+    }
     break;
   default:
     qDebug() << "[discord] unhandled gateway opcode" << payload.op;
@@ -538,7 +568,11 @@ void DiscordGateway::handleHello(const QVariantMap &data) {
   m_heartbeatIntervalMs = interval;
   m_nextHeartbeatMs = mg_millis() + m_heartbeatIntervalMs;
   sendHeartbeat();
-  sendIdentify();
+  if (m_resumeRequested && !m_sessionId.isEmpty()) {
+    sendResume();
+  } else {
+    sendIdentify();
+  }
 }
 
 void DiscordGateway::handleDispatch(const QString &eventName,
@@ -548,6 +582,7 @@ void DiscordGateway::handleDispatch(const QString &eventName,
   if (eventName == "READY") {
     m_sessionId = data.value("session_id").toString();
     m_resumeGatewayUrl = data.value("resume_gateway_url").toString();
+    persistSession(true);
     setState(Ready);
     emit ready(m_sessionId);
     flushPendingLazyRequests();
