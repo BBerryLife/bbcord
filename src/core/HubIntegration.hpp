@@ -27,6 +27,15 @@ public:
     explicit HubIntegration(QObject *parent = 0);
     virtual ~HubIntegration();
 
+    // Whether the UI is on screen (fullscreen). Hub's own alert (system sound) is used
+    // whenever it is not: the service always, the UI while minimized/invisible, where the
+    // app's own MediaPlayer ping was not audible. Process-wide, default true.
+    static void setUiForeground(bool foreground);
+
+    // file:/// URL of a file in this app's PUBLIC asset area (/apps/<appId>/public/...),
+    // e.g. publicAssetUrl("audio/ping.m4a"). Works in the UI and the headless service.
+    static QString publicAssetUrl(const QString &relativePath);
+
     // Opens the UDS connection and registers the account. Safe to call repeatedly.
     // Returns false if UDS is unavailable; other methods then no-op quietly.
     bool init();
@@ -55,7 +64,7 @@ public:
     // Removes the row from the BBCord tab. Currently unused.
     void removeThreadItem(const QString &sourceId);
 
-    // Plays assets/audio/ping.m4a for every notify-worthy message. Independent
+    // Plays audio/ping.m4a (public asset) for every notify-worthy message. Independent
     // of init()/m_ready so a UDS failure never silences it. MediaPlayer is used
     // because SystemSound cannot play a custom file.
     void playPingSound();
@@ -79,9 +88,13 @@ private slots:
     void onPlayPingSoundDeferred();
     // Deferred retry of the first play() while setSourceUrl()/prepare() finish asynchronously.
     void onPingPlayerReadyRetry();
+    // Diagnostic (service only): logs what the player is doing after play().
+    void logPingPlayerState();
 
 private:
     Q_DISABLE_COPY(HubIntegration)
+    static bool s_uiForeground;
+    void postBackgroundAlert(const QString &title, const QString &body);
 
     // Re-sends the full stored state of an item (icon, unread/total counts and context
     // state follow ItemState::unread). Returns false if Hub rejected the update.

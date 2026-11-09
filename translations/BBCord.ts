@@ -643,7 +643,7 @@
 <context>
     <name>SettingsController</name>
     <message>
-        <location filename="../src/ui/SettingsController.cpp" line="307"/>
+        <location filename="../src/ui/SettingsController.cpp" line="308"/>
         <source>%1 B</source>
         <translation type="unfinished"></translation>
     </message>

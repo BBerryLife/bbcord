@@ -18,6 +18,7 @@
 
 #include "core/AppStore.hpp"
 #include "core/Client.hpp"
+#include "core/HubIntegration.hpp"
 #include "core/ServiceHandoff.hpp"
 #include "core/ServiceSession.hpp"
 #include "core/discord/JsonParser.hpp"
@@ -108,6 +109,12 @@ ApplicationUI::ApplicationUI()
   profileTimer->setInterval(30000);
   QObject::connect(profileTimer, SIGNAL(timeout()), this, SLOT(saveServiceProfile()));
   profileTimer->start();
+  QObject::connect(bb::cascades::Application::instance(), SIGNAL(fullscreen()), this,
+                   SLOT(onUiForeground()));
+  QObject::connect(bb::cascades::Application::instance(), SIGNAL(thumbnail()), this,
+                   SLOT(onUiBackground()));
+  QObject::connect(bb::cascades::Application::instance(), SIGNAL(invisible()), this,
+                   SLOT(onUiBackground()));
   QObject::connect(bb::cascades::Application::instance(), SIGNAL(manualExit()), this,
                    SLOT(onManualExit()));
   // manualExit() does not fire when the app is swiped closed, so also hook aboutToQuit().
@@ -224,6 +231,14 @@ void ApplicationUI::onAboutToQuit() {
   // The pid file is what the service polls; the invoke wakes it up (or starts it).
   ServiceHandoff::markUiGone();
   pingHandoffService(ServiceHandoff::ACTION_UI_CLOSED);
+}
+
+void ApplicationUI::onUiForeground() {
+  HubIntegration::setUiForeground(true);
+}
+
+void ApplicationUI::onUiBackground() {
+  HubIntegration::setUiForeground(false);
 }
 
 void ApplicationUI::saveServiceProfile() {

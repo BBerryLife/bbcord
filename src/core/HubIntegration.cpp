@@ -2,6 +2,9 @@
 
 #include <bb/pim/unified/unified_data_source.h>
 #include <bb/multimedia/MediaPlayer>
+#include <bb/platform/Notification>
+#include <bb/platform/NotificationType>
+#include <bb/system/InvokeRequest>
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -343,6 +346,18 @@ bool HubIntegration::init()
     return true;
 }
 
+bool HubIntegration::s_uiForeground = true;
+
+QString HubIntegration::publicAssetUrl(const QString &relativePath)
+{
+    return QString("file:///apps/%1/public/%2").arg(appIdFromHomePath(), relativePath);
+}
+
+void HubIntegration::setUiForeground(bool foreground)
+{
+    s_uiForeground = foreground;
+}
+
 void HubIntegration::upsertThreadItem(const QString &sourceId, const QString &title,
                                       const QString &preview, qint64 timestampMs)
 {
@@ -373,9 +388,13 @@ void HubIntegration::upsertThreadItem(const QString &sourceId, const QString &ti
     uds_inbox_item_data_set_unread_count(item, unread);
     uds_inbox_item_data_set_total_count(item, unread);
     uds_inbox_item_data_set_context_state(item, HUB_CONTEXT_STATE_UNREAD);
-    // false disables Hub's alert bundle (banner, system sound, lock-screen
-    // preview) for this item. Both the UI and the service play ping.m4a themselves, so true
-    // would play the sound twice. Trade-off: no Hub banner either.
+    // The Hub item itself is always silent (false disables Hub's alert bundle: banner,
+    // system sound, lock-screen preview). Exactly ONE sound source per message:
+    //  - UI on screen: its own MediaPlayer ping (playPingSound()).
+    //  - service, or UI minimized/invisible: postBackgroundAlert() below, which plays the
+    //    same ping.m4a through the system Notification service. A MediaPlayer in the
+    //    headless process / background UI is not reliably audible, and Hub's own alert on
+    //    top of a MediaPlayer ping overlapped and distorted.
     uds_inbox_item_data_set_notification_state(item, false);
 
     // Try update first (the common case), fall back to add; Hub has no existence query.
@@ -399,7 +418,29 @@ void HubIntegration::upsertThreadItem(const QString &sourceId, const QString &ti
     if (rc != UDS_SUCCESS) {
         qDebug() << "[Hub] upsertThreadItem failed for source" << sourceId
                   << "rc=" << rc << "(" << udsErrorName(rc) << ")";
+    } else if (m_serviceMode || !s_uiForeground) {
+        postBackgroundAlert(title, preview);
     }
+}
+
+void HubIntegration::postBackgroundAlert(const QString &title, const QString &body)
+{
+    bb::platform::Notification *n = new bb::platform::Notification(this);
+    n->setTitle(title.isEmpty() ? QString("BBCord") : title);
+    n->setBody(body);
+    // HubOff: no extra entry in the Notifications account - the message already has its
+    // own Hub item. The user's notification settings still decide sound/LED/preview.
+    n->setType(bb::platform::NotificationType::HubOff);
+    // Must be a public asset (bar-descriptor: audio/), not the private assets/ folder.
+    n->setSoundUrl(QUrl(publicAssetUrl("audio/ping.m4a")));
+    bb::system::InvokeRequest request;
+    request.setTarget("ch.michioxd.bbcord.invoke");
+    request.setAction("bb.action.OPEN");
+    n->setInvokeRequest(request);
+
+    bb::platform::NotificationError::Type err = n->notify();
+    qDebug() << "[Hub] background alert posted, notify() error =" << (int) err;
+    QTimer::singleShot(60000, n, SLOT(deleteLater()));
 }
 
 bool HubIntegration::publishItemState(const QString &sourceId)
@@ -473,6 +514,7 @@ void HubIntegration::removeThreadItem(const QString &sourceId)
 
 void HubIntegration::playPingSound()
 {
+    if (m_serviceMode || !s_uiForeground) return; // Hub alerts instead (see upsertThreadItem())
     // Independent of m_ready/init(): a UDS failure (e.g. missing
     // _sys_access_pim_unified permission) must not silence the sound.
     qDebug() << "[Hub] playPingSound() called";
@@ -491,16 +533,7 @@ void HubIntegration::onPlayPingSoundDeferred()
     }
 
     if (!m_pingPlayerSourceSet) {
-        // "audio/ping.m4a": the "assets" root is stripped from asset:/// URLs.
-        if (m_serviceMode) {
-            // The headless process has no Cascades "asset:///" scheme: use the file inside
-            // the installed package (<app>/native/assets/audio/ping.m4a).
-            QString path = QCoreApplication::applicationDirPath() + "/assets/audio/ping.m4a";
-            qDebug() << "[Hub] service ping file" << path << "exists" << QFile::exists(path);
-            m_pingPlayer->setSourceUrl(QUrl::fromLocalFile(path));
-        } else {
-            m_pingPlayer->setSourceUrl(QUrl("asset:///audio/ping.m4a"));
-        }
+        m_pingPlayer->setSourceUrl(QUrl(publicAssetUrl("audio/ping.m4a")));
         m_pingPlayer->prepare();
         m_pingPlayerSourceSet = true;
         qDebug() << "[Hub] source set + prepare() called, will retry play() in 300ms";
@@ -509,6 +542,14 @@ void HubIntegration::onPlayPingSoundDeferred()
     }
 
     playOnPingPlayerOrResetForRetry();
+}
+
+void HubIntegration::logPingPlayerState()
+{
+    if (!m_pingPlayer) return;
+    qDebug() << "[Hub] ping player: state" << (int) m_pingPlayer->mediaState()
+             << "position" << m_pingPlayer->position()
+             << "duration" << m_pingPlayer->duration();
 }
 
 void HubIntegration::onPingPlayerReadyRetry()
@@ -527,6 +568,12 @@ void HubIntegration::playOnPingPlayerOrResetForRetry()
     qDebug() << "[Hub] play() called, mediaError=" << err;
     if (err == bb::multimedia::MediaError::None) {
         m_pingRetryCount = 0;
+        if (m_serviceMode) {
+            // play() returning None does not mean it is audible; sample the player.
+            QTimer::singleShot(300, this, SLOT(logPingPlayerState()));
+            QTimer::singleShot(1200, this, SLOT(logPingPlayerState()));
+            QTimer::singleShot(3000, this, SLOT(logPingPlayerState()));
+        }
         return;
     }
 

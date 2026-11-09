@@ -71,16 +71,19 @@ struct GatewayState {
     QString resumeUrl;
     int     seq;
     qint64  savedMs;
+    QStringList subs; // "guildId:channelId" channels subscribed with op 14
     GatewayState() : seq(-1), savedMs(0) {}
 };
 
-inline bool saveGateway(const QString &sessionId, const QString &resumeUrl, int seq)
+inline bool saveGateway(const QString &sessionId, const QString &resumeUrl, int seq,
+                        const QStringList &subs = QStringList())
 {
     if (sessionId.isEmpty()) return false;
     QVariantMap m;
     m["session_id"] = sessionId;
     m["resume_gateway_url"] = resumeUrl;
     m["seq"] = seq;
+    m["subs"] = subs;
     // Kept as a string: JSON numbers go through double in some parsers.
     m["saved_ms"] = QString::number(QDateTime::currentMSecsSinceEpoch());
     return writeJsonFile(sessionPath(), m);
@@ -94,6 +97,7 @@ inline bool loadGateway(GatewayState *out)
     out->resumeUrl = m.value("resume_gateway_url").toString();
     out->seq = m.value("seq", -1).toInt();
     out->savedMs = m.value("saved_ms").toString().toLongLong();
+    out->subs = m.value("subs").toStringList();
     return !out->sessionId.isEmpty() && out->seq >= 0;
 }
 

@@ -8,6 +8,7 @@ LIBS += -lbb
 LIBS += -lbbdata
 LIBS += -lbbmultimedia
 LIBS += -lbbsystem
+LIBS += -lbbplatform
 LIBS += -lsocket
 LIBS += -lm
 LIBS += -lz

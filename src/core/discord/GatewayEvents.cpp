@@ -321,9 +321,119 @@ void DiscordGateway::handleEvent(struct mg_connection *connection, int event,
   }
 }
 
+const int kLightMessageCap = 128 * 1024;
+
+void DiscordGateway::resetStreamState() {
+  m_msgHead = QByteArray();
+  m_zTail.clear();
+  m_msgOverflow = false;
+  m_msgIsReady = false;
+  m_msgSequence = -1;
+  m_readyScanner.reset();
+}
+
+// Light mode: inflate every WebSocket chunk as it arrives instead of collecting the whole
+// compressed message and inflating it into one buffer (5+ MB for READY).
+void DiscordGateway::handleStreamedChunk(const char *data, int length) {
+  m_zTail.append(data, length);
+  if (m_zTail.size() > 4) {
+    m_zTail = m_zTail.right(4);
+  }
+
+  char output[16384];
+  m_zstream.next_in =
+      const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
+  m_zstream.avail_in = static_cast<uInt>(length);
+
+  int result = Z_OK;
+  do {
+    m_zstream.next_out = reinterpret_cast<Bytef *>(output);
+    m_zstream.avail_out = sizeof(output);
+    result = inflate(&m_zstream, Z_SYNC_FLUSH);
+    if (result != Z_OK && result != Z_BUF_ERROR) {
+      emit error(QString("Gateway zlib inflate error %1").arg(result));
+      inflateReset(&m_zstream);
+      resetStreamState();
+      return;
+    }
+    int produced = static_cast<int>(sizeof(output) - m_zstream.avail_out);
+    if (produced > 0) {
+      consumeInflated(output, produced);
+    }
+  } while (m_zstream.avail_out == 0);
+
+  if (m_zTail.size() == 4 &&
+      static_cast<unsigned char>(m_zTail.at(0)) == 0x00 &&
+      static_cast<unsigned char>(m_zTail.at(1)) == 0x00 &&
+      static_cast<unsigned char>(m_zTail.at(2)) == 0xff &&
+      static_cast<unsigned char>(m_zTail.at(3)) == 0xff) {
+    m_zTail.clear();
+    finishStreamedMessage();
+  }
+}
+
+void DiscordGateway::consumeInflated(const char *data, int length) {
+  if (!m_msgOverflow) {
+    if (m_msgHead.size() + length <= kLightMessageCap) {
+      m_msgHead.append(data, length);
+      return;
+    }
+    // Too big to keep. Only a READY is worth reading; anything else is dropped.
+    m_msgOverflow = true;
+    m_msgIsReady = m_msgHead.left(64).contains("\"t\":\"READY\"");
+    if (m_msgIsReady) {
+      m_msgSequence = extractSequence(m_msgHead);
+      m_readyScanner.reset();
+      m_readyScanner.feed(m_msgHead.constData(), m_msgHead.size());
+    }
+    m_msgHead = QByteArray();
+  }
+  if (m_msgIsReady) {
+    m_readyScanner.feed(data, length);
+  }
+}
+
+void DiscordGateway::finishStreamedMessage() {
+  if (m_msgOverflow) {
+    if (m_msgIsReady) {
+      finishStreamedReady();
+    } else {
+      qDebug() << "[discord-gateway] dropped an oversized message (not READY)";
+    }
+  } else if (!m_msgHead.isEmpty()) {
+    handleTextMessage(m_msgHead.constData(), m_msgHead.size());
+  }
+  m_msgHead = QByteArray();
+  m_msgOverflow = false;
+  m_msgIsReady = false;
+  m_msgSequence = -1;
+  m_readyScanner.reset();
+}
+
+void DiscordGateway::finishStreamedReady() {
+  if (!m_readyScanner.complete()) {
+    emit error("Streamed READY had no session id");
+    return;
+  }
+  m_sessionId = QString::fromUtf8(m_readyScanner.sessionId().c_str());
+  m_resumeGatewayUrl = QString::fromUtf8(m_readyScanner.resumeUrl().c_str());
+  m_sequence = m_msgSequence >= 0 ? m_msgSequence : 1;
+  m_resumeRequested = false;
+  qDebug() << "[discord-gateway] READY streamed (not stored) seq" << m_sequence;
+  persistSession(true);
+  setState(Ready);
+  emit ready(m_sessionId);
+  flushPendingLazyRequests();
+}
+
 void DiscordGateway::handleCompressedMessage(const char *data, int length) {
   if (!m_zstreamReady || data == NULL || length <= 0) {
     handleTextMessage(data, length);
+    return;
+  }
+
+  if (m_lightStream) {
+    handleStreamedChunk(data, length);
     return;
   }
 
@@ -539,10 +649,12 @@ void DiscordGateway::handleTextMessage(const char *data, int length) {
     emit error("Discord gateway requested reconnect");
     break;
   case 9:
+    m_lastInvalidResumable = bytes.contains("\"d\":true");
     if (m_resumeRequested) {
       // Our RESUME was refused (session expired or never existed). IDENTIFY would need a
       // READY the headless service cannot hold, so report it and let the owner decide.
-      qDebug() << "[discord-gateway] RESUME refused (invalid session)";
+      qDebug() << "[discord-gateway] RESUME refused (invalid session), resumable ="
+               << m_lastInvalidResumable;
       m_resumeRequested = false;
       m_sessionId.clear();
       // The session file is left for the owner: the service may retry with it.

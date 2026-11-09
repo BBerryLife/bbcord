@@ -28,6 +28,8 @@ public:
   QString cdnUrl() const;
   QString officialApiUrl() const;
   QString officialCdnUrl() const;
+  // file:/// URL of a sound in the public audio/ folder (bar-descriptor), e.g. "error.ogg".
+  Q_INVOKABLE QString audioUrl(const QString &fileName) const;
   Q_INVOKABLE void setSfxEnabled(bool enabled);
   Q_INVOKABLE void setCompactMessageEnabled(bool enabled);
   Q_INVOKABLE void clearCache();

@@ -1,10 +1,6 @@
 1
-57
+53
 About.qml
-audio/connected.ogg
-audio/connecting.ogg
-audio/error.ogg
-audio/ping.m4a
 CaptchaSheet.qml
 ChannelMemberList.qml
 ChatCard.qml

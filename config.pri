@@ -51,10 +51,6 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/Settings.qml) \
         $$quote($$BASEDIR/assets/ThreadList.qml) \
         $$quote($$BASEDIR/assets/UserSheet.qml) \
-        $$quote($$BASEDIR/assets/audio/connected.ogg) \
-        $$quote($$BASEDIR/assets/audio/connecting.ogg) \
-        $$quote($$BASEDIR/assets/audio/error.ogg) \
-        $$quote($$BASEDIR/assets/audio/ping.m4a) \
         $$quote($$BASEDIR/assets/components/SettingItem.qml) \
         $$quote($$BASEDIR/assets/icon.png) \
         $$quote($$BASEDIR/assets/images/default-avt.png) \
@@ -171,6 +167,7 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/core/discord/JsonParser.hpp) \
         $$quote($$BASEDIR/src/core/discord/NetworkWorker.hpp) \
         $$quote($$BASEDIR/src/core/discord/RestClient.hpp) \
+        $$quote($$BASEDIR/src/core/discord/StreamScanner.hpp) \
         $$quote($$BASEDIR/src/core/models/Models.hpp) \
         $$quote($$BASEDIR/src/core/modules/Chat.hpp) \
         $$quote($$BASEDIR/src/core/modules/DM.hpp) \
@@ -246,9 +243,6 @@ lupdate_inclusion {
         $$quote($$BASEDIR/../assets/*.qml) \
         $$quote($$BASEDIR/../assets/*.js) \
         $$quote($$BASEDIR/../assets/*.qs) \
-        $$quote($$BASEDIR/../assets/audio/*.qml) \
-        $$quote($$BASEDIR/../assets/audio/*.js) \
-        $$quote($$BASEDIR/../assets/audio/*.qs) \
         $$quote($$BASEDIR/../assets/components/*.qml) \
         $$quote($$BASEDIR/../assets/components/*.js) \
         $$quote($$BASEDIR/../assets/components/*.qs) \

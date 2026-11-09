@@ -245,17 +245,17 @@ NavigationPane {
 
         MediaPlayer {
             id: connectingPlayer
-            sourceUrl: "asset:///audio/connecting.ogg"
+            sourceUrl: settingsController.audioUrl("connecting.ogg")
             repeatMode: RepeatMode.Track
         },
         MediaPlayer {
             id: connectedPlayer
-            sourceUrl: "asset:///audio/connected.ogg"
+            sourceUrl: settingsController.audioUrl("connected.ogg")
             repeatMode: RepeatMode.None
         },
         MediaPlayer {
             id: errorPlayer
-            sourceUrl: "asset:///audio/error.ogg"
+            sourceUrl: settingsController.audioUrl("error.ogg")
             repeatMode: RepeatMode.None
         },
 

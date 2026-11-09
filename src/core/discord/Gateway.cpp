@@ -29,7 +29,9 @@ const int kGatewayDnsTimeoutMs = 10000;
 DiscordGateway::DiscordGateway(QObject *parent)
     : QObject(parent), m_connection(NULL), m_timerId(0),
       m_pollIntervalMs(kGatewayPollIntervalMs), m_resumeRequested(false),
-      m_heartbeatWatchdog(false), m_awaitingAck(false), m_abruptClose(false), m_lastPersistMs(0), m_dnsRetriesLeft(0),
+      m_heartbeatWatchdog(false), m_awaitingAck(false), m_lightStream(false),
+      m_lastInvalidResumable(false), m_msgOverflow(false), m_msgIsReady(false),
+      m_msgSequence(-1), m_abruptClose(false), m_lastPersistMs(0), m_dnsRetriesLeft(0),
       m_lastPollMs(0), m_zstreamReady(false), m_sequence(-1),
       m_heartbeatIntervalMs(0), m_nextHeartbeatMs(0), m_state(Disconnected) {
   m_mgr = new mg_mgr;
@@ -101,6 +103,7 @@ void DiscordGateway::resumeGateway(const QString &token,
   }
   m_sentLazyRequests.clear();
   m_pendingLazyRequests.clear();
+  resetStreamState();
   m_heartbeatIntervalMs = 0;
   m_nextHeartbeatMs = 0;
   m_sessionId = sessionId;
@@ -122,7 +125,8 @@ void DiscordGateway::persistSession(bool force) {
     return;
   }
   m_lastPersistMs = now;
-  ServiceSession::saveGateway(m_sessionId, m_resumeGatewayUrl, m_sequence);
+  ServiceSession::saveGateway(m_sessionId, m_resumeGatewayUrl, m_sequence,
+                              subscribedKeys());
 }
 
 void DiscordGateway::beginConnectAttempt() {
@@ -419,6 +423,15 @@ void DiscordGateway::resetSession() {
   }
   m_sentLazyRequests.clear();
   m_pendingLazyRequests.clear();
+  resetStreamState();
+}
+
+QStringList DiscordGateway::subscribedKeys() const {
+  QStringList keys = m_sentLazyRequests.toList();
+  while (keys.size() > 60) {
+    keys.removeLast();
+  }
+  return keys;
 }
 
 void DiscordGateway::flushPendingLazyRequests() {

@@ -76,7 +76,7 @@
     <!-- A string value of the format <0-999>.<0-999>.<0-999> that represents application version which can be used to check for application upgrade.
          Values can also be 1-part or 2-part. It is not necessary to have a 3-part value.
          An updated version of application must have a versionNumber value higher than the previous version. Required. -->
-    <versionNumber>1.0.3</versionNumber>
+    <versionNumber>1.0.4</versionNumber>
 
     <!-- Fourth digit segment of the package version. First three segments are taken from the
          <versionNumber> element.  Must be an integer from 0 to 2^16-1 -->
@@ -130,6 +130,14 @@
          Momentics (NDK 10.3.1) appears to reject public asset folder names
          that share that prefix with the already-declared "assets" rule. -->
     <asset path="hub-icons" public="true">hub-icons</asset>
+
+    <!-- All app sounds live in the PUBLIC asset folder audio/ (installed as
+         /apps/<appId>/public/audio/), not in assets/: the system Notification service
+         plays the background ping (HubIntegration::postBackgroundAlert()) and cannot read
+         the private assets/ folder. Everything that plays them uses file:/// URLs from
+         HubIntegration::publicAssetUrl(). Folder name must not start with "assets"
+         (see the hub-icons note above). -->
+    <asset path="audio" public="true">audio</asset>
 
     <!-- Fix (short-tap on a Hub item doesn't open the app): rebuilt
          after directly inspecting Beeper10 (github search found no

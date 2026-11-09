@@ -1,6 +1,7 @@
 #ifndef Gateway_HPP_
 #define Gateway_HPP_
 
+#include "StreamScanner.hpp"
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -47,6 +48,14 @@ public:
   // refused. Used when the UI shuts down.
   void dropConnection();
   void setPollIntervalMs(int ms);
+  // Headless-service mode for a fresh IDENTIFY: the ~5 MB READY is inflated chunk by chunk
+  // and only session_id / resume_gateway_url are kept (ReadyScanner); any other message
+  // over 128 KB is dropped. Normal-sized messages are handled as usual. Off by default.
+  void setLightStreamMode(bool enabled) { m_lightStream = enabled; }
+  // True if the last op 9 said "resumable" (d:true); false means the session is gone.
+  bool lastInvalidResumable() const { return m_lastInvalidResumable; }
+  // "guildId:channelId" of every channel subscribed with op 14 on this session.
+  QStringList subscribedKeys() const;
   // Opt-in (the headless service): if a heartbeat is still unanswered when the next one is
   // due, the connection is dead without TCP noticing; drop it so the owner can RESUME.
   void setHeartbeatWatchdog(bool enabled) { m_heartbeatWatchdog = enabled; }
@@ -97,6 +106,11 @@ private:
   void sendHeartbeat();
   void sendIdentify();
   void sendResume();
+  void handleStreamedChunk(const char *data, int length);
+  void consumeInflated(const char *data, int length);
+  void finishStreamedMessage();
+  void finishStreamedReady();
+  void resetStreamState();
   // Saves session_id / url / seq for the service (ServiceSession.hpp). Throttled unless force.
   void persistSession(bool force);
   void sendJsonText(const QString &text);
@@ -115,6 +129,14 @@ private:
   bool m_resumeRequested;   // the next HELLO answers with RESUME instead of IDENTIFY
   bool m_heartbeatWatchdog;
   bool m_awaitingAck;
+  bool m_lightStream;
+  bool m_lastInvalidResumable;
+  ReadyScanner m_readyScanner;
+  QByteArray m_msgHead;     // light mode: start of the message being inflated
+  QByteArray m_zTail;       // light mode: last 4 compressed bytes (message end marker)
+  bool m_msgOverflow;
+  bool m_msgIsReady;
+  int m_msgSequence;
   bool m_abruptClose;       // destructor: drop the socket without a close frame
   qint64 m_lastPersistMs;
   QByteArray m_urlBytes;    // mongoose keeps the pointers, so these must outlive connect

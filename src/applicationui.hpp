@@ -70,6 +70,9 @@ private Q_SLOTS:
   // closes (own user id, guild/DM names, own roles; see ServiceSession.hpp). The session id
   // and sequence number are written by DiscordGateway itself.
   void saveServiceProfile();
+  // Fullscreen vs thumbnail/invisible: decides who plays the message sound (HubIntegration).
+  void onUiForeground();
+  void onUiBackground();
 
 Q_SIGNALS:
   // Asks main.qml to open the chat page (selectChannel() only updates backend

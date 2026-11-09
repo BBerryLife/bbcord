@@ -1,5 +1,6 @@
 #include "SettingsController.hpp"
 
+#include "../core/HubIntegration.hpp"
 #include "../utils/Logger.hpp"
 
 #include <QDateTime>
@@ -377,4 +378,8 @@ QString SettingsController::normalizedUrl(const QString &url) const {
   parsed.setEncodedQuery(QByteArray());
   parsed.setFragment(QString());
   return parsed.toString();
+}
+
+QString SettingsController::audioUrl(const QString &fileName) const {
+  return HubIntegration::publicAssetUrl("audio/" + fileName);
 }
