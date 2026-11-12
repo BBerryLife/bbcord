@@ -412,6 +412,42 @@ void DiscordClient::onArchivedThreadsLoaded(const QString &channelId,
   emit archivedThreadsLoaded(channelId, mappedThreads, hasMore);
 }
 
+void DiscordClient::requestThreadSearch(const QString &channelId, int offset,
+                                        const QString &sortBy) {
+  QString safeChannelId = channelId.trimmed();
+  if (safeChannelId.isEmpty() || m_token.trimmed().isEmpty()) {
+    return;
+  }
+
+  if (m_networkWorker != 0) {
+    QMetaObject::invokeMethod(
+        m_networkWorker, "fetchThreadSearch", Qt::QueuedConnection,
+        Q_ARG(QString, m_token), Q_ARG(QString, safeChannelId),
+        Q_ARG(int, offset), Q_ARG(QString, sortBy.trimmed()));
+  }
+}
+
+void DiscordClient::onThreadSearchLoaded(const QString &channelId,
+                                         const QVariantList &threads,
+                                         bool hasMore, int offset,
+                                         const QString &sortBy) {
+  QVariantList mappedThreads;
+  for (int i = 0; i < threads.size(); ++i) {
+    QVariantMap item = m_itemMapper->guildChannelToItem(threads.at(i).toMap());
+    // Search results are the parent's own threads; guard against a missing parent_id.
+    if (item.value("parentId").toString().isEmpty()) {
+      item["parentId"] = channelId;
+    }
+    if (!item.value("id").toString().isEmpty()) {
+      mappedThreads.append(item);
+    }
+  }
+
+  // Kept out of m_channelThreadsByParentId (which mirrors the gateway); ThreadList.qml
+  // merges both sources by thread id.
+  emit threadSearchLoaded(channelId, mappedThreads, hasMore, offset, sortBy);
+}
+
 bool DiscordClient::updateGuildChannelUnread(const QString &channelId,
                                              bool unread) {
   QString safeChannelId = channelId.trimmed();

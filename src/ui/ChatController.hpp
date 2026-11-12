@@ -130,6 +130,8 @@ private Q_SLOTS:
                             const QVariantMap &message);
   void onChatMessageDeleted(const QString &channelId, const QString &messageId);
   void onChatAvatarChanged(const QString &userId, const QString &avatarSource);
+  // Member roles or guild role colors changed: recolor author names already in the model.
+  void onMemberRolesChanged(const QString &guildId);
   void onAttachmentImageCached(const QString &url, const QString &path);
   void onAttachmentImageFailed(const QString &url);
 
@@ -153,6 +155,9 @@ private:
   int chatDataModelIndexForNonce(const QString &nonce) const;
   void replaceGroupedMessage(const QVariantMap &message);
   QVariantMap prepareMessageForModel(const QVariantMap &message);
+  // Author name color: the author's highest colored role, else the default text color.
+  // Asks the client to fetch the member's roles when they are not cached yet.
+  QString authorColorFor(const QString &guildId, const QString &authorId);
   int chatDataModelIndexForMessage(const QString &messageId) const;
   bool sameMessageIdentity(const QVariantMap &left,
                            const QVariantMap &right) const;

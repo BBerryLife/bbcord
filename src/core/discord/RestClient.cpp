@@ -159,6 +159,8 @@ void DiscordRestClient::cancel() {
   m_channelId.clear();
   m_messageId.clear();
   m_beforeMessageId.clear();
+  m_threadOffset = 0;
+  m_threadSortBy.clear();
   m_nonce.clear();
   m_avatarUserId.clear();
   m_avatarHash.clear();
@@ -406,6 +408,8 @@ void DiscordRestClient::processNextRequest() {
   m_channelId = restRequest.channelId;
   m_messageId = restRequest.messageId;
   m_beforeMessageId = restRequest.beforeMessageId;
+  m_threadOffset = restRequest.threadOffset;
+  m_threadSortBy = restRequest.threadSortBy;
   m_nonce = restRequest.nonce;
   m_avatarUserId = restRequest.avatarUserId;
   m_avatarHash = restRequest.avatarHash;
@@ -455,6 +459,8 @@ void DiscordRestClient::processNextRequest() {
       message = "Could not create Discord threads connection";
     } else if (m_requestType == ArchivedThreadsRequest) {
       message = "Could not create Discord archived threads connection";
+    } else if (m_requestType == ThreadSearchRequest) {
+      message = "Could not create Discord thread search connection";
     } else if (m_requestType == ChannelMessagesRequest) {
       message = "Could not create Discord messages connection";
     } else if (m_requestType == ChannelInfoRequest) {
@@ -877,6 +883,59 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
       break;
     }
 
+    if (m_requestType == ThreadSearchRequest) {
+      qDebug() << "[discord-rest] thread search status" << status << "offset"
+               << m_threadOffset << "sort" << m_threadSortBy;
+      if (status == 202 && m_rateLimitRetriesLeft > 0) {
+        // 202 = Discord is still building this channel's search index. Retry shortly
+        // (honouring "retry_after" when present, capped) instead of showing an empty list.
+        double retryAfterSec = 0.0;
+        QString indexParseError;
+        QVariantMap indexBody =
+            DiscordJsonParser::parseObject(body, &indexParseError);
+        if (indexParseError.isEmpty()) {
+          retryAfterSec = indexBody.value("retry_after").toDouble();
+        }
+        int waitMs = retryAfterSec > 0.0
+                         ? static_cast<int>(retryAfterSec * 1000.0) + 100
+                         : 1000;
+        if (waitMs > 5000) {
+          waitMs = 5000;
+        }
+        --m_rateLimitRetriesLeft;
+        qDebug() << "[discord-rest] thread search index warming, retrying in"
+                 << waitMs << "ms";
+        requeueCurrentRequestForRetry();
+        finishRequest(keepConnectionAlive);
+        QTimer::singleShot(waitMs, this, SLOT(resumeQueue()));
+        break;
+      }
+
+      if (status == 200) {
+        QString parseError;
+        QVariantMap responseObject =
+            DiscordJsonParser::parseObject(body, &parseError);
+        if (!parseError.isEmpty()) {
+          failDataRequest(
+              QString("Discord REST JSON error: %1").arg(parseError));
+          break;
+        }
+
+        QVariantList threads = responseObject.value("threads").toList();
+        bool hasMore = responseObject.value("has_more").toBool();
+        QString channelId = m_channelId;
+        int offset = m_threadOffset;
+        QString sortBy = m_threadSortBy;
+        finishRequest(keepConnectionAlive);
+        emit threadSearchLoaded(channelId, threads, hasMore, offset, sortBy);
+        processNextRequest();
+        break;
+      }
+
+      failDataRequest(dataErrorMessage("thread search", status));
+      break;
+    }
+
     if (m_requestType == PasswordLoginRequest && m_awaitingFingerprint) {
       qDebug() << "[discord-rest] fingerprint status" << status;
       m_awaitingFingerprint = false;
@@ -1085,6 +1144,8 @@ void DiscordRestClient::requeueCurrentRequestForRetry() {
   retryRequest.channelId = m_channelId;
   retryRequest.messageId = m_messageId;
   retryRequest.beforeMessageId = m_beforeMessageId;
+  retryRequest.threadOffset = m_threadOffset;
+  retryRequest.threadSortBy = m_threadSortBy;
   retryRequest.nonce = m_nonce;
   retryRequest.avatarUserId = m_avatarUserId;
   retryRequest.avatarHash = m_avatarHash;
@@ -1125,6 +1186,8 @@ void DiscordRestClient::finishRequest(bool keepConnectionAlive) {
   m_channelId.clear();
   m_messageId.clear();
   m_beforeMessageId.clear();
+  m_threadOffset = 0;
+  m_threadSortBy.clear();
   m_nonce.clear();
   m_avatarUserId.clear();
   m_avatarHash.clear();

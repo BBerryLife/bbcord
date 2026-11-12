@@ -1,3 +1,4 @@
+#include <QUrl>
 #include "../RestClient.hpp"
 
 void DiscordRestClient::fetchDmChannels(const QString &token, int limit,
@@ -96,15 +97,53 @@ void DiscordRestClient::fetchArchivedThreads(const QString &token,
     return;
   }
 
+  // "before" is the archive_timestamp (ISO8601) of the last thread of the previous
+  // page, not a thread id. It contains "+", so it must be percent-encoded.
   request.requestPath =
-      QString("/api/v9/channels/%1/threads/archived/public")
+      QString("/api/v9/channels/%1/threads/archived/public?limit=50")
           .arg(request.channelId);
   QString trimmedCursor = beforeCursor.trimmed();
   if (!trimmedCursor.isEmpty()) {
-    request.requestPath += QString("?before=%1").arg(trimmedCursor);
+    request.requestPath +=
+        QString("&before=%1")
+            .arg(QString::fromLatin1(
+                QUrl::toPercentEncoding(trimmedCursor).constData()));
   }
 
   request.type = ArchivedThreadsRequest;
+  enqueueRequest(request);
+}
+
+void DiscordRestClient::fetchThreadSearch(const QString &token,
+                                          const QString &channelId, int offset,
+                                          const QString &sortBy) {
+  // Same endpoint the official client uses to list forum/media posts. Unlike the
+  // gateway (only threads Discord pushes) and threads/archived/public (archived only),
+  // it returns active AND archived threads, 25 per page, paged by offset.
+  RestRequest request;
+  request.token = token.trimmed();
+  request.channelId = channelId.trimmed();
+  if (request.token.isEmpty() || request.channelId.isEmpty()) {
+    emit requestFailed("Channel request is empty");
+    return;
+  }
+
+  QString safeSort = sortBy.trimmed();
+  if (safeSort != "creation_time") {
+    safeSort = "last_message_time";
+  }
+  int safeOffset = offset < 0 ? 0 : offset;
+
+  request.requestPath =
+      QString("/api/v9/channels/%1/threads/search?archived=true&sort_by=%2"
+              "&sort_order=desc&limit=25&tag_setting=match_some&offset=%3")
+          .arg(request.channelId)
+          .arg(safeSort)
+          .arg(safeOffset);
+  request.threadOffset = safeOffset;
+  request.threadSortBy = safeSort;
+
+  request.type = ThreadSearchRequest;
   enqueueRequest(request);
 }
 

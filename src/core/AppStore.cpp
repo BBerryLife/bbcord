@@ -138,6 +138,81 @@ QVariantList AppStore::guildRolesForGuild(const QString &guildId) const {
   return m_guildRolesByGuildId.value(guildId.trimmed());
 }
 
+bool AppStore::hasMemberRoles(const QString &guildId,
+                              const QString &userId) const {
+  QString safeGuildId = guildId.trimmed();
+  QString safeUserId = userId.trimmed();
+  if (safeGuildId.isEmpty() || safeUserId.isEmpty()) {
+    return false;
+  }
+  if (safeUserId == currentUserId() &&
+      m_currentUserRoleIdsByGuildId.contains(safeGuildId)) {
+    return true;
+  }
+  return m_memberRoleIdsByGuildId.value(safeGuildId).contains(safeUserId);
+}
+
+QString AppStore::roleColorForMember(const QString &guildId,
+                                     const QString &userId) const {
+  QString safeGuildId = guildId.trimmed();
+  QString safeUserId = userId.trimmed();
+  if (safeGuildId.isEmpty() || safeUserId.isEmpty()) {
+    return QString();
+  }
+
+  QStringList roleIds;
+  if (safeUserId == currentUserId() &&
+      m_currentUserRoleIdsByGuildId.contains(safeGuildId)) {
+    roleIds = m_currentUserRoleIdsByGuildId.value(safeGuildId);
+  } else {
+    roleIds = m_memberRoleIdsByGuildId.value(safeGuildId).value(safeUserId);
+  }
+  if (roleIds.isEmpty()) {
+    return QString();
+  }
+
+  QVariantList roles = m_guildRolesByGuildId.value(safeGuildId);
+  QString bestColor;
+  int bestPosition = -1;
+  for (int i = 0; i < roles.size(); ++i) {
+    QVariantMap role = roles.at(i).toMap();
+    QString color = role.value("color").toString();
+    if (color.isEmpty() || !roleIds.contains(role.value("id").toString())) {
+      continue;
+    }
+    int position = role.value("position").toInt();
+    if (position > bestPosition) {
+      bestPosition = position;
+      bestColor = color;
+    }
+  }
+  return bestColor;
+}
+
+void AppStore::setMemberRoles(const QString &guildId,
+                              const QMap<QString, QStringList> &rolesByUserId) {
+  QString safeGuildId = guildId.trimmed();
+  if (safeGuildId.isEmpty() || rolesByUserId.isEmpty()) {
+    return;
+  }
+
+  QMap<QString, QStringList> &cached = m_memberRoleIdsByGuildId[safeGuildId];
+  bool changed = false;
+  for (QMap<QString, QStringList>::const_iterator it = rolesByUserId.constBegin();
+       it != rolesByUserId.constEnd(); ++it) {
+    if (it.key().isEmpty()) {
+      continue;
+    }
+    if (!cached.contains(it.key()) || cached.value(it.key()) != it.value()) {
+      cached.insert(it.key(), it.value());
+      changed = true;
+    }
+  }
+  if (changed) {
+    emit memberRolesChanged(safeGuildId);
+  }
+}
+
 QVariantList AppStore::memberListForChannel(const QString &channelId) const {
   return m_memberListByChannelId.value(channelId.trimmed());
 }
@@ -221,6 +296,7 @@ void AppStore::clearSession() {
   setDmChannels(QVariantList());
   setGuildChannels(QVariantList());
   setChannelThreadsByParentId(QVariantMap());
+  m_memberRoleIdsByGuildId.clear();
   clearChatCache();
   selectHome();
 }

@@ -89,6 +89,7 @@ Page {
                             messageId: ListItemData.id
                             authorId: ListItemData.authorId
                             author: ListItemData.author
+                            authorColor: ListItemData.authorColor !== undefined && ListItemData.authorColor !== "" ? ListItemData.authorColor : "#F2F3F5"
                             initials: ListItemData.initials
                             avatarSource: ListItemData.avatarSource
                             avatarColor: ListItemData.avatarColor

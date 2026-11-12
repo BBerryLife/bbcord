@@ -156,37 +156,37 @@
 <context>
     <name>ChatCard</name>
     <message>
-        <location filename="../assets/ChatCard.qml" line="246"/>
+        <location filename="../assets/ChatCard.qml" line="247"/>
         <source>Loading more messages...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="301"/>
+        <location filename="../assets/ChatCard.qml" line="302"/>
         <source>Replying to </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="333"/>
+        <location filename="../assets/ChatCard.qml" line="334"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="400"/>
+        <location filename="../assets/ChatCard.qml" line="401"/>
         <source>File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="475"/>
+        <location filename="../assets/ChatCard.qml" line="476"/>
         <source>Message </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="531"/>
+        <location filename="../assets/ChatCard.qml" line="532"/>
         <source>Editing message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="566"/>
+        <location filename="../assets/ChatCard.qml" line="567"/>
         <source>Attach files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -194,23 +194,23 @@
 <context>
     <name>ChatController</name>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="333"/>
-        <location filename="../src/ui/ChatController.cpp" line="1397"/>
+        <location filename="../src/ui/ChatController.cpp" line="337"/>
+        <location filename="../src/ui/ChatController.cpp" line="1450"/>
         <source>Maximum 10 attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1382"/>
+        <location filename="../src/ui/ChatController.cpp" line="1435"/>
         <source>Attachment file not found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1392"/>
+        <location filename="../src/ui/ChatController.cpp" line="1445"/>
         <source>Attachment is too large</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1431"/>
+        <location filename="../src/ui/ChatController.cpp" line="1484"/>
         <source>%1 files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -361,72 +361,72 @@
 <context>
     <name>MessageBubble</name>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="91"/>
+        <location filename="../assets/MessageBubble.qml" line="94"/>
         <source>Reply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="99"/>
+        <location filename="../assets/MessageBubble.qml" line="102"/>
         <source>Copy message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="108"/>
+        <location filename="../assets/MessageBubble.qml" line="111"/>
         <source>Open attachment</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="117"/>
+        <location filename="../assets/MessageBubble.qml" line="120"/>
         <source>Edit</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="126"/>
-        <location filename="../assets/MessageBubble.qml" line="164"/>
+        <location filename="../assets/MessageBubble.qml" line="129"/>
+        <location filename="../assets/MessageBubble.qml" line="167"/>
         <source>Delete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="162"/>
+        <location filename="../assets/MessageBubble.qml" line="165"/>
         <source>Delete message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="163"/>
+        <location filename="../assets/MessageBubble.qml" line="166"/>
         <source>Delete this message?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="165"/>
+        <location filename="../assets/MessageBubble.qml" line="168"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="270"/>
+        <location filename="../assets/MessageBubble.qml" line="273"/>
         <source>failed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="270"/>
+        <location filename="../assets/MessageBubble.qml" line="273"/>
         <source>sending</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="270"/>
+        <location filename="../assets/MessageBubble.qml" line="273"/>
         <source>edited</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="416"/>
-        <location filename="../assets/MessageBubble.qml" line="482"/>
-        <location filename="../assets/MessageBubble.qml" line="966"/>
+        <location filename="../assets/MessageBubble.qml" line="419"/>
+        <location filename="../assets/MessageBubble.qml" line="485"/>
+        <location filename="../assets/MessageBubble.qml" line="969"/>
         <source>Open attachment: </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/MessageBubble.qml" line="416"/>
-        <location filename="../assets/MessageBubble.qml" line="482"/>
-        <location filename="../assets/MessageBubble.qml" line="966"/>
+        <location filename="../assets/MessageBubble.qml" line="419"/>
+        <location filename="../assets/MessageBubble.qml" line="485"/>
+        <location filename="../assets/MessageBubble.qml" line="969"/>
         <source>Open image: </source>
         <translation type="unfinished"></translation>
     </message>
@@ -651,23 +651,28 @@
 <context>
     <name>ThreadList</name>
     <message>
-        <location filename="../assets/ThreadList.qml" line="36"/>
+        <location filename="../assets/ThreadList.qml" line="41"/>
         <source>Forums #</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ThreadList.qml" line="134"/>
-        <source>No active threads in this channel</source>
+        <location filename="../assets/ThreadList.qml" line="205"/>
+        <source>Loading threads...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ThreadList.qml" line="191"/>
+        <location filename="../assets/ThreadList.qml" line="205"/>
+        <source>No threads in this channel</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ThreadList.qml" line="263"/>
+        <source>Load more threads</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ThreadList.qml" line="263"/>
         <source>Loading...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../assets/ThreadList.qml" line="191"/>
-        <source>Load older threads</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

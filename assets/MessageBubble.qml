@@ -40,6 +40,9 @@ Container {
     property bool isGroupEnd: true
     property bool showAvatar: true
     property bool showUsername: true
+    // Author name color: the author's highest colored role (set by ChatController);
+    // the default text color when they have none.
+    property string authorColor: "#F2F3F5"
     property bool showTimestamp: true
     property bool compactMessage: false
     property bool pending: false
@@ -252,7 +255,7 @@ Container {
                 visible: root.showUsername
                 textStyle.fontSize: FontSize.Small
                 textStyle.fontWeight: FontWeight.Normal
-                textStyle.color: Color.create("#F2F3F5")
+                textStyle.color: Color.create(root.authorColor !== "" ? root.authorColor : "#F2F3F5")
                 verticalAlignment: VerticalAlignment.Center
             }
 

@@ -298,6 +298,41 @@ QByteArray DiscordJsonParser::buildMemberListUnsubscribePayload(
   return payload;
 }
 
+QByteArray DiscordJsonParser::buildRequestGuildMembersPayload(
+    const QString &guildId, const QStringList &userIds, QString *errorMessage) {
+  QVariantMap data;
+  data["guild_id"] = guildId.trimmed();
+  QVariantList ids;
+  for (int i = 0; i < userIds.size() && ids.size() < 100; ++i) {
+    QString userId = userIds.at(i).trimmed();
+    if (!userId.isEmpty()) {
+      ids.append(userId);
+    }
+  }
+  data["user_ids"] = ids;
+  data["presences"] = false;
+
+  QVariantMap root;
+  root["op"] = 8;
+  root["d"] = data;
+
+  bb::data::JsonDataAccess json;
+  QByteArray payload;
+  json.saveToBuffer(root, &payload);
+
+  if (json.hasError()) {
+    if (errorMessage != 0) {
+      *errorMessage = json.error().errorMessage();
+    }
+    return QByteArray();
+  }
+
+  if (errorMessage != 0) {
+    errorMessage->clear();
+  }
+  return payload;
+}
+
 int DiscordJsonParser::valueToInt(const QVariant &value, int fallback) {
   bool ok = false;
   int result = value.toInt(&ok);

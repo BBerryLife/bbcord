@@ -36,6 +36,10 @@ DiscordNetworkWorker::DiscordNetworkWorker(QObject *parent)
   connect(&m_dataClient,
           SIGNAL(archivedThreadsLoaded(QString, QVariantList, bool)), this,
           SIGNAL(archivedThreadsLoaded(QString, QVariantList, bool)));
+  connect(&m_dataClient,
+          SIGNAL(threadSearchLoaded(QString, QVariantList, bool, int, QString)),
+          this,
+          SIGNAL(threadSearchLoaded(QString, QVariantList, bool, int, QString)));
   connect(&m_dataClient, SIGNAL(channelInfoLoaded(QString, QString, QString)),
           this, SIGNAL(channelInfoLoaded(QString, QString, QString)));
   connect(&m_dataClient, SIGNAL(channelInfoLoadFailed(QString, QString)),
@@ -203,6 +207,20 @@ void DiscordNetworkWorker::fetchArchivedThreads(const QString &token,
   }
 
   m_dataClient.fetchArchivedThreads(token, channelId, beforeCursor);
+}
+
+void DiscordNetworkWorker::fetchThreadSearch(const QString &token,
+                                             const QString &channelId,
+                                             int offset,
+                                             const QString &sortBy) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(
+        this, "fetchThreadSearch", Qt::QueuedConnection, Q_ARG(QString, token),
+        Q_ARG(QString, channelId), Q_ARG(int, offset), Q_ARG(QString, sortBy));
+    return;
+  }
+
+  m_dataClient.fetchThreadSearch(token, channelId, offset, sortBy);
 }
 
 void DiscordNetworkWorker::fetchChannelInfo(const QString &token,

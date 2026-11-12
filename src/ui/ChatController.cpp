@@ -139,6 +139,10 @@ ChatController::ChatController(DiscordClient *client, AppStore *store,
             SLOT(onChatMessageDeleted(QString, QString)));
     connect(m_store, SIGNAL(chatAvatarChanged(QString, QString)), this,
             SLOT(onChatAvatarChanged(QString, QString)));
+    connect(m_store, SIGNAL(memberRolesChanged(QString)), this,
+            SLOT(onMemberRolesChanged(QString)));
+    connect(m_store, SIGNAL(guildRolesChanged(QString)), this,
+            SLOT(onMemberRolesChanged(QString)));
   }
 }
 
@@ -780,6 +784,47 @@ void ChatController::onChatAvatarChanged(const QString &userId,
   }
 }
 
+void ChatController::onMemberRolesChanged(const QString &guildId) {
+  if (m_store == 0 || m_currentGuildId.isEmpty() ||
+      guildId.trimmed() != m_currentGuildId) {
+    return;
+  }
+
+  for (int i = 0; i < m_chatDataModel->size(); ++i) {
+    QVariantMap message = m_chatDataModel->value(i).toMap();
+    QString authorId = message.value("authorId").toString();
+    if (authorId.isEmpty()) {
+      continue;
+    }
+    QString color = authorColorFor(m_currentGuildId, authorId);
+    if (message.value("authorColor").toString() == color) {
+      continue;
+    }
+    message["authorColor"] = color;
+    m_chatDataModel->replace(i, message);
+  }
+}
+
+QString ChatController::authorColorFor(const QString &guildId,
+                                       const QString &authorId) {
+  const QString defaultColor = "#F2F3F5";
+  if (m_store == 0 || guildId.isEmpty() || authorId.isEmpty()) {
+    return defaultColor;
+  }
+
+  if (!m_store->hasMemberRoles(guildId, authorId)) {
+    // REST history carries no member data; ask the gateway (batched and deduplicated
+    // in the client). The result comes back through memberRolesChanged().
+    if (m_client != 0) {
+      m_client->requestMemberRoles(guildId, authorId);
+    }
+    return defaultColor;
+  }
+
+  QString color = m_store->roleColorForMember(guildId, authorId);
+  return color.isEmpty() ? defaultColor : color;
+}
+
 void ChatController::onAttachmentImageCached(const QString &url,
                                              const QString &path) {
   qDebug() << "[image-cache] cached" << url << "->" << path;
@@ -1177,6 +1222,14 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
     }
   }
   item["mentionsCurrentUser"] = mentionsCurrentUser;
+
+  // Name color from the author's role (guild chats only). REST history messages have
+  // no guild_id, so fall back to the open chat's guild.
+  QString colorGuildId = item.value("guildId").toString();
+  if (colorGuildId.isEmpty()) {
+    colorGuildId = m_currentGuildId;
+  }
+  item["authorColor"] = authorColorFor(colorGuildId, authorId);
 
   return item;
 }

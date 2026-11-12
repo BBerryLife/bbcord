@@ -93,6 +93,11 @@ void DiscordClient::initializeNetworkWorker() {
           SLOT(onArchivedThreadsLoaded(QString, QVariantList, bool)),
           Qt::QueuedConnection);
   connect(m_networkWorker,
+          SIGNAL(threadSearchLoaded(QString, QVariantList, bool, int, QString)),
+          this,
+          SLOT(onThreadSearchLoaded(QString, QVariantList, bool, int, QString)),
+          Qt::QueuedConnection);
+  connect(m_networkWorker,
           SIGNAL(channelInfoLoaded(QString, QString, QString)), this,
           SLOT(onChannelInfoLoaded(QString, QString, QString)),
           Qt::QueuedConnection);

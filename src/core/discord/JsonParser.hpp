@@ -3,6 +3,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
 #include <QVariant>
 #include <QVariantList>
 #include <QVariantMap>
@@ -45,6 +46,12 @@ public:
   // (see DiscordGateway::sendMemberListSync()).
   static QByteArray buildMemberListUnsubscribePayload(
       const QString &guildId, QString *errorMessage = 0);
+  // op:8 REQUEST_GUILD_MEMBERS for specific users (max 100): the answer arrives as
+  // GUILD_MEMBERS_CHUNK with each member's roles/nick. Used to color chat author names,
+  // since REST message history carries no member data.
+  static QByteArray buildRequestGuildMembersPayload(const QString &guildId,
+                                                    const QStringList &userIds,
+                                                    QString *errorMessage = 0);
   static int valueToInt(const QVariant &value, int fallback);
   static bool hasJsonToken(const QByteArray &bytes, const char *compactToken,
                            const char *spacedToken);

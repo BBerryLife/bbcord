@@ -178,6 +178,13 @@ QVariantMap ItemMapper::guildChannelToItem(const QVariantMap &channel) const {
   item["position"] = channel.value("position").toInt();
   item["channelType"] = type;
   item["parentId"] = channel.value("parent_id").toString();
+  // Thread-only fields (empty/false for regular channels). lastMessageId is a snowflake,
+  // so it sorts by recency; archiveTimestamp is the cursor for threads/archived/public.
+  item["lastMessageId"] = channel.value("last_message_id").toString();
+  item["messageCount"] = channel.value("message_count").toInt();
+  QVariantMap threadMetadata = channel.value("thread_metadata").toMap();
+  item["archived"] = threadMetadata.value("archived").toBool();
+  item["archiveTimestamp"] = threadMetadata.value("archive_timestamp").toString();
   item["unread"] = channel.value("unread").toBool();
   item["mentionCount"] = channel.value("mention_count").toInt();
   // Discord's payload has no "accessible" field: GET /guilds/{id}/channels returns all

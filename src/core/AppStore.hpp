@@ -113,6 +113,16 @@ public:
   // Empty if no data yet.
   Q_INVOKABLE QVariantList guildRolesForGuild(const QString &guildId) const;
 
+  // Role IDs of guild members, cached from MESSAGE_CREATE.member, GUILD_MEMBERS_CHUNK,
+  // member-list SYNC and GUILD_MEMBER_UPDATE. false = nothing known about this member yet
+  // (not the same as "has no roles"). The current user is answered from the self-member data.
+  Q_INVOKABLE bool hasMemberRoles(const QString &guildId,
+                                  const QString &userId) const;
+  // "#RRGGBB" of the member's highest-position role that has a color (how the official
+  // client colors names). Empty if the member is unknown or none of their roles is colored.
+  Q_INVOKABLE QString roleColorForMember(const QString &guildId,
+                                         const QString &userId) const;
+
   // Flattened member list (DiscordMember) for a channel, from the GUILD_MEMBER_LIST_UPDATE
   // "SYNC" op. Keyed by channelId, since Discord scopes member lists by channel
   // permissions. Items: userId, displayName, avatarUrl, status, primaryRoleId.
@@ -168,6 +178,10 @@ public Q_SLOTS:
 
   // Full replace of a guild's role list (not a per-item patch).
   void setGuildRoles(const QString &guildId, const QVariantList &roles);
+  // Merges userId -> roleIds into the member-role cache and emits memberRolesChanged()
+  // once, only if something actually changed.
+  void setMemberRoles(const QString &guildId,
+                      const QMap<QString, QStringList> &rolesByUserId);
 
   // Full replace of a channel's member list; only for the "SYNC" op (a full snapshot).
   // INSERT/UPDATE/DELETE incremental ops are not handled.
@@ -207,6 +221,8 @@ Q_SIGNALS:
   void chatMessageDeleted(const QString &channelId, const QString &messageId);
   void chatAvatarChanged(const QString &userId, const QString &avatarSource);
   void guildRolesChanged(const QString &guildId);
+  // Member role data for the guild changed; chat name colors may need a refresh.
+  void memberRolesChanged(const QString &guildId);
   void memberListChanged(const QString &channelId);
 
 private:
@@ -226,6 +242,7 @@ private:
   MessageCache m_messageCache;
   QMap<QString, QStringList> m_currentUserRoleIdsByGuildId;
   QMap<QString, QVariantList> m_guildRolesByGuildId;
+  QMap<QString, QMap<QString, QStringList> > m_memberRoleIdsByGuildId;
   QMap<QString, QVariantList> m_memberListByChannelId;
   // Channels marked unread while another guild was open (see markChannelUnread()).
   QSet<QString> m_unreadChannelIds;

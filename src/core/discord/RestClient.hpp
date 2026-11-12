@@ -22,6 +22,7 @@ enum RequestType {
   GuildChannelsRequest,
   ActiveThreadsRequest,
   ArchivedThreadsRequest,
+  ThreadSearchRequest,
   ChannelMessagesRequest,
   ChannelInfoRequest,
   SendMessageRequest,
@@ -35,7 +36,7 @@ enum RequestType {
 };
 
 struct RestRequest {
-  RestRequest() : type(NoRequest) {}
+  RestRequest() : type(NoRequest), threadOffset(0) {}
 
   RequestType type;
   QString requestPath;
@@ -59,6 +60,9 @@ struct RestRequest {
   QString mfaLoginInstanceId;
   QString mfaCode;
   QString captchaKey;
+  // ThreadSearchRequest only: result offset and sort field (echoed back in the signal).
+  int threadOffset;
+  QString threadSortBy;
 };
 
 class DiscordRestClient : public QObject {
@@ -91,9 +95,15 @@ public:
   // (see Channel.cpp::fetchActiveThreads()).
   void fetchActiveThreads(const QString &token, const QString &channelId);
   // Auto-archived threads are not in active threads. beforeCursor (empty = first
-  // page) is the id of the oldest loaded thread, for pagination.
+  // page) is the archive_timestamp (ISO8601) of the oldest loaded thread: the
+  // endpoint's "before" is a timestamp, NOT a thread id.
   void fetchArchivedThreads(const QString &token, const QString &channelId,
                             const QString &beforeCursor);
+  // GET /channels/{id}/threads/search: what the official client uses for forum/media
+  // channels. Returns active AND archived threads, paged by offset (25 per page).
+  // sortBy: "last_message_time" or "creation_time".
+  void fetchThreadSearch(const QString &token, const QString &channelId,
+                         int offset, const QString &sortBy);
   void fetchChannelMessages(const QString &token, const QString &channelId,
                             int limit, const QString &beforeMessageId);
   // GET /channels/{id}: a single channel with "guild_id" and "name". Only a fallback
@@ -142,6 +152,9 @@ Q_SIGNALS:
   // m_channelThreadsByParentId; archived threads stay separate.
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
+  // threads/search page. offset/sortBy echo the request so the caller can tell pages apart.
+  void threadSearchLoaded(const QString &channelId, const QVariantList &threads,
+                          bool hasMore, int offset, const QString &sortBy);
   void channelMessagesLoaded(const QString &channelId,
                              const QString &beforeMessageId,
                              const QVariantList &messages);
@@ -227,6 +240,8 @@ private:
   QString m_channelId;
   QString m_messageId;
   QString m_beforeMessageId;
+  int m_threadOffset;
+  QString m_threadSortBy;
   QString m_nonce;
   QString m_avatarUserId;
   QString m_avatarHash;

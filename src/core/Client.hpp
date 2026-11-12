@@ -2,6 +2,8 @@
 #define CLIENT_HPP_
 
 #include <QHash>
+#include <QMap>
+#include <QSet>
 #include <QObject>
 #include <QQueue>
 #include <QString>
@@ -68,6 +70,15 @@ public:
   // Empty beforeCursor = first page; result arrives via archivedThreadsLoaded.
   Q_INVOKABLE void requestArchivedThreads(const QString &channelId,
                                           const QString &beforeCursor);
+  // Lists a forum/media channel's threads (active + archived) via
+  // /channels/{id}/threads/search, paged by offset (25 per page). sortBy is
+  // "last_message_time" or "creation_time". Result arrives via threadSearchLoaded.
+  Q_INVOKABLE void requestThreadSearch(const QString &channelId, int offset,
+                                       const QString &sortBy);
+  // Asks the gateway (op 8) for a guild member's roles, used to color chat author names.
+  // Requests are deduplicated and batched (up to 100 users per op 8); the result is
+  // stored in AppStore and announced via AppStore::memberRolesChanged().
+  void requestMemberRoles(const QString &guildId, const QString &userId);
 
   bool loggedIn() const;
   bool busy() const;
@@ -85,6 +96,9 @@ Q_SIGNALS:
   // Async REST result, so QML listens via Connections{} instead of reading on demand.
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
+  // offset/sortBy echo the request so QML can tell the creation_time first page apart.
+  void threadSearchLoaded(const QString &channelId, const QVariantList &threads,
+                          bool hasMore, int offset, const QString &sortBy);
   // Emitted once fetchChannelInfo() (Hub cold-start fallback) resolves a name.
   // channelName may be empty; main.qml only acts on non-empty names.
   void channelInfoResolved(const QString &channelId, const QString &guildId,
@@ -146,6 +160,10 @@ private Q_SLOTS:
                                const QStringList &roleIds);
   void onArchivedThreadsLoaded(const QString &channelId,
                                const QVariantList &threads, bool hasMore);
+  void flushMemberRoleRequests();
+  void onThreadSearchLoaded(const QString &channelId,
+                            const QVariantList &threads, bool hasMore,
+                            int offset, const QString &sortBy);
   // Companion to fetchChannelInfo(): selects the guild and emits
   // channelInfoResolved() so the chat page can show the real name.
   void onChannelInfoLoaded(const QString &channelId, const QString &guildId,
@@ -224,6 +242,11 @@ private:
   // Merges threads from GUILD_CREATE and THREAD_LIST_SYNC (same payload shape).
   void mergeThreadsIntoCache(const QVariantList &rawThreads,
                              const QVariantList &channelIdsToClear);
+  // guildId -> user ids waiting for the next op 8 batch, and every "guildId:userId"
+  // already requested on this gateway session (cleared on READY/logout so a reconnect
+  // can ask again).
+  QMap<QString, QStringList> m_pendingMemberRoleUserIds;
+  QSet<QString> m_requestedMemberRoleKeys;
   // Parses "roles" and the current user's member entry from a raw guild object
   // into m_store. Shared by READY (main source) and GUILD_CREATE (fallback).
   void mergeGuildRolesIntoCache(const QString &guildId,

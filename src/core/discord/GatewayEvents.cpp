@@ -69,7 +69,13 @@ bool shouldParseDispatch(const QString &eventName) {
          // THREAD_LIST_SYNC must be whitelisted too: events not listed are dropped in
          // handleTextMessage() before reaching onGatewayDispatch(). It is delivered by the
          // OP 14 lazy-subscribe mechanism.
-         eventName == "THREAD_LIST_SYNC";
+         eventName == "THREAD_LIST_SYNC" ||
+         // Live thread changes after the initial sync: without these, threads created
+         // (or deleted) while the app is running never reach m_channelThreadsByParentId.
+         eventName == "THREAD_CREATE" || eventName == "THREAD_UPDATE" ||
+         eventName == "THREAD_DELETE" ||
+         // Answer to op 8 (member roles for chat name colors).
+         eventName == "GUILD_MEMBERS_CHUNK";
 }
 
 QByteArray extractArrayBytes(const QByteArray &bytes, const char *fieldName) {

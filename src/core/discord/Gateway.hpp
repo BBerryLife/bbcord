@@ -70,6 +70,10 @@ public:
   // be dropped (the key is consumed on channel open). Message lazy-load dedup is unaffected.
   Q_INVOKABLE void sendMemberListSync(const QString &guildId,
                                       const QString &channelId);
+  // op:8 for specific users of a guild (max 100 ids); answered by GUILD_MEMBERS_CHUNK.
+  // Dropped silently when the gateway is not ready (callers re-request after READY).
+  Q_INVOKABLE void sendRequestGuildMembers(const QString &guildId,
+                                           const QStringList &userIds);
   // Call when the Members sheet closes to stop the auto re-sync after a reconnect
   // (m_activeMemberListGuildId/ChannelId). Not needed for sendMemberListSync() itself.
   Q_INVOKABLE void clearMemberListSync();

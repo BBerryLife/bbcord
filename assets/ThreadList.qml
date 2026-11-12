@@ -19,12 +19,17 @@ Page {
 	// without cleanup(); set false in cleanup() and checked at the top of reload().
 	property bool _isActive: true
 
-	// Archived threads are kept separate from threadDataModel (gateway vs REST).
-	// archivedHasMore shows/hides "Load older threads"; archivedCursor is the oldest
-	// loaded thread id, used as "before" for the next page.
-	property bool archivedLoading: false
-	property bool archivedHasMore: false
-	property string archivedCursor: ""
+	// Threads come from two sources, merged by id in reload():
+	//  - the gateway cache (discordClient.threadsForChannel): only what Discord pushes,
+	//    which is NOT every active thread;
+	//  - REST /channels/{id}/threads/search (what the official client uses): active AND
+	//    archived threads, paged by offset. searchThreads holds everything loaded so far.
+	// searchOffset is the offset of the next "last_message_time" page.
+	property variant searchThreads: []
+	property bool searchLoading: false
+	property bool searchHasMore: false
+	property bool searchLoadedOnce: false
+	property int searchOffset: 0
 
 	signal backRequested()
 	signal threadSelected(string threadId, string threadName)
@@ -61,62 +66,128 @@ Page {
 			threadListPage.threadCount = 0
 			return
 		}
+		// Union of gateway + search results, deduplicated by id (search data wins: it
+		// carries the freshest archived/last-message info), newest activity first.
+		var byId = {}
+		var merged = []
+		var gatewayThreads = discordClient.threadsForChannel(threadListPage.channelId)
+		var searched = threadListPage.searchThreads
+		var sources = [gatewayThreads, searched]
+		for (var s = 0; s < sources.length; ++s) {
+			for (var i = 0; i < sources[s].length; ++i) {
+				var t = sources[s][i]
+				var existing = byId[t.id]
+				if (existing === undefined) {
+					byId[t.id] = merged.length
+					merged.push(t)
+				} else {
+					merged[existing] = t
+				}
+			}
+		}
+		merged.sort(function (a, b) {
+			return threadListPage.compareSnowflakes(threadListPage.activityKey(b), threadListPage.activityKey(a))
+		})
 		threadDataModel.clear()
-		var threads = discordClient.threadsForChannel(threadListPage.channelId)
-		for (var i = 0; i < threads.length; ++i) {
-			threadDataModel.append(threads[i])
+		for (var k = 0; k < merged.length; ++k) {
+			threadDataModel.append(merged[k])
 		}
 		threadListPage.threadCount = threadDataModel.size()
+	}
+
+	// Most recent activity of a thread: last message, else its creation (the thread id).
+	function activityKey(thread) {
+		if (thread.lastMessageId !== undefined && thread.lastMessageId !== "") {
+			return thread.lastMessageId
+		}
+		return thread.id
+	}
+
+	// Snowflakes are decimal strings of different lengths; compare length first, then
+	// lexicographically (avoids Number precision loss above 2^53).
+	function compareSnowflakes(a, b) {
+		if (a.length !== b.length) {
+			return a.length - b.length
+		}
+		if (a === b) {
+			return 0
+		}
+		return a < b ? -1 : 1
 	}
 
 	onCreationCompleted: {
 		// createObject() runs onCreationCompleted() before channelId is assigned, so
 		// do not reload() here; MainPage.qml calls requestThreadsNow() afterwards.
 		appStore.channelThreadsChanged.connect(threadListPage.reload)
-		discordClient.archivedThreadsLoaded.connect(threadListPage.onArchivedThreadsResult)
+		discordClient.threadSearchLoaded.connect(threadListPage.onThreadSearchResult)
 	}
 
 	// Page has no onDestruction, and onBackRequested only fires for the title bar's
 	// back button, not when MainPage.qml pops the page directly. cleanup() is called
 	// explicitly from every place that pops the page, so a late THREAD_LIST_SYNC or
-	// archivedThreadsLoaded does not hit a destroyed object.
+	// threadSearchLoaded does not hit a destroyed object.
 	function cleanup() {
 		threadListPage._isActive = false
 		appStore.channelThreadsChanged.disconnect(threadListPage.reload)
-		discordClient.archivedThreadsLoaded.disconnect(threadListPage.onArchivedThreadsResult)
+		discordClient.threadSearchLoaded.disconnect(threadListPage.onThreadSearchResult)
 	}
 
 	function requestThreadsNow() {
-		// Threads arrive passively via THREAD_LIST_SYNC (the channel-level REST endpoint
-		// is bot-only), so this only reads the cache. reload() also runs on
-		// appStore.channelThreadsChanged.
+		// Shows whatever the gateway already cached, then asks REST for the full list.
+		// Page 1 is requested twice on purpose: "last_message_time" skips posts nobody
+		// has replied to yet, "creation_time" covers them (the official client merges both).
 		reload()
-	}
-
-	// Archived threads must be requested via REST (/channels/{id}/threads/archived/public).
-	// Called by "Load older threads", and automatically the first time if never fetched.
-	function loadOlderThreads() {
-		if (threadListPage.archivedLoading || threadListPage.channelId === "") {
+		if (threadListPage.channelId === "") {
 			return
 		}
-		threadListPage.archivedLoading = true
-		discordClient.requestArchivedThreads(threadListPage.channelId, threadListPage.archivedCursor)
+		threadListPage.searchThreads = []
+		threadListPage.searchOffset = 0
+		threadListPage.searchHasMore = false
+		threadListPage.searchLoadedOnce = false
+		threadListPage.searchLoading = true
+		discordClient.requestThreadSearch(threadListPage.channelId, 0, "last_message_time")
+		discordClient.requestThreadSearch(threadListPage.channelId, 0, "creation_time")
 	}
 
-	function onArchivedThreadsResult(channelId, threads, hasMore) {
+	// Next page of /threads/search ("last_message_time" order), by offset.
+	function loadMoreThreads() {
+		if (threadListPage.searchLoading || threadListPage.channelId === "") {
+			return
+		}
+		threadListPage.searchLoading = true
+		discordClient.requestThreadSearch(threadListPage.channelId, threadListPage.searchOffset, "last_message_time")
+	}
+
+	function onThreadSearchResult(channelId, threads, hasMore, offset, sortBy) {
 		if (!threadListPage._isActive || channelId !== threadListPage.channelId) {
 			return
 		}
-		threadListPage.archivedLoading = false
-		threadListPage.archivedHasMore = hasMore
-		// Appended into threadDataModel (same list as active threads) instead of building section headers.
+		threadListPage.searchLoadedOnce = true
+		threadListPage.searchLoading = false
+
+		// Only the "last_message_time" stream drives paging; the creation_time first page
+		// is just merged in.
+		if (sortBy === "last_message_time") {
+			threadListPage.searchHasMore = hasMore
+			threadListPage.searchOffset = offset + threads.length
+		}
+
+		var all = threadListPage.searchThreads.slice(0)
 		for (var i = 0; i < threads.length; ++i) {
-			threadDataModel.append(threads[i])
+			var found = false
+			for (var j = 0; j < all.length; ++j) {
+				if (all[j].id === threads[i].id) {
+					all[j] = threads[i]
+					found = true
+					break
+				}
+			}
+			if (!found) {
+				all.push(threads[i])
+			}
 		}
-		threadListPage.threadCount = threadDataModel.size()
-		if (threads.length > 0) {
-			threadListPage.archivedCursor = threads[threads.length - 1].id
-		}
+		threadListPage.searchThreads = all
+		reload()
 	}
 
 	Container {
@@ -131,7 +202,7 @@ Page {
 		layout: StackLayout {}
 
 		Label {
-			text: qsTr("No active threads in this channel")
+			text: threadListPage.searchLoading ? qsTr("Loading threads...") : qsTr("No threads in this channel")
 			horizontalAlignment: HorizontalAlignment.Center
 			verticalAlignment: VerticalAlignment.Center
 			textStyle.color: Color.create("#88ffffff")
@@ -186,23 +257,19 @@ Page {
 			]
 		}
 
-		// Posts past the auto-archive window are fetched via REST on tap, paginated by archivedCursor.
+		// Next page of threads (active + archived), paged by offset. Hidden once the
+		// server says there is nothing more.
 		Button {
-			text: threadListPage.archivedLoading ? qsTr("Loading...") : qsTr("Load older threads")
+			text: threadListPage.searchLoading ? qsTr("Loading...") : qsTr("Load more threads")
 			// Center alignment so the button sizes to its text instead of filling the width.
 			horizontalAlignment: HorizontalAlignment.Center
 			topMargin: ui.du(1.0)
-			// leftMargin/rightMargin have no effect while the button is not Fill-width; kept in case Fill returns.
-			leftMargin: ui.du(2.0)
-			rightMargin: ui.du(2.0)
 			bottomMargin: ui.du(1.5)
-			enabled: !threadListPage.archivedLoading
-			// Shown even when threadCount === 0 (archived threads may remain); hidden only
-			// once archivedHasMore is false. archivedCursor === "" means never loaded.
-			visible: threadListPage.archivedCursor !== "" ? threadListPage.archivedHasMore : true
+			enabled: !threadListPage.searchLoading
+			visible: threadListPage.searchHasMore
 
 			onClicked: {
-				threadListPage.loadOlderThreads()
+				threadListPage.loadMoreThreads()
 			}
 		}
 	}

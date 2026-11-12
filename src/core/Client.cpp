@@ -18,6 +18,20 @@
 #include <QSettings>
 #include <QTimer>
 
+// Role id array of a raw member object ("roles") as a QStringList.
+namespace {
+QStringList roleIdsFromVariantList(const QVariantList &rawRoles) {
+  QStringList roleIds;
+  for (int i = 0; i < rawRoles.size(); ++i) {
+    QString roleId = rawRoles.at(i).toString().trimmed();
+    if (!roleId.isEmpty()) {
+      roleIds.append(roleId);
+    }
+  }
+  return roleIds;
+}
+} // namespace
+
 DiscordClient::DiscordClient(QObject *parent)
     : QObject(parent), m_store(0), m_networkThread(0), m_networkWorker(0),
       m_gatewayThread(0), m_gatewayWorker(0), m_avatarCacheThread(0),
@@ -311,6 +325,8 @@ void DiscordClient::logout() {
   m_guildsHasMore = true;
   m_dmChannelsHasMore = true;
   m_guildChannelsHasMore = false;
+  m_requestedMemberRoleKeys.clear();
+  m_pendingMemberRoleUserIds.clear();
   if (m_store) {
     m_store->clearSession();
   }
@@ -789,6 +805,7 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
 
         QVariantList items = op.value("items").toList();
         QVariantList parsedMembers;
+        QMap<QString, QStringList> syncedMemberRoles;
         for (int i = 0; i < items.size(); ++i) {
           QVariantMap item = items.at(i).toMap();
           if (!item.contains("member")) {
@@ -835,6 +852,7 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
           }
 
           QVariantList memberRoleIds = memberRaw.value("roles").toList();
+          syncedMemberRoles.insert(userId, roleIdsFromVariantList(memberRoleIds));
           // Pick up the current user's own roles from a member-list SYNC (fallback for
           // fetchSelfGuildMember()). Only updates when roles changed, to avoid redundant
           // recomputeAccessibleGuildChannels() calls.
@@ -873,6 +891,9 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
           parsedMembers.append(memberMap);
         }
 
+        // Also feeds chat name colors: these members' roles are now known for free.
+        m_store->setMemberRoles(guildId, syncedMemberRoles);
+
         if (!channelId.isEmpty()) {
           m_store->setMemberListForChannel(channelId, parsedMembers);
           qDebug() << "[discord-gateway] GUILD_MEMBER_LIST_UPDATE SYNC parsed"
@@ -893,6 +914,82 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
     qDebug() << "[discord-gateway] THREAD_LIST_SYNC received guild"
              << payload.value("guild_id").toString() << "threads"
              << rawThreads.size();
+  }
+
+  // Member roles for chat name colors. Sources: op 8 answers, the "member" object on a
+  // full MESSAGE_CREATE, and role changes of any member.
+  if (eventName == "GUILD_MEMBERS_CHUNK" && m_store) {
+    QString chunkGuildId = payload.value("guild_id").toString().trimmed();
+    QVariantList chunkMembers = payload.value("members").toList();
+    QMap<QString, QStringList> rolesByUserId;
+    for (int i = 0; i < chunkMembers.size(); ++i) {
+      QVariantMap chunkMember = chunkMembers.at(i).toMap();
+      QString chunkUserId =
+          chunkMember.value("user").toMap().value("id").toString().trimmed();
+      if (!chunkUserId.isEmpty()) {
+        rolesByUserId.insert(chunkUserId,
+                             roleIdsFromVariantList(chunkMember.value("roles").toList()));
+      }
+    }
+    m_store->setMemberRoles(chunkGuildId, rolesByUserId);
+  }
+
+  if (eventName == "MESSAGE_CREATE" && m_store) {
+    QVariantMap authorMember = payload.value("member").toMap();
+    QString authorGuildId = payload.value("guild_id").toString().trimmed();
+    QString authorUserId =
+        payload.value("author").toMap().value("id").toString().trimmed();
+    if (authorMember.contains("roles") && !authorGuildId.isEmpty() &&
+        !authorUserId.isEmpty()) {
+      QMap<QString, QStringList> rolesByUserId;
+      rolesByUserId.insert(authorUserId, roleIdsFromVariantList(
+                                             authorMember.value("roles").toList()));
+      m_store->setMemberRoles(authorGuildId, rolesByUserId);
+    }
+  }
+
+  if (eventName == "GUILD_MEMBER_UPDATE" && m_store) {
+    QString updatedGuildId = payload.value("guild_id").toString().trimmed();
+    QString updatedUserId =
+        payload.value("user").toMap().value("id").toString().trimmed();
+    if (!updatedGuildId.isEmpty() && !updatedUserId.isEmpty() &&
+        payload.contains("roles")) {
+      QMap<QString, QStringList> rolesByUserId;
+      rolesByUserId.insert(updatedUserId, roleIdsFromVariantList(
+                                              payload.value("roles").toList()));
+      m_store->setMemberRoles(updatedGuildId, rolesByUserId);
+    }
+  }
+
+  // THREAD_CREATE / THREAD_UPDATE carry a full thread channel object; THREAD_DELETE
+  // carries only {id, guild_id, parent_id, type}.
+  if (eventName == "THREAD_CREATE" || eventName == "THREAD_UPDATE") {
+    QVariantList singleThread;
+    singleThread.append(payload);
+    mergeThreadsIntoCache(singleThread, QVariantList());
+  }
+
+  if (eventName == "THREAD_DELETE") {
+    QString deletedId = payload.value("id").toString().trimmed();
+    QString deletedParentId = payload.value("parent_id").toString().trimmed();
+    if (!deletedId.isEmpty() && !deletedParentId.isEmpty()) {
+      QVariantMap threadsByParentId = m_channelThreadsByParentId;
+      QVariantList siblingThreads = threadsByParentId.value(deletedParentId).toList();
+      bool removed = false;
+      for (int j = siblingThreads.size() - 1; j >= 0; --j) {
+        if (siblingThreads.at(j).toMap().value("id").toString() == deletedId) {
+          siblingThreads.removeAt(j);
+          removed = true;
+        }
+      }
+      if (removed) {
+        threadsByParentId.insert(deletedParentId, siblingThreads);
+        m_channelThreadsByParentId = threadsByParentId;
+        if (m_store) {
+          m_store->setChannelThreadsByParentId(m_channelThreadsByParentId);
+        }
+      }
+    }
   }
 
   if (eventName == "GUILD_MEMBER_UPDATE") {
@@ -956,6 +1053,53 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       eventName, payload, m_pendingUnreadGuildIds,
       m_pendingMentionCountsByGuildId, m_pendingMentionCountsByChannelId,
       m_pendingUnreadChannelIds, m_pendingDmUiUpdate, m_gatewayUiUpdateQueued);
+}
+
+void DiscordClient::requestMemberRoles(const QString &guildId,
+                                       const QString &userId) {
+  QString safeGuildId = guildId.trimmed();
+  QString safeUserId = userId.trimmed();
+  if (safeGuildId.isEmpty() || safeUserId.isEmpty() || !m_loggedIn ||
+      m_gatewayWorker == 0) {
+    return;
+  }
+  if (m_store && m_store->hasMemberRoles(safeGuildId, safeUserId)) {
+    return;
+  }
+
+  QString key = safeGuildId + ":" + safeUserId;
+  if (m_requestedMemberRoleKeys.contains(key)) {
+    return;
+  }
+  m_requestedMemberRoleKeys.insert(key);
+
+  // The first id of a burst schedules the flush; the rest of the burst joins the batch.
+  bool scheduleFlush = m_pendingMemberRoleUserIds.isEmpty();
+  m_pendingMemberRoleUserIds[safeGuildId].append(safeUserId);
+  if (scheduleFlush) {
+    QTimer::singleShot(150, this, SLOT(flushMemberRoleRequests()));
+  }
+}
+
+void DiscordClient::flushMemberRoleRequests() {
+  QMap<QString, QStringList> pending = m_pendingMemberRoleUserIds;
+  m_pendingMemberRoleUserIds.clear();
+  if (m_gatewayWorker == 0) {
+    return;
+  }
+
+  for (QMap<QString, QStringList>::const_iterator it = pending.constBegin();
+       it != pending.constEnd(); ++it) {
+    QStringList remaining = it.value();
+    while (!remaining.isEmpty()) {
+      // op 8 accepts at most 100 user_ids.
+      QStringList batch = remaining.mid(0, 100);
+      remaining = remaining.mid(100);
+      QMetaObject::invokeMethod(
+          m_gatewayWorker, "requestGuildMembers", Qt::QueuedConnection,
+          Q_ARG(QString, it.key()), Q_ARG(QStringList, batch));
+    }
+  }
 }
 
 void DiscordClient::mergeGuildRolesIntoCache(const QString &guildId,
@@ -1070,6 +1214,10 @@ void DiscordClient::mergeThreadsIntoCache(
 
 void DiscordClient::onGatewayReady(const QString &sessionId) {
   Q_UNUSED(sessionId);
+
+  // A new gateway session forgot any op 8 that was dropped while disconnected.
+  m_requestedMemberRoleKeys.clear();
+  m_pendingMemberRoleUserIds.clear();
 
   if (!m_loggedIn) {
     saveToken();

@@ -280,6 +280,33 @@ void DiscordGateway::sendMemberListSync(const QString &guildId,
            << "guild" << safeGuildId << "channel" << safeChannelId;
 }
 
+void DiscordGateway::sendRequestGuildMembers(const QString &guildId,
+                                             const QStringList &userIds) {
+  QString safeGuildId = guildId.trimmed();
+  if (safeGuildId.isEmpty() || userIds.isEmpty()) {
+    return;
+  }
+
+  if (m_state != Ready || m_connection == NULL || !m_connection->is_websocket ||
+      m_connection->is_closing) {
+    qDebug() << "[discord-gateway] request-members dropped; gateway not ready"
+             << "guild" << safeGuildId;
+    return;
+  }
+
+  QString errorMessage;
+  QByteArray payload = DiscordJsonParser::buildRequestGuildMembersPayload(
+      safeGuildId, userIds, &errorMessage);
+  if (!errorMessage.isEmpty() || payload.isEmpty()) {
+    qDebug() << "[discord-gateway] request-members JSON error" << errorMessage;
+    return;
+  }
+
+  sendJsonText(QString::fromUtf8(payload.constData(), payload.size()));
+  qDebug() << "[discord-gateway] request-members sent guild" << safeGuildId
+           << "users" << userIds.size();
+}
+
 void DiscordGateway::clearMemberListSync() {
   m_activeMemberListGuildId.clear();
   m_activeMemberListChannelId.clear();

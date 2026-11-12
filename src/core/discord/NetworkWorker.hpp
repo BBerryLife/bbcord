@@ -29,6 +29,8 @@ public Q_SLOTS:
   void fetchSelfGuildMember(const QString &token, const QString &guildId,
                             const QString &userId);
   void fetchActiveThreads(const QString &token, const QString &channelId);
+  void fetchThreadSearch(const QString &token, const QString &channelId,
+                         int offset, const QString &sortBy);
   void fetchArchivedThreads(const QString &token, const QString &channelId,
                             const QString &beforeCursor);
   void fetchChannelMessages(const QString &token, const QString &channelId,
@@ -69,6 +71,8 @@ Q_SIGNALS:
                            const QVariantList &threads);
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
+  void threadSearchLoaded(const QString &channelId, const QVariantList &threads,
+                          bool hasMore, int offset, const QString &sortBy);
   void channelMessagesLoaded(const QString &channelId,
                              const QString &beforeMessageId,
                              const QVariantList &messages);
