@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QObject>
 #include <QSet>
+#include <QTimer>
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
@@ -62,6 +63,10 @@ public:
   Q_INVOKABLE QVariantList currentMessages() const;
   Q_INVOKABLE QVariantList messagesForChannel(const QString &channelId) const;
   Q_INVOKABLE bool isInitialLoaded() const;
+  // True when the open channel is a DM / group DM (no guild) whose history has loaded and is
+  // empty, i.e. the next message would be the first one in that conversation. Discord's spam
+  // filter is strictest on exactly that, so the UI warns before sending it.
+  Q_INVOKABLE bool needsEmptyDmWarning() const;
   Q_INVOKABLE bool isLoadingInitial() const;
   Q_INVOKABLE bool isLoadingBefore() const;
   Q_INVOKABLE bool hasMoreBefore() const;
@@ -81,6 +86,9 @@ public:
   // Call while the user is composing; sends a throttled "typing" ping like the
   // official client does (roughly every 8 s while text is being entered).
   Q_INVOKABLE void notifyTyping();
+  // Debounced read-state ack of the newest message in the open channel. Does nothing while
+  // the app is not on screen. Called on new messages and when the app returns to the front.
+  Q_INVOKABLE void scheduleAck();
   Q_INVOKABLE QString sendMessage(const QString &content,
                                   const QString &replyMessageId,
                                   const QString &replyAuthor,
@@ -111,6 +119,7 @@ Q_SIGNALS:
                             const QString &nonce, const QString &replyMessageId,
                             const QStringList &attachmentPaths);
   void typingRequested(const QString &channelId);
+  void ackRequested(const QString &channelId, const QString &messageId);
   void editMessageRequested(const QString &channelId, const QString &messageId,
                             const QString &content);
   void deleteMessageRequested(const QString &channelId,
@@ -118,6 +127,7 @@ Q_SIGNALS:
 
 private Q_SLOTS:
   void clearMediaCacheState();
+  void ackCurrentChannel();
   void onCurrentChannelMessagesChanged();
   void onChatMessagesReset(const QString &channelId,
                            const QVariantList &messages);
@@ -184,6 +194,8 @@ private:
   bool m_pendingAttachmentIsImage;
   qint64 m_lastTypingSentMs;
   QString m_lastTypingChannelId;
+  QTimer *m_ackTimer;
+  QHash<QString, QString> m_lastAckedByChannel;
 };
 
 #endif /* ChatController_HPP_ */

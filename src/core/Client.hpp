@@ -8,6 +8,7 @@
 #include <QQueue>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -127,6 +128,9 @@ public Q_SLOTS:
                                   const QString &avatarHash);
   // Throttled by the caller (ChatController); best effort, never reports errors.
   Q_INVOKABLE void sendChatTyping(const QString &channelId);
+  // Read-state ack for the channel on screen; best effort, never reports errors.
+  Q_INVOKABLE void ackChatMessage(const QString &channelId,
+                                  const QString &messageId);
   Q_INVOKABLE void editChatMessage(const QString &channelId,
                                    const QString &messageId,
                                    const QString &content);
@@ -194,7 +198,8 @@ private Q_SLOTS:
   void onGatewayDispatch(const QString &eventName, const QVariantMap &payload);
   void onGatewayReady(const QString &sessionId);
   void onGatewayError(const QString &message);
-  void onGatewayClosed();
+  void onGatewayClosedWithCode(int closeCode, bool fatal);
+  void onGatewayReconnectTimer();
   void onGatewayGuildsAndDmsReady(const QVariantList &guilds,
                                   const QVariantList &allDmChannels,
                                   const QVariantList &visibleDmChannels,
@@ -271,6 +276,10 @@ private:
   DiscordNetworkWorker *m_networkWorker;
   QThread *m_gatewayThread;
   DiscordGatewayWorker *m_gatewayWorker;
+  // Reconnect pacing after a gateway drop (see onGatewayClosedWithCode()).
+  QTimer *m_gatewayReconnectTimer;
+  int m_gatewayReconnectAttempts;
+  qint64 m_gatewayReadyAtMs; // when READY/RESUMED last arrived (0: not connected)
   QThread *m_avatarCacheThread;
   AvatarCacheWorker *m_avatarCacheWorker;
 

@@ -18,6 +18,9 @@ public:
 
 public Q_SLOTS:
   void connectGateway(const QString &token);
+  // Reconnect after a drop: RESUME the existing session when Discord still allows it
+  // (no ~5 MB READY, no new session), otherwise a fresh IDENTIFY.
+  void reconnectGateway(const QString &token);
   void disconnectGateway();
   void sendLazyRequest(const QString &guildId, const QString &channelId);
   void sendMemberListSync(const QString &guildId, const QString &channelId);
@@ -45,11 +48,20 @@ Q_SIGNALS:
                          const QVariantMap &dmPresenceByUserId);
   void gatewayError(const QString &message);
   void gatewayClosed();
+  // Same event as gatewayClosed() plus the WebSocket close code (-1 if none) and whether
+  // the owner may reconnect at all (false for codes like 4004 "authentication failed").
+  void gatewayClosedWithCode(int closeCode, bool fatal);
   void gatewayReady(const QString &sessionId);
   void cancelAllFinished();
 
+private Q_SLOTS:
+  void onGatewayClosedInternal();
+  void onGatewaySessionInvalid();
+
 private:
   DiscordGateway m_gateway;
+  QString m_token;
+  bool m_wantConnected;
   QVariantList m_gatewayGuilds;
   QVariantList m_gatewayAllDmChannels;
   QVariantList m_gatewayVisibleDmChannels;

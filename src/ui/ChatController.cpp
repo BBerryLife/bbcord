@@ -3,6 +3,7 @@
 #include "../core/AppStore.hpp"
 #include "../core/AttachmentImageCacheWorker.hpp"
 #include "../core/Client.hpp"
+#include "../core/HubIntegration.hpp"
 #include "../core/models/Models.hpp"
 #include "../utils/EmojiUtils.hpp"
 
@@ -102,7 +103,7 @@ ChatController::ChatController(DiscordClient *client, AppStore *store,
       m_chatDataModel(new bb::cascades::ArrayDataModel(this)),
       m_pendingAttachmentsModel(new bb::cascades::ArrayDataModel(this)),
       m_imageThread(0), m_imageWorker(0), m_pendingAttachmentIsImage(false),
-      m_lastTypingSentMs(0) {
+      m_lastTypingSentMs(0), m_ackTimer(0) {
   if (m_client) {
     connect(this, SIGNAL(initialMessagesRequested(QString, QString)), m_client,
             SLOT(loadInitialChatMessages(QString, QString)));
@@ -116,6 +117,8 @@ ChatController::ChatController(DiscordClient *client, AppStore *store,
         SLOT(sendChatMessage(QString, QString, QString, QString, QStringList)));
     connect(this, SIGNAL(typingRequested(QString)), m_client,
             SLOT(sendChatTyping(QString)));
+    connect(this, SIGNAL(ackRequested(QString, QString)), m_client,
+            SLOT(ackChatMessage(QString, QString)));
     connect(this, SIGNAL(editMessageRequested(QString, QString, QString)),
             m_client, SLOT(editChatMessage(QString, QString, QString)));
     connect(this, SIGNAL(deleteMessageRequested(QString, QString)), m_client,
@@ -257,6 +260,16 @@ ChatController::messagesForChannel(const QString &channelId) const {
 
 bool ChatController::isInitialLoaded() const {
   return m_store && m_store->isChatInitialLoaded(safeCurrentChannelId());
+}
+
+bool ChatController::needsEmptyDmWarning() const {
+  if (m_store == 0 || m_currentChannelId.isEmpty() ||
+      !m_currentGuildId.isEmpty()) {
+    return false;
+  }
+  // Only once the history is loaded: an empty list while still loading is not "no history".
+  // Pending (just sent) messages count as messages, so only the first send warns.
+  return isInitialLoaded() && currentMessages().isEmpty();
 }
 
 bool ChatController::isLoadingInitial() const {
@@ -449,6 +462,46 @@ void ChatController::notifyTyping() {
   emit typingRequested(channelId);
 }
 
+void ChatController::scheduleAck() {
+  if (m_ackTimer == 0) {
+    m_ackTimer = new QTimer(this);
+    m_ackTimer->setSingleShot(true);
+    connect(m_ackTimer, SIGNAL(timeout()), this, SLOT(ackCurrentChannel()));
+  }
+  // Debounce: a burst of messages (or the initial load) produces one ack.
+  m_ackTimer->start(1500);
+}
+
+void ChatController::ackCurrentChannel() {
+  if (!m_store || !HubIntegration::isUiForeground()) {
+    return;
+  }
+  QString channelId = safeCurrentChannelId();
+  if (channelId.isEmpty() || !isInitialLoaded()) {
+    return;
+  }
+
+  QString newest = newestMessageId();
+  // Pending (not yet sent) messages carry a local id; only real snowflakes can be acked.
+  if (newest.length() < 15) {
+    return;
+  }
+  for (int i = 0; i < newest.length(); ++i) {
+    if (!newest.at(i).isDigit()) {
+      return;
+    }
+  }
+  if (m_lastAckedByChannel.value(channelId) == newest) {
+    return;
+  }
+
+  if (m_lastAckedByChannel.size() > 64) {
+    m_lastAckedByChannel.clear();
+  }
+  m_lastAckedByChannel.insert(channelId, newest);
+  emit ackRequested(channelId, newest);
+}
+
 void ChatController::editMessage(const QString &messageId,
                                  const QString &content) {
   QString channelId = safeCurrentChannelId();
@@ -617,6 +670,7 @@ void ChatController::onChatMessagesReset(const QString &channelId,
   }
 
   syncChatDataModel(messages);
+  scheduleAck();
 }
 
 void ChatController::onChatMessagesPrepended(const QString &channelId,
@@ -659,6 +713,7 @@ void ChatController::onChatMessagesBatched(const QString &channelId,
   if (channelId != safeCurrentChannelId()) {
     return;
   }
+  scheduleAck();
 
   QVariantList current = currentMessages();
   int minTouchedIndex = m_chatDataModel->size();
@@ -733,6 +788,7 @@ void ChatController::onChatMessageAdded(const QString &channelId,
   if (channelId != safeCurrentChannelId()) {
     return;
   }
+  scheduleAck();
 
   QVariantMap item = prepareMessageForModel(message);
   int index = chatDataModelIndexForMessage(item.value("id").toString());

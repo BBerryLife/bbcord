@@ -1,5 +1,6 @@
 import bb.cascades 1.4
 import bb.cascades.pickers 1.0
+import bb.system 1.2
 import QtQuick 1.0
 import "media"
 
@@ -553,6 +554,22 @@ Page {
     }
 
     attachedObjects: [
+        SystemDialog {
+            id: emptyDmWarningDialog
+            title: qsTr("First message in this DM")
+            body: qsTr("Discord's spam filter often flags a first DM sent from a third-party client, and the account can be restricted or banned. To be safe, send the first message from the official Discord app, then reply here. Send anyway?")
+            confirmButton.label: qsTr("Send anyway")
+            cancelButton.label: qsTr("Cancel")
+
+            onFinished: {
+                if (result == SystemUiResult.ConfirmButtonSelection) {
+                    var text = inputMessage.text.replace(/^\s+|\s+$/g, "");
+                    if (text.length > 0 || chatController.hasPendingAttachment) {
+                        chatPage.performSend(text);
+                    }
+                }
+            }
+        },
         // Long enough to cover the scroll animation plus a moment to spot the message.
         Timer {
             id: jumpHighlightTimer
@@ -611,6 +628,16 @@ Page {
             return;
         }
 
+        // First message in a DM with no history: ask first (not while editing).
+        if (editingMessageId === "" && chatController.needsEmptyDmWarning()) {
+            emptyDmWarningDialog.show();
+            return;
+        }
+
+        performSend(text);
+    }
+
+    function performSend(text) {
         if (editingMessageId !== "") {
             if (chatController.hasPendingAttachment) {
                 chatController.clearPendingAttachment();

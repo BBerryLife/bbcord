@@ -31,6 +31,7 @@ public:
     // whenever it is not: the service always, the UI while minimized/invisible, where the
     // app's own MediaPlayer ping was not audible. Process-wide, default true.
     static void setUiForeground(bool foreground);
+    static bool isUiForeground() { return s_uiForeground; }
 
     // file:/// URL of a file in this app's PUBLIC asset area (/apps/<appId>/public/...),
     // e.g. publicAssetUrl("audio/ping.m4a"). Works in the UI and the headless service.

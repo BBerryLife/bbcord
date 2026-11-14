@@ -59,6 +59,15 @@ public:
   // Opt-in (the headless service): if a heartbeat is still unanswered when the next one is
   // due, the connection is dead without TCP noticing; drop it so the owner can RESUME.
   void setHeartbeatWatchdog(bool enabled) { m_heartbeatWatchdog = enabled; }
+  // Close code of the last WebSocket close frame Discord sent (-1: none, e.g. the TCP
+  // connection just dropped). Reset whenever a new connection attempt starts.
+  int lastCloseCode() const { return m_lastCloseCode; }
+  // True if a RESUME is worth trying: a session exists and the last close was not one that
+  // invalidates it (clean 1000/1001 close, or Discord's 4003/4004/4005/4007/4009/401x).
+  bool canResume() const;
+  // True for close codes where reconnecting can never succeed (bad token, invalid
+  // intents/shard/version). The owner must stop retrying instead of looping.
+  static bool isFatalCloseCode(int code);
   QString sessionId() const { return m_sessionId; }
   QString resumeGatewayUrl() const { return m_resumeGatewayUrl; }
   int sequence() const { return m_sequence; }
@@ -135,6 +144,7 @@ private:
   bool m_awaitingAck;
   bool m_lightStream;
   bool m_lastInvalidResumable;
+  int m_lastCloseCode;
   ReadyScanner m_readyScanner;
   QByteArray m_msgHead;     // light mode: start of the message being inflated
   QByteArray m_zTail;       // light mode: last 4 compressed bytes (message end marker)

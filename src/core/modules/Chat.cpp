@@ -164,6 +164,21 @@ void DiscordClient::sendChatTyping(const QString &channelId) {
                             Q_ARG(QString, safeChannelId));
 }
 
+void DiscordClient::ackChatMessage(const QString &channelId,
+                                   const QString &messageId) {
+  QString safeChannelId = channelId.trimmed();
+  QString safeMessageId = messageId.trimmed();
+  if (safeChannelId.isEmpty() || safeMessageId.isEmpty() ||
+      m_token.trimmed().isEmpty() || m_networkWorker == 0) {
+    return;
+  }
+
+  QMetaObject::invokeMethod(m_networkWorker, "ackMessage",
+                            Qt::QueuedConnection, Q_ARG(QString, m_token),
+                            Q_ARG(QString, safeChannelId),
+                            Q_ARG(QString, safeMessageId));
+}
+
 void DiscordClient::editChatMessage(const QString &channelId,
                                     const QString &messageId,
                                     const QString &content) {

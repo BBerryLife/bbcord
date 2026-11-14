@@ -168,6 +168,7 @@ config_pri_source_group1 {
         $$quote($$BASEDIR/src/core/discord/NetworkWorker.hpp) \
         $$quote($$BASEDIR/src/core/discord/RestClient.hpp) \
         $$quote($$BASEDIR/src/core/discord/StreamScanner.hpp) \
+        $$quote($$BASEDIR/src/core/discord/TlsTrust.hpp) \
         $$quote($$BASEDIR/src/core/models/Models.hpp) \
         $$quote($$BASEDIR/src/core/modules/Chat.hpp) \
         $$quote($$BASEDIR/src/core/modules/DM.hpp) \

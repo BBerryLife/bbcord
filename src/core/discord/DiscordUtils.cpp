@@ -260,10 +260,10 @@ QString DiscordUtils::clientLocale() { return QString("en-US"); }
 QByteArray DiscordUtils::superPropertiesHeader() {
   // Mirrors the User-Agent (Chrome 149 on Windows 10/11); mismatched headers can
   // trigger Discord's risk scoring. Values need not be exact (see DiscordUtils.hpp).
-  // client_event_source and other fields with non-plain "empty" values are omitted:
-  // this old bb::data serializer's handling of a null QVariant is untested, and a
-  // malformed X-Super-Properties makes Discord reject the whole request with
-  // "Invalid Form Body". Every field below is a plain string/int.
+  // Every field below is a plain string/int. client_event_source (null in the IDENTIFY
+  // properties, and the two must match) is spliced into the serialized JSON as text below:
+  // this old bb::data serializer's handling of a null QVariant is untested, and a malformed
+  // X-Super-Properties makes Discord reject the whole request with "Invalid Form Body".
   QVariantMap properties;
   properties["os"] = QString("Windows");
   properties["browser"] = clientBrowserName();
@@ -282,6 +282,10 @@ QByteArray DiscordUtils::superPropertiesHeader() {
   bb::data::JsonDataAccess json;
   QByteArray propertiesJson;
   json.saveToBuffer(properties, &propertiesJson);
+  int closingBrace = propertiesJson.lastIndexOf('}');
+  if (closingBrace > 0) {
+    propertiesJson.insert(closingBrace, ",\"client_event_source\":null");
+  }
 
   QByteArray encoded = propertiesJson.toBase64();
   return QByteArray("X-Super-Properties: ") + encoded + QByteArray("\r\n");

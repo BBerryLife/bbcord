@@ -162,8 +162,8 @@ void DiscordClient::initializeGatewayWorker() {
           SLOT(onGatewayReady(QString)), Qt::QueuedConnection);
   connect(m_gatewayWorker, SIGNAL(gatewayError(QString)), this,
           SLOT(onGatewayError(QString)), Qt::QueuedConnection);
-  connect(m_gatewayWorker, SIGNAL(gatewayClosed()), this,
-          SLOT(onGatewayClosed()), Qt::QueuedConnection);
+  connect(m_gatewayWorker, SIGNAL(gatewayClosedWithCode(int, bool)), this,
+          SLOT(onGatewayClosedWithCode(int, bool)), Qt::QueuedConnection);
   connect(
       m_gatewayWorker,
       SIGNAL(guildsAndDmsReady(QVariantList, QVariantList, QVariantList,
@@ -224,6 +224,10 @@ void DiscordClient::shutdownAvatarCacheWorker() {
 }
 
 void DiscordClient::shutdownGatewayWorker() {
+  if (m_gatewayReconnectTimer != 0) {
+    m_gatewayReconnectTimer->stop();
+  }
+  m_gatewayReconnectAttempts = 0;
   if (m_gatewayWorker != 0 && m_gatewayThread != 0 &&
       m_gatewayThread->isRunning()) {
     disconnect(m_gatewayWorker, 0, this, 0);

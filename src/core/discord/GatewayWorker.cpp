@@ -162,12 +162,14 @@ void moveDmToTop(QVariantList *channels, const QString &channelId,
 } // namespace
 
 DiscordGatewayWorker::DiscordGatewayWorker(QObject *parent)
-    : QObject(parent), m_gateway(this) {
+    : QObject(parent), m_gateway(this), m_wantConnected(false) {
   connect(&m_gateway, SIGNAL(dispatchReceived(QString, QVariantMap)), this,
           SLOT(onGatewayDispatchReceived(QString, QVariantMap)));
   connect(&m_gateway, SIGNAL(error(QString)), this,
           SIGNAL(gatewayError(QString)));
-  connect(&m_gateway, SIGNAL(closed()), this, SIGNAL(gatewayClosed()));
+  connect(&m_gateway, SIGNAL(closed()), this, SLOT(onGatewayClosedInternal()));
+  connect(&m_gateway, SIGNAL(sessionInvalid()), this,
+          SLOT(onGatewaySessionInvalid()));
   connect(&m_gateway, SIGNAL(ready(QString)), this,
           SIGNAL(gatewayReady(QString)));
 }
@@ -181,7 +183,46 @@ void DiscordGatewayWorker::connectGateway(const QString &token) {
     return;
   }
 
+  m_token = token;
+  m_wantConnected = true;
   m_gateway.connectToGateway(token);
+}
+
+void DiscordGatewayWorker::reconnectGateway(const QString &token) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "reconnectGateway", Qt::QueuedConnection,
+                              Q_ARG(QString, token));
+    return;
+  }
+
+  m_token = token;
+  m_wantConnected = true;
+  if (m_gateway.canResume()) {
+    m_gateway.resumeGateway(token, m_gateway.sessionId(),
+                            m_gateway.resumeGatewayUrl(), m_gateway.sequence());
+  } else {
+    m_gateway.connectToGateway(token);
+  }
+}
+
+void DiscordGatewayWorker::onGatewayClosedInternal() {
+  int code = m_gateway.lastCloseCode();
+  emit gatewayClosed();
+  emit gatewayClosedWithCode(code, DiscordGateway::isFatalCloseCode(code));
+}
+
+void DiscordGatewayWorker::onGatewaySessionInvalid() {
+  // Discord refused our RESUME: the session is gone and the socket stays open. Close it
+  // (disconnectFromGateway() detaches the handler, so no closed() comes by itself) and
+  // report the close ourselves: the owner's backoff then sees canResume() == false and
+  // does a single fresh IDENTIFY. No second reconnect path here (that would IDENTIFY
+  // twice).
+  if (!m_wantConnected) {
+    return;
+  }
+  m_gateway.disconnectFromGateway();
+  emit gatewayClosed();
+  emit gatewayClosedWithCode(-1, false);
 }
 
 void DiscordGatewayWorker::disconnectGateway() {
@@ -190,6 +231,7 @@ void DiscordGatewayWorker::disconnectGateway() {
     return;
   }
 
+  m_wantConnected = false;
   m_gateway.disconnectFromGateway();
 }
 
@@ -362,6 +404,7 @@ void DiscordGatewayWorker::cancelAll() {
 
   // Not disconnectFromGateway(): its close frame would invalidate the session that the
   // headless service is about to RESUME.
+  m_wantConnected = false;
   m_gateway.dropConnection();
   emit cancelAllFinished();
 }

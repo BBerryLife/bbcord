@@ -43,6 +43,8 @@ public Q_SLOTS:
   void editChannelMessage(const QString &token, const QString &channelId,
                           const QString &messageId, const QString &content);
   void sendTyping(const QString &token, const QString &channelId);
+  void ackMessage(const QString &token, const QString &channelId,
+                  const QString &messageId);
   void deleteChannelMessage(const QString &token, const QString &channelId,
                             const QString &messageId);
   void downloadAvatar(const QString &userId, const QString &avatarHash,

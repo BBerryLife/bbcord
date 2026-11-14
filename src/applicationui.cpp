@@ -235,6 +235,10 @@ void ApplicationUI::onAboutToQuit() {
 
 void ApplicationUI::onUiForeground() {
   HubIntegration::setUiForeground(true);
+  // Anything that arrived in the open chat while minimized was not acked then.
+  if (m_chatController != 0) {
+    m_chatController->scheduleAck();
+  }
 }
 
 void ApplicationUI::onUiBackground() {

@@ -11,6 +11,7 @@
 
 extern "C" {
 #include "mongoose.h"
+#include "discord/TlsTrust.hpp"
 }
 
 #include <string.h>
@@ -276,7 +277,7 @@ void AttachmentImageCacheWorker::imageEventHandler(
       struct mg_tls_opts opts;
       memset(&opts, 0, sizeof(opts));
       opts.name = mg_str(host.constData());
-      opts.skip_verification = true;
+      TlsTrust::apply(&opts);
       mg_tls_init(connection, &opts);
     } else {
       sendImageRequest(connection, context);

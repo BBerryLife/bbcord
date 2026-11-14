@@ -293,6 +293,19 @@ void DiscordNetworkWorker::sendTyping(const QString &token,
   m_chatWriteClient.sendTyping(token, channelId);
 }
 
+void DiscordNetworkWorker::ackMessage(const QString &token,
+                                      const QString &channelId,
+                                      const QString &messageId) {
+  if (!isInObjectThread(this)) {
+    QMetaObject::invokeMethod(this, "ackMessage", Qt::QueuedConnection,
+                              Q_ARG(QString, token), Q_ARG(QString, channelId),
+                              Q_ARG(QString, messageId));
+    return;
+  }
+
+  m_chatWriteClient.ackMessage(token, channelId, messageId);
+}
+
 void DiscordNetworkWorker::deleteChannelMessage(const QString &token,
                                                 const QString &channelId,
                                                 const QString &messageId) {

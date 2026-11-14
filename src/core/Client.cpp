@@ -13,6 +13,7 @@
 // (Client.hpp only forward-declares ItemMapper).
 #include "client/ItemMapper.hpp"
 
+#include <QDateTime>
 #include <QDebug>
 #include <QMetaObject>
 #include <QSettings>
@@ -34,7 +35,9 @@ QStringList roleIdsFromVariantList(const QVariantList &rawRoles) {
 
 DiscordClient::DiscordClient(QObject *parent)
     : QObject(parent), m_store(0), m_networkThread(0), m_networkWorker(0),
-      m_gatewayThread(0), m_gatewayWorker(0), m_avatarCacheThread(0),
+      m_gatewayThread(0), m_gatewayWorker(0), m_gatewayReconnectTimer(0),
+      m_gatewayReconnectAttempts(0), m_gatewayReadyAtMs(0),
+      m_avatarCacheThread(0),
       m_avatarCacheWorker(0), m_cacheManager(0), m_avatarManager(0),
       m_gatewayHandler(0), m_itemMapper(0), m_sortUtils(0),
       m_hubIntegration(0),
@@ -99,7 +102,9 @@ DiscordClient::DiscordClient(QObject *parent)
 
 DiscordClient::DiscordClient(AppStore *store, QObject *parent)
     : QObject(parent), m_store(store), m_networkThread(0), m_networkWorker(0),
-      m_gatewayThread(0), m_gatewayWorker(0), m_avatarCacheThread(0),
+      m_gatewayThread(0), m_gatewayWorker(0), m_gatewayReconnectTimer(0),
+      m_gatewayReconnectAttempts(0), m_gatewayReadyAtMs(0),
+      m_avatarCacheThread(0),
       m_avatarCacheWorker(0), m_cacheManager(0), m_avatarManager(0),
       m_gatewayHandler(0), m_itemMapper(0), m_sortUtils(0),
       m_hubIntegration(0),
@@ -1215,6 +1220,11 @@ void DiscordClient::mergeThreadsIntoCache(
 void DiscordClient::onGatewayReady(const QString &sessionId) {
   Q_UNUSED(sessionId);
 
+  // READY or RESUMED. The backoff is only reset once this connection has stayed up for a
+  // while (see onGatewayClosedWithCode()), so a server that accepts and immediately drops us
+  // cannot turn into a 1-second reconnect loop.
+  m_gatewayReadyAtMs = QDateTime::currentMSecsSinceEpoch();
+
   // A new gateway session forgot any op 8 that was dropped while disconnected.
   m_requestedMemberRoleKeys.clear();
   m_pendingMemberRoleUserIds.clear();
@@ -1243,10 +1253,14 @@ void DiscordClient::onGatewayError(const QString &message) {
   setStatusText(message);
 }
 
-void DiscordClient::onGatewayClosed() {
-  qDebug() << "[discord-client] gateway closed";
+void DiscordClient::onGatewayClosedWithCode(int closeCode, bool fatal) {
+  qDebug() << "[discord-client] gateway closed, code" << closeCode;
   if (m_busy && !m_loggedIn) {
     QString message = "Discord gateway connection closed";
+    if (fatal) {
+      message = QString("Discord rejected the connection (code %1)")
+                    .arg(closeCode);
+    }
     setBusy(false);
     setLoggedIn(false);
     setStatusText(message);
@@ -1254,13 +1268,66 @@ void DiscordClient::onGatewayClosed() {
     return;
   }
 
-  if (m_loggedIn && !m_token.trimmed().isEmpty() && m_gatewayWorker != 0) {
-    setStatusText("Reconnecting gateway...");
-    syncGatewayOrderingStateToWorker();
-    syncGatewayMessageFilterStateToWorker();
-    QMetaObject::invokeMethod(m_gatewayWorker, "connectGateway",
-                              Qt::QueuedConnection, Q_ARG(QString, m_token));
+  if (!m_loggedIn || m_token.trimmed().isEmpty() || m_gatewayWorker == 0) {
+    return;
   }
+
+  if (fatal) {
+    // 4004 (bad token), 4010-4014 (shard/version/intents): reconnecting can never work,
+    // and retrying only floods Discord with failing logins. Stop and tell the user.
+    m_gatewayReconnectAttempts = 0;
+    if (m_gatewayReconnectTimer != 0) {
+      m_gatewayReconnectTimer->stop();
+    }
+    setStatusText(QString("Discord closed the connection (code %1). "
+                          "Log in again.")
+                      .arg(closeCode));
+    return;
+  }
+
+  static const qint64 kHealthyMs = 60000;
+  if (m_gatewayReadyAtMs > 0 &&
+      QDateTime::currentMSecsSinceEpoch() - m_gatewayReadyAtMs >= kHealthyMs) {
+    m_gatewayReconnectAttempts = 0;
+  }
+  m_gatewayReadyAtMs = 0;
+
+  // Exponential backoff with jitter: 1, 2, 4 ... 256 s, capped at 300 s. It never gives up
+  // (a phone can be offline for hours) but it can no longer spin: at the cap that is at most
+  // 12 attempts per hour, and most reconnects are RESUMEs, not new sessions.
+  static const int kBaseDelayMs = 1000;
+  static const int kMaxDelayMs = 300000;
+  int exponent = m_gatewayReconnectAttempts < 9 ? m_gatewayReconnectAttempts : 9;
+  int delayMs = kBaseDelayMs << exponent;
+  if (delayMs > kMaxDelayMs) {
+    delayMs = kMaxDelayMs;
+  }
+  delayMs += qrand() % 1000;
+  ++m_gatewayReconnectAttempts;
+
+  if (m_gatewayReconnectTimer == 0) {
+    m_gatewayReconnectTimer = new QTimer(this);
+    m_gatewayReconnectTimer->setSingleShot(true);
+    connect(m_gatewayReconnectTimer, SIGNAL(timeout()), this,
+            SLOT(onGatewayReconnectTimer()));
+  }
+
+  qDebug() << "[discord-client] gateway reconnect attempt"
+           << m_gatewayReconnectAttempts << "in" << delayMs << "ms";
+  setStatusText("Reconnecting gateway...");
+  m_gatewayReconnectTimer->start(delayMs);
+}
+
+void DiscordClient::onGatewayReconnectTimer() {
+  if (!m_loggedIn || m_token.trimmed().isEmpty() || m_gatewayWorker == 0) {
+    return;
+  }
+
+  syncGatewayOrderingStateToWorker();
+  syncGatewayMessageFilterStateToWorker();
+  // RESUME when the session is still valid, otherwise one fresh IDENTIFY.
+  QMetaObject::invokeMethod(m_gatewayWorker, "reconnectGateway",
+                            Qt::QueuedConnection, Q_ARG(QString, m_token));
 }
 
 void DiscordClient::onGatewayGuildsAndDmsReady(

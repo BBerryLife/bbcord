@@ -12,6 +12,7 @@
 
 extern "C" {
 #include "mongoose.h"
+#include "TlsTrust.hpp"
 }
 
 #include <string.h>
@@ -30,7 +31,7 @@ DiscordGateway::DiscordGateway(QObject *parent)
     : QObject(parent), m_connection(NULL), m_timerId(0),
       m_pollIntervalMs(kGatewayPollIntervalMs), m_resumeRequested(false),
       m_heartbeatWatchdog(false), m_awaitingAck(false), m_lightStream(false),
-      m_lastInvalidResumable(false), m_msgOverflow(false), m_msgIsReady(false),
+      m_lastInvalidResumable(false), m_lastCloseCode(-1), m_msgOverflow(false), m_msgIsReady(false),
       m_msgSequence(-1), m_abruptClose(false), m_lastPersistMs(0), m_dnsRetriesLeft(0),
       m_lastPollMs(0), m_zstreamReady(false), m_sequence(-1),
       m_heartbeatIntervalMs(0), m_nextHeartbeatMs(0), m_state(Disconnected) {
@@ -116,6 +117,27 @@ void DiscordGateway::resumeGateway(const QString &token,
   beginConnectAttempt();
 }
 
+bool DiscordGateway::isFatalCloseCode(int code) {
+  // 4004 authentication failed, 4010 invalid shard, 4011 sharding required,
+  // 4012 invalid API version, 4013 invalid intent(s), 4014 disallowed intent(s).
+  return code == 4004 || (code >= 4010 && code <= 4014);
+}
+
+bool DiscordGateway::canResume() const {
+  if (m_sessionId.isEmpty() || m_sequence < 0) {
+    return false;
+  }
+  // 1000/1001: Discord invalidates the session on a clean close. 4003 not authenticated,
+  // 4005 already authenticated, 4007 invalid seq, 4009 session timed out.
+  if (m_lastCloseCode == 1000 || m_lastCloseCode == 1001 ||
+      m_lastCloseCode == 4003 || m_lastCloseCode == 4005 ||
+      m_lastCloseCode == 4007 || m_lastCloseCode == 4009 ||
+      isFatalCloseCode(m_lastCloseCode)) {
+    return false;
+  }
+  return true;
+}
+
 void DiscordGateway::persistSession(bool force) {
   if (m_sessionId.isEmpty() || m_sequence < 0 || m_resumeRequested) {
     return;
@@ -131,6 +153,7 @@ void DiscordGateway::persistSession(bool force) {
 
 void DiscordGateway::beginConnectAttempt() {
   setState(Connecting);
+  m_lastCloseCode = -1;
 
   // RESUME must go to the url Discord gave in READY; a normal connect to the default one.
   QByteArray url(kGatewayUrl);
@@ -422,7 +445,7 @@ void DiscordGateway::initializeTls(struct mg_connection *connection) {
     struct mg_tls_opts opts;
     memset(&opts, 0, sizeof(opts));
     opts.name = mg_str(m_hostBytes.constData());
-    opts.skip_verification = true;
+    TlsTrust::apply(&opts);
     mg_tls_init(connection, &opts);
   }
 }

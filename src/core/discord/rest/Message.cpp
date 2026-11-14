@@ -93,6 +93,7 @@ void DiscordRestClient::sendChannelMessage(const QString &token,
     body["content"] = safeContent;
     body["nonce"] = restRequest.nonce;
     body["tts"] = false;
+    body["flags"] = 0;
     QString safeReplyMessageId = replyMessageId.trimmed();
     if (!safeReplyMessageId.isEmpty()) {
       QVariantMap reference;
@@ -257,6 +258,7 @@ QByteArray DiscordRestClient::buildMultipartMessageBody(
   payload["content"] = content;
   payload["nonce"] = nonce;
   payload["tts"] = false;
+  payload["flags"] = 0;
   QString safeReplyMessageId = replyMessageId.trimmed();
   if (!safeReplyMessageId.isEmpty()) {
     QVariantMap reference;
@@ -333,5 +335,35 @@ void DiscordRestClient::sendTyping(const QString &token,
   request.requestPath =
       QString("/api/v9/channels/%1/typing").arg(request.channelId);
   request.type = TypingRequest;
+  enqueueRequest(request);
+}
+
+void DiscordRestClient::ackMessage(const QString &token,
+                                   const QString &channelId,
+                                   const QString &messageId) {
+  RestRequest request;
+  request.token = token.trimmed();
+  request.channelId = channelId.trimmed();
+  request.messageId = messageId.trimmed();
+  if (request.token.isEmpty() || request.channelId.isEmpty() ||
+      request.messageId.isEmpty()) {
+    return;
+  }
+
+  request.requestMethod = "POST";
+  request.requestPath = QString("/api/v9/channels/%1/messages/%2/ack")
+                            .arg(request.channelId)
+                            .arg(request.messageId);
+  request.type = AckRequest;
+
+  // Only the newest id per channel matters: update a queued ack instead of adding another.
+  for (int i = 0; i < m_requestQueue.size(); ++i) {
+    if (m_requestQueue.at(i).type == AckRequest &&
+        m_requestQueue.at(i).channelId == request.channelId) {
+      m_requestQueue[i].messageId = request.messageId;
+      m_requestQueue[i].requestPath = request.requestPath;
+      return;
+    }
+  }
   enqueueRequest(request);
 }

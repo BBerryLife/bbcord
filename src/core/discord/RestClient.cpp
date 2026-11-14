@@ -11,6 +11,7 @@
 
 extern "C" {
 #include "mongoose.h"
+#include "TlsTrust.hpp"
 }
 
 #include <string.h>
@@ -403,6 +404,13 @@ void DiscordRestClient::processNextRequest() {
   m_requestPath = restRequest.requestPath;
   m_requestMethod = restRequest.requestMethod;
   m_requestBody = restRequest.requestBody;
+  if (m_requestType == AckRequest) {
+    // Built here, not when queued, so it carries the token of the ack before it.
+    m_requestBody = m_lastAckToken.isEmpty()
+                        ? QByteArray("{\"token\":null}")
+                        : QByteArray("{\"token\":\"") + m_lastAckToken.toUtf8() +
+                              QByteArray("\"}");
+  }
   m_contentType = restRequest.contentType;
   m_guildId = restRequest.guildId;
   m_channelId = restRequest.channelId;
@@ -546,7 +554,7 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
                                           : apiBaseUrl())
                                .toUtf8();
       opts.name = mg_str(tlsHost.constData());
-      opts.skip_verification = true;
+      TlsTrust::apply(&opts);
       mg_tls_init(connection, &opts);
     }
     break;
@@ -567,6 +575,19 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
 
     if (m_requestType == TypingRequest) {
       // Best effort: whatever the answer (204, 429, error), nothing to report.
+      finishRequest(keepConnectionAlive);
+      processNextRequest();
+      break;
+    }
+
+    if (m_requestType == AckRequest) {
+      // Best effort too. A 200 carries {"token": "..."}: the official client sends it back
+      // with the next ack, so keep it (cleared on any other answer).
+      if (status == 200) {
+        m_lastAckToken = DiscordJsonParser::extractStringField(body, "token");
+      } else {
+        m_lastAckToken.clear();
+      }
       finishRequest(keepConnectionAlive);
       processNextRequest();
       break;
@@ -1212,7 +1233,7 @@ void DiscordRestClient::failWithMessage(const QString &message) {
   if (m_finished) {
     return;
   }
-  if (m_requestType == TypingRequest) {
+  if (m_requestType == TypingRequest || m_requestType == AckRequest) {
     finishRequest();
     processNextRequest();
     return;
@@ -1232,7 +1253,7 @@ void DiscordRestClient::failDataRequest(const QString &message) {
   if (m_finished) {
     return;
   }
-  if (m_requestType == TypingRequest) {
+  if (m_requestType == TypingRequest || m_requestType == AckRequest) {
     finishRequest();
     processNextRequest();
     return;
@@ -1252,7 +1273,7 @@ void DiscordRestClient::failChatRequest(const QString &message) {
   if (m_finished) {
     return;
   }
-  if (m_requestType == TypingRequest) {
+  if (m_requestType == TypingRequest || m_requestType == AckRequest) {
     finishRequest();
     processNextRequest();
     return;

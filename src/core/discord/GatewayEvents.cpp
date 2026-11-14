@@ -273,6 +273,9 @@ void DiscordGateway::handleEvent(struct mg_connection *connection, int event,
       closeCode =
           (static_cast<int>(bytes[0]) << 8) | static_cast<int>(bytes[1]);
     }
+    if (closeCode >= 0) {
+      m_lastCloseCode = closeCode;
+    }
     qDebug() << "[discord-gateway] control frame opcode" << opcode
              << "closeCode" << closeCode << "payloadBytes"
              << (message != NULL ? static_cast<int>(message->data.len) : 0);

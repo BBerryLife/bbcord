@@ -72,51 +72,51 @@
 <context>
     <name>AboutController</name>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="31"/>
-        <location filename="../src/ui/AboutController.cpp" line="76"/>
+        <location filename="../src/ui/AboutController.cpp" line="32"/>
+        <location filename="../src/ui/AboutController.cpp" line="77"/>
         <source>Checking for update...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="87"/>
+        <location filename="../src/ui/AboutController.cpp" line="88"/>
         <source>Could not create update connection</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="95"/>
-        <location filename="../src/ui/AboutController.cpp" line="117"/>
-        <location filename="../src/ui/AboutController.cpp" line="180"/>
+        <location filename="../src/ui/AboutController.cpp" line="96"/>
+        <location filename="../src/ui/AboutController.cpp" line="118"/>
+        <location filename="../src/ui/AboutController.cpp" line="181"/>
         <source>Unknown update check error</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="114"/>
+        <location filename="../src/ui/AboutController.cpp" line="115"/>
         <source>Update check timeout</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="165"/>
+        <location filename="../src/ui/AboutController.cpp" line="166"/>
         <source>Update connection error</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="225"/>
-        <location filename="../src/ui/AboutController.cpp" line="272"/>
+        <location filename="../src/ui/AboutController.cpp" line="226"/>
+        <location filename="../src/ui/AboutController.cpp" line="273"/>
         <source>Yay! You are on latest version</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="233"/>
+        <location filename="../src/ui/AboutController.cpp" line="234"/>
         <source>Could not check for update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="270"/>
+        <location filename="../src/ui/AboutController.cpp" line="271"/>
         <source>A new version is available: v%1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/AboutController.cpp" line="276"/>
+        <location filename="../src/ui/AboutController.cpp" line="277"/>
         <source>Unknown update parse error</source>
         <translation type="unfinished"></translation>
     </message>
@@ -156,37 +156,57 @@
 <context>
     <name>ChatCard</name>
     <message>
-        <location filename="../assets/ChatCard.qml" line="247"/>
+        <location filename="../assets/ChatCard.qml" line="248"/>
         <source>Loading more messages...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="302"/>
+        <location filename="../assets/ChatCard.qml" line="303"/>
         <source>Replying to </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="334"/>
+        <location filename="../assets/ChatCard.qml" line="335"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="401"/>
+        <location filename="../assets/ChatCard.qml" line="402"/>
         <source>File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="476"/>
+        <location filename="../assets/ChatCard.qml" line="477"/>
         <source>Message </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="532"/>
+        <location filename="../assets/ChatCard.qml" line="533"/>
         <source>Editing message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="567"/>
+        <location filename="../assets/ChatCard.qml" line="559"/>
+        <source>First message in this DM</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ChatCard.qml" line="560"/>
+        <source>Discord&apos;s spam filter often flags a first DM sent from a third-party client, and the account can be restricted or banned. To be safe, send the first message from the official Discord app, then reply here. Send anyway?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ChatCard.qml" line="561"/>
+        <source>Send anyway</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ChatCard.qml" line="562"/>
+        <source>Cancel</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../assets/ChatCard.qml" line="584"/>
         <source>Attach files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -194,23 +214,23 @@
 <context>
     <name>ChatController</name>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="337"/>
-        <location filename="../src/ui/ChatController.cpp" line="1450"/>
+        <location filename="../src/ui/ChatController.cpp" line="350"/>
+        <location filename="../src/ui/ChatController.cpp" line="1506"/>
         <source>Maximum 10 attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1435"/>
+        <location filename="../src/ui/ChatController.cpp" line="1491"/>
         <source>Attachment file not found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1445"/>
+        <location filename="../src/ui/ChatController.cpp" line="1501"/>
         <source>Attachment is too large</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1484"/>
+        <location filename="../src/ui/ChatController.cpp" line="1540"/>
         <source>%1 files</source>
         <translation type="unfinished"></translation>
     </message>

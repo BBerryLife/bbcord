@@ -30,6 +30,7 @@ enum RequestType {
   EditMessageRequest,
   DeleteMessageRequest,
   TypingRequest,
+  AckRequest,
   AvatarRequest,
   GuildIconRequest,
   SelfGuildMemberRequest
@@ -120,6 +121,11 @@ public:
   // Fire-and-forget "user is typing" ping (POST /channels/{id}/typing). Failures are
   // silent; at most one is queued per channel.
   void sendTyping(const QString &token, const QString &channelId);
+  // Marks everything up to `messageId` as read (POST /channels/{id}/messages/{id}/ack), like
+  // the official client does when a channel is on screen. Best effort and silent; only the
+  // newest id per channel is kept in the queue.
+  void ackMessage(const QString &token, const QString &channelId,
+                  const QString &messageId);
   void downloadAvatar(const QString &userId, const QString &avatarHash,
                       const QString &outputPath);
   void downloadGuildIcon(const QString &guildId, const QString &iconHash,
@@ -243,6 +249,7 @@ private:
   int m_threadOffset;
   QString m_threadSortBy;
   QString m_nonce;
+  QString m_lastAckToken; // `token` of the last ack response, sent back with the next ack
   QString m_avatarUserId;
   QString m_avatarHash;
   QString m_iconGuildId;

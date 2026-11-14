@@ -9,6 +9,7 @@
 
 extern "C" {
 #include "mongoose.h"
+#include "../core/discord/TlsTrust.hpp"
 }
 
 #include <string.h>
@@ -136,7 +137,7 @@ void AboutController::handleEvent(struct mg_connection *connection, int event,
         struct mg_tls_opts opts;
         memset(&opts, 0, sizeof(opts));
         opts.name = mg_str(kGitHubApiHost);
-        opts.skip_verification = true;
+        TlsTrust::apply(&opts);
         mg_tls_init(connection, &opts);
       }
       break;
