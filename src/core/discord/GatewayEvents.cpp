@@ -75,7 +75,9 @@ bool shouldParseDispatch(const QString &eventName) {
          eventName == "THREAD_CREATE" || eventName == "THREAD_UPDATE" ||
          eventName == "THREAD_DELETE" ||
          // Answer to op 8 (member roles for chat name colors).
-         eventName == "GUILD_MEMBERS_CHUNK";
+         eventName == "GUILD_MEMBERS_CHUNK" ||
+         // "X is typing": only parsed for the open channel (see handleTextMessage()).
+         eventName == "TYPING_START";
 }
 
 QByteArray extractArrayBytes(const QByteArray &bytes, const char *fieldName) {
@@ -612,6 +614,31 @@ void DiscordGateway::handleTextMessage(const char *data, int length) {
     }
 
     handleDispatch(fastEventName, messagePayload, sequence);
+    return;
+  }
+
+  if (fastEventName == "TYPING_START") {
+    int sequence = extractSequence(bytes);
+    if (sequence >= 0) {
+      m_sequence = sequence;
+      persistSession(false);
+    }
+
+    // Typing is shown for the open chat only; every other channel is dropped before parsing.
+    QString channelId =
+        DiscordJsonParser::extractStringField(bytes, "channel_id").trimmed();
+    if (channelId.isEmpty() || channelId != m_selectedChannelId) {
+      return;
+    }
+
+    QByteArray dataBytes = DiscordJsonParser::extractObjectField(bytes, "d");
+    QString errorMessage;
+    QVariantMap typingPayload =
+        DiscordJsonParser::parseObject(dataBytes, &errorMessage);
+    if (!errorMessage.isEmpty()) {
+      return;
+    }
+    handleDispatch("TYPING_START", typingPayload, sequence);
     return;
   }
 

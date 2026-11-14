@@ -103,7 +103,7 @@ ChatController::ChatController(DiscordClient *client, AppStore *store,
       m_chatDataModel(new bb::cascades::ArrayDataModel(this)),
       m_pendingAttachmentsModel(new bb::cascades::ArrayDataModel(this)),
       m_imageThread(0), m_imageWorker(0), m_pendingAttachmentIsImage(false),
-      m_lastTypingSentMs(0), m_ackTimer(0) {
+      m_lastTypingSentMs(0), m_ackTimer(0), m_typingTimer(0) {
   if (m_client) {
     connect(this, SIGNAL(initialMessagesRequested(QString, QString)), m_client,
             SLOT(loadInitialChatMessages(QString, QString)));
@@ -119,6 +119,8 @@ ChatController::ChatController(DiscordClient *client, AppStore *store,
             SLOT(sendChatTyping(QString)));
     connect(this, SIGNAL(ackRequested(QString, QString)), m_client,
             SLOT(ackChatMessage(QString, QString)));
+    connect(m_client, SIGNAL(typingStarted(QString, QString, QString)), this,
+            SLOT(onTypingStarted(QString, QString, QString)));
     connect(this, SIGNAL(editMessageRequested(QString, QString, QString)),
             m_client, SLOT(editChatMessage(QString, QString, QString)));
     connect(this, SIGNAL(deleteMessageRequested(QString, QString)), m_client,
@@ -145,6 +147,9 @@ ChatController::ChatController(DiscordClient *client, AppStore *store,
     connect(m_store, SIGNAL(memberRolesChanged(QString)), this,
             SLOT(onMemberRolesChanged(QString)));
     connect(m_store, SIGNAL(guildRolesChanged(QString)), this,
+            SLOT(onMemberRolesChanged(QString)));
+    // Nicknames change displayed names; same refresh pass as role colors.
+    connect(m_store, SIGNAL(memberNicksChanged(QString)), this,
             SLOT(onMemberRolesChanged(QString)));
   }
 }
@@ -221,6 +226,7 @@ void ChatController::openChannel(const QString &channelId,
   }
 
   if (changed) {
+    clearTypers();
     rebuildChatDataModel();
     emit currentChannelChanged();
   }
@@ -237,6 +243,7 @@ void ChatController::closeChannel() {
   m_currentChannelId.clear();
   m_currentGuildId.clear();
   m_currentChannelName.clear();
+  clearTypers();
   m_chatDataModel->clear();
   // Also tell AppStore the channel was left: its selectedChannelId() drives the
   // "is the user looking at this channel" checks (badge recompute, GatewayHandler),
@@ -460,6 +467,130 @@ void ChatController::notifyTyping() {
   m_lastTypingSentMs = nowMs;
   m_lastTypingChannelId = channelId;
   emit typingRequested(channelId);
+}
+
+void ChatController::onTypingStarted(const QString &channelId,
+                                     const QString &userId,
+                                     const QString &displayName) {
+  if (!m_store || channelId != safeCurrentChannelId() || userId.isEmpty() ||
+      userId == m_store->currentUserId()) {
+    return;
+  }
+
+  if (!m_typers.contains(userId)) {
+    m_typerOrder.append(userId);
+  }
+  Typer typer;
+  // Typing events repeat every few seconds: keep the name already resolved for this person
+  // instead of searching the chat again.
+  typer.name = (displayName.isEmpty() && m_typers.contains(userId))
+                   ? m_typers.value(userId).name
+                   : resolveTyperName(userId, displayName);
+  typer.untilMs = QDateTime::currentMSecsSinceEpoch() + 10000;
+  m_typers.insert(userId, typer);
+
+  if (m_typingTimer == 0) {
+    m_typingTimer = new QTimer(this);
+    m_typingTimer->setInterval(1000);
+    connect(m_typingTimer, SIGNAL(timeout()), this, SLOT(pruneTypers()));
+  }
+  if (!m_typingTimer->isActive()) {
+    m_typingTimer->start();
+  }
+  rebuildTypingText();
+}
+
+QString ChatController::resolveTyperName(const QString &userId,
+                                         const QString &name) const {
+  if (!name.isEmpty()) {
+    return name;
+  }
+  // DMs: the gateway sends no member. Use the name this person already has in the chat.
+  QVariantList messages = currentMessages();
+  for (int i = messages.size() - 1; i >= 0; --i) {
+    QVariantMap message = messages.at(i).toMap();
+    if (message.value("authorId").toString() == userId) {
+      QString author = message.value("author").toString().trimmed();
+      if (!author.isEmpty()) {
+        return author;
+      }
+    }
+  }
+  // One-to-one DM that has no message from them yet: the chat title is their name. A group
+  // DM title lists several names, so do not guess there.
+  if (m_currentGuildId.isEmpty() && !m_currentChannelName.isEmpty() &&
+      !m_currentChannelName.contains(',')) {
+    return m_currentChannelName;
+  }
+  return tr("Someone");
+}
+
+void ChatController::pruneTypers() {
+  qint64 now = QDateTime::currentMSecsSinceEpoch();
+  QStringList expired;
+  for (int i = 0; i < m_typerOrder.size(); ++i) {
+    const QString &userId = m_typerOrder.at(i);
+    if (m_typers.value(userId).untilMs <= now) {
+      expired.append(userId);
+    }
+  }
+  for (int i = 0; i < expired.size(); ++i) {
+    m_typers.remove(expired.at(i));
+    m_typerOrder.removeAll(expired.at(i));
+  }
+  if (m_typers.isEmpty() && m_typingTimer != 0) {
+    m_typingTimer->stop();
+  }
+  if (!expired.isEmpty()) {
+    rebuildTypingText();
+  }
+}
+
+void ChatController::removeTyper(const QString &userId) {
+  if (userId.isEmpty() || !m_typers.contains(userId)) {
+    return;
+  }
+  m_typers.remove(userId);
+  m_typerOrder.removeAll(userId);
+  if (m_typers.isEmpty() && m_typingTimer != 0) {
+    m_typingTimer->stop();
+  }
+  rebuildTypingText();
+}
+
+void ChatController::clearTypers() {
+  if (m_typingTimer != 0) {
+    m_typingTimer->stop();
+  }
+  m_typers.clear();
+  m_typerOrder.clear();
+  rebuildTypingText();
+}
+
+void ChatController::rebuildTypingText() {
+  QStringList names;
+  for (int i = 0; i < m_typerOrder.size(); ++i) {
+    names.append(m_typers.value(m_typerOrder.at(i)).name);
+  }
+
+  QString text;
+  if (names.size() == 1) {
+    text = tr("%1 is typing...").arg(names.at(0));
+  } else if (names.size() == 2) {
+    text = tr("%1 and %2 are typing...").arg(names.at(0)).arg(names.at(1));
+  } else if (names.size() == 3) {
+    text = tr("%1, %2, and %3 are typing...")
+               .arg(names.at(0))
+               .arg(names.at(1))
+               .arg(names.at(2));
+  } else if (names.size() > 3) {
+    text = tr("Several people are typing...");
+  }
+
+  if (text != m_typingText) {
+    m_typingText = text;
+    emit typingTextChanged();
+  }
 }
 
 void ChatController::scheduleAck() {
@@ -714,6 +845,9 @@ void ChatController::onChatMessagesBatched(const QString &channelId,
     return;
   }
   scheduleAck();
+  for (int i = 0; i < messages.size(); ++i) {
+    removeTyper(messages.at(i).toMap().value("authorId").toString());
+  }
 
   QVariantList current = currentMessages();
   int minTouchedIndex = m_chatDataModel->size();
@@ -789,6 +923,7 @@ void ChatController::onChatMessageAdded(const QString &channelId,
     return;
   }
   scheduleAck();
+  removeTyper(message.value("authorId").toString());
 
   QVariantMap item = prepareMessageForModel(message);
   int index = chatDataModelIndexForMessage(item.value("id").toString());
@@ -853,12 +988,40 @@ void ChatController::onMemberRolesChanged(const QString &guildId) {
       continue;
     }
     QString color = authorColorFor(m_currentGuildId, authorId);
-    if (message.value("authorColor").toString() == color) {
-      continue;
+    bool changed = false;
+    if (message.value("authorColor").toString() != color) {
+      message["authorColor"] = color;
+      changed = true;
     }
-    message["authorColor"] = color;
-    m_chatDataModel->replace(i, message);
+    QString baseName = message.value("authorBaseName").toString();
+    if (!baseName.isEmpty()) {
+      QString name = authorNameFor(m_currentGuildId, authorId, baseName);
+      if (message.value("author").toString() != name) {
+        message["author"] = name;
+        changed = true;
+      }
+    }
+    if (changed) {
+      m_chatDataModel->replace(i, message);
+    }
   }
+}
+
+QString ChatController::authorNameFor(const QString &guildId,
+                                      const QString &authorId,
+                                      const QString &baseName) {
+  if (m_store == 0 || guildId.isEmpty() || authorId.isEmpty()) {
+    return baseName;
+  }
+  if (!m_store->hasMemberNick(guildId, authorId)) {
+    // REST history carries no member data (same as for role colors): ask the gateway.
+    if (m_client != 0) {
+      m_client->requestMemberRoles(guildId, authorId);
+    }
+    return baseName;
+  }
+  QString nick = m_store->memberNick(guildId, authorId);
+  return nick.isEmpty() ? baseName : nick;
 }
 
 QString ChatController::authorColorFor(const QString &guildId,
@@ -1286,6 +1449,15 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
     colorGuildId = m_currentGuildId;
   }
   item["authorColor"] = authorColorFor(colorGuildId, authorId);
+
+  // Server nickname instead of the account name. Keep the original so it can be restored
+  // when the nickname is removed (see onMemberRolesChanged()).
+  QString baseName = item.value("authorBaseName").toString();
+  if (baseName.isEmpty()) {
+    baseName = item.value("author").toString();
+  }
+  item["authorBaseName"] = baseName;
+  item["author"] = authorNameFor(colorGuildId, authorId, baseName);
 
   return item;
 }

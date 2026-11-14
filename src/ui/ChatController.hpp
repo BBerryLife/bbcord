@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QObject>
 #include <QSet>
+#include <QMap>
 #include <QTimer>
 #include <QString>
 #include <QStringList>
@@ -26,6 +27,8 @@ class ChatController : public QObject {
       QString currentGuildId READ currentGuildId NOTIFY currentChannelChanged)
   Q_PROPERTY(QString currentChannelName READ currentChannelName NOTIFY
                  currentChannelChanged)
+  // "Alice is typing..." text for the open chat; empty when nobody is typing.
+  Q_PROPERTY(QString typingText READ typingText NOTIFY typingTextChanged)
   Q_PROPERTY(bool hasPendingAttachment READ hasPendingAttachment NOTIFY
                  pendingAttachmentChanged)
   Q_PROPERTY(QString pendingAttachmentName READ pendingAttachmentName NOTIFY
@@ -49,6 +52,7 @@ public:
   QString currentChannelId() const;
   QString currentGuildId() const;
   QString currentChannelName() const;
+  QString typingText() const { return m_typingText; }
   bool hasPendingAttachment() const;
   QString pendingAttachmentName() const;
   QString pendingAttachmentPreview() const;
@@ -107,6 +111,7 @@ public:
 
 Q_SIGNALS:
   void currentChannelChanged();
+  void typingTextChanged();
   void pendingAttachmentChanged();
   void chatDataModelChanged();
   void attachmentImageCached(const QString &url, const QString &imageSource);
@@ -128,6 +133,9 @@ Q_SIGNALS:
 private Q_SLOTS:
   void clearMediaCacheState();
   void ackCurrentChannel();
+  void onTypingStarted(const QString &channelId, const QString &userId,
+                       const QString &displayName);
+  void pruneTypers();
   void onCurrentChannelMessagesChanged();
   void onChatMessagesReset(const QString &channelId,
                            const QVariantList &messages);
@@ -168,6 +176,10 @@ private:
   // Author name color: the author's highest colored role, else the default text color.
   // Asks the client to fetch the member's roles when they are not cached yet.
   QString authorColorFor(const QString &guildId, const QString &authorId);
+  // Server nickname if the author has one in this guild, else `baseName`. Asks the gateway
+  // for the member when the nickname is not known yet (answer comes via memberNicksChanged()).
+  QString authorNameFor(const QString &guildId, const QString &authorId,
+                        const QString &baseName);
   int chatDataModelIndexForMessage(const QString &messageId) const;
   bool sameMessageIdentity(const QVariantMap &left,
                            const QVariantMap &right) const;
@@ -195,6 +207,20 @@ private:
   qint64 m_lastTypingSentMs;
   QString m_lastTypingChannelId;
   QTimer *m_ackTimer;
+  // Typing indicator: user id -> (name, expiry). A TYPING_START lasts ~10 s; it also ends
+  // when that user's message arrives.
+  struct Typer {
+    QString name;
+    qint64 untilMs;
+  };
+  void clearTypers();
+  void removeTyper(const QString &userId);
+  void rebuildTypingText();
+  QString resolveTyperName(const QString &userId, const QString &name) const;
+  QMap<QString, Typer> m_typers;
+  QStringList m_typerOrder; // oldest first, so the text names people in arrival order
+  QTimer *m_typingTimer;
+  QString m_typingText;
   QHash<QString, QString> m_lastAckedByChannel;
 };
 

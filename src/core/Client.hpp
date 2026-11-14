@@ -87,6 +87,10 @@ public:
 
 Q_SIGNALS:
   void loginSucceeded();
+  // Someone started typing in `channelId` (displayName is empty when the gateway did not
+  // include the member, i.e. in DMs: the UI resolves it from the chat itself).
+  void typingStarted(const QString &channelId, const QString &userId,
+                     const QString &displayName);
   void loginFailed(const QString &message);
   void mfaRequired(const QString &ticket, const QString &loginInstanceId);
   void captchaRequired(const QString &requestKind, const QString &sitekey,

@@ -161,52 +161,52 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="303"/>
+        <location filename="../assets/ChatCard.qml" line="329"/>
         <source>Replying to </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="335"/>
+        <location filename="../assets/ChatCard.qml" line="361"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="402"/>
+        <location filename="../assets/ChatCard.qml" line="428"/>
         <source>File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="477"/>
+        <location filename="../assets/ChatCard.qml" line="503"/>
         <source>Message </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="533"/>
+        <location filename="../assets/ChatCard.qml" line="559"/>
         <source>Editing message</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="559"/>
+        <location filename="../assets/ChatCard.qml" line="585"/>
         <source>First message in this DM</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="560"/>
+        <location filename="../assets/ChatCard.qml" line="586"/>
         <source>Discord&apos;s spam filter often flags a first DM sent from a third-party client, and the account can be restricted or banned. To be safe, send the first message from the official Discord app, then reply here. Send anyway?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="561"/>
+        <location filename="../assets/ChatCard.qml" line="587"/>
         <source>Send anyway</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="562"/>
+        <location filename="../assets/ChatCard.qml" line="588"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../assets/ChatCard.qml" line="584"/>
+        <location filename="../assets/ChatCard.qml" line="610"/>
         <source>Attach files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -214,23 +214,48 @@
 <context>
     <name>ChatController</name>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="350"/>
-        <location filename="../src/ui/ChatController.cpp" line="1506"/>
+        <location filename="../src/ui/ChatController.cpp" line="357"/>
+        <location filename="../src/ui/ChatController.cpp" line="1678"/>
         <source>Maximum 10 attachments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1491"/>
+        <location filename="../src/ui/ChatController.cpp" line="525"/>
+        <source>Someone</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ChatController.cpp" line="578"/>
+        <source>%1 is typing...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ChatController.cpp" line="580"/>
+        <source>%1 and %2 are typing...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ChatController.cpp" line="582"/>
+        <source>%1, %2, and %3 are typing...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ChatController.cpp" line="587"/>
+        <source>Several people are typing...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/ChatController.cpp" line="1663"/>
         <source>Attachment file not found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1501"/>
+        <location filename="../src/ui/ChatController.cpp" line="1673"/>
         <source>Attachment is too large</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/ui/ChatController.cpp" line="1540"/>
+        <location filename="../src/ui/ChatController.cpp" line="1712"/>
         <source>%1 files</source>
         <translation type="unfinished"></translation>
     </message>

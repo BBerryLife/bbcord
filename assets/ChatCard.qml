@@ -257,6 +257,32 @@ Page {
             }
         }
 
+        // Reserved strip between the chat and the input bar. It keeps its height even when
+        // nobody is typing, so the chat does not jump when the text appears. Black, so it reads
+        // as a gap of its own instead of making the input bar look taller.
+        Container {
+            horizontalAlignment: HorizontalAlignment.Fill
+            background: Color.Black
+            preferredHeight: ui.du(3.5)
+            minHeight: ui.du(3.5)
+            maxHeight: ui.du(3.5)
+            leftPadding: ui.du(1.5)
+            rightPadding: ui.du(1.5)
+
+            layout: DockLayout {
+            }
+
+            Label {
+                text: chatController.typingText
+                visible: chatController.typingText !== ""
+                multiline: false
+                textStyle.fontSize: FontSize.XSmall
+                textStyle.color: Color.create("#B5BAC1")
+                horizontalAlignment: HorizontalAlignment.Left
+                verticalAlignment: VerticalAlignment.Center
+            }
+        }
+
         Container {
             horizontalAlignment: HorizontalAlignment.Fill
             background: Color.create("#18191C")

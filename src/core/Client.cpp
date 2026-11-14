@@ -704,6 +704,25 @@ void DiscordClient::onGuildIconCacheMiss(const QString &guildId,
 
 void DiscordClient::onGatewayDispatch(const QString &eventName,
                                       const QVariantMap &payload) {
+  if (eventName == "TYPING_START") {
+    QString typingChannelId = payload.value("channel_id").toString().trimmed();
+    QString typingUserId = payload.value("user_id").toString().trimmed();
+    if (typingChannelId.isEmpty() || typingUserId.isEmpty()) {
+      return;
+    }
+    QVariantMap typingMember = payload.value("member").toMap();
+    QVariantMap typingUser = typingMember.value("user").toMap();
+    QString typingName = typingMember.value("nick").toString().trimmed();
+    if (typingName.isEmpty()) {
+      typingName = typingUser.value("global_name").toString().trimmed();
+    }
+    if (typingName.isEmpty()) {
+      typingName = typingUser.value("username").toString().trimmed();
+    }
+    emit typingStarted(typingChannelId, typingUserId, typingName);
+    return;
+  }
+
   if (eventName == "READY" || eventName == "USER_SETTINGS_PROTO_UPDATE") {
     QVariantList folders = payload.value("guild_folders").toList();
     if (folders.isEmpty()) {
@@ -811,6 +830,7 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
         QVariantList items = op.value("items").toList();
         QVariantList parsedMembers;
         QMap<QString, QStringList> syncedMemberRoles;
+        QMap<QString, QString> syncedMemberNicks;
         for (int i = 0; i < items.size(); ++i) {
           QVariantMap item = items.at(i).toMap();
           if (!item.contains("member")) {
@@ -858,6 +878,7 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
 
           QVariantList memberRoleIds = memberRaw.value("roles").toList();
           syncedMemberRoles.insert(userId, roleIdsFromVariantList(memberRoleIds));
+          syncedMemberNicks.insert(userId, memberRaw.value("nick").toString().trimmed());
           // Pick up the current user's own roles from a member-list SYNC (fallback for
           // fetchSelfGuildMember()). Only updates when roles changed, to avoid redundant
           // recomputeAccessibleGuildChannels() calls.
@@ -897,6 +918,7 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
         }
 
         // Also feeds chat name colors: these members' roles are now known for free.
+        m_store->setMemberNicks(guildId, syncedMemberNicks);
         m_store->setMemberRoles(guildId, syncedMemberRoles);
 
         if (!channelId.isEmpty()) {
@@ -927,6 +949,7 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
     QString chunkGuildId = payload.value("guild_id").toString().trimmed();
     QVariantList chunkMembers = payload.value("members").toList();
     QMap<QString, QStringList> rolesByUserId;
+    QMap<QString, QString> nicksByUserId;
     for (int i = 0; i < chunkMembers.size(); ++i) {
       QVariantMap chunkMember = chunkMembers.at(i).toMap();
       QString chunkUserId =
@@ -934,8 +957,12 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       if (!chunkUserId.isEmpty()) {
         rolesByUserId.insert(chunkUserId,
                              roleIdsFromVariantList(chunkMember.value("roles").toList()));
+        nicksByUserId.insert(chunkUserId,
+                             chunkMember.value("nick").toString().trimmed());
       }
     }
+    // Nicknames first, so the chat refreshes names and colors in one pass.
+    m_store->setMemberNicks(chunkGuildId, nicksByUserId);
     m_store->setMemberRoles(chunkGuildId, rolesByUserId);
   }
 
@@ -949,6 +976,10 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
       QMap<QString, QStringList> rolesByUserId;
       rolesByUserId.insert(authorUserId, roleIdsFromVariantList(
                                              authorMember.value("roles").toList()));
+      QMap<QString, QString> nicksByUserId;
+      nicksByUserId.insert(authorUserId,
+                           authorMember.value("nick").toString().trimmed());
+      m_store->setMemberNicks(authorGuildId, nicksByUserId);
       m_store->setMemberRoles(authorGuildId, rolesByUserId);
     }
   }
@@ -957,6 +988,13 @@ void DiscordClient::onGatewayDispatch(const QString &eventName,
     QString updatedGuildId = payload.value("guild_id").toString().trimmed();
     QString updatedUserId =
         payload.value("user").toMap().value("id").toString().trimmed();
+    if (!updatedGuildId.isEmpty() && !updatedUserId.isEmpty() &&
+        payload.contains("nick")) {
+      // "nick": null (nickname removed) arrives as an empty string.
+      QMap<QString, QString> updatedNicks;
+      updatedNicks.insert(updatedUserId, payload.value("nick").toString().trimmed());
+      m_store->setMemberNicks(updatedGuildId, updatedNicks);
+    }
     if (!updatedGuildId.isEmpty() && !updatedUserId.isEmpty() &&
         payload.contains("roles")) {
       QMap<QString, QStringList> rolesByUserId;
@@ -1068,7 +1106,9 @@ void DiscordClient::requestMemberRoles(const QString &guildId,
       m_gatewayWorker == 0) {
     return;
   }
-  if (m_store && m_store->hasMemberRoles(safeGuildId, safeUserId)) {
+  // Roles and nickname arrive together in the op 8 answer; ask until both are known.
+  if (m_store && m_store->hasMemberRoles(safeGuildId, safeUserId) &&
+      m_store->hasMemberNick(safeGuildId, safeUserId)) {
     return;
   }
 

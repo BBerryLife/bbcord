@@ -213,6 +213,42 @@ void AppStore::setMemberRoles(const QString &guildId,
   }
 }
 
+void AppStore::setMemberNicks(const QString &guildId,
+                              const QMap<QString, QString> &nicksByUserId) {
+  QString safeGuildId = guildId.trimmed();
+  if (safeGuildId.isEmpty() || nicksByUserId.isEmpty()) {
+    return;
+  }
+
+  QMap<QString, QString> &cached = m_memberNicksByGuildId[safeGuildId];
+  bool changed = false;
+  for (QMap<QString, QString>::const_iterator it = nicksByUserId.constBegin();
+       it != nicksByUserId.constEnd(); ++it) {
+    if (it.key().isEmpty()) {
+      continue;
+    }
+    if (!cached.contains(it.key()) || cached.value(it.key()) != it.value()) {
+      cached.insert(it.key(), it.value());
+      changed = true;
+    }
+  }
+  if (changed) {
+    emit memberNicksChanged(safeGuildId);
+  }
+}
+
+bool AppStore::hasMemberNick(const QString &guildId,
+                             const QString &userId) const {
+  return m_memberNicksByGuildId.value(guildId.trimmed())
+      .contains(userId.trimmed());
+}
+
+QString AppStore::memberNick(const QString &guildId,
+                             const QString &userId) const {
+  return m_memberNicksByGuildId.value(guildId.trimmed())
+      .value(userId.trimmed());
+}
+
 QVariantList AppStore::memberListForChannel(const QString &channelId) const {
   return m_memberListByChannelId.value(channelId.trimmed());
 }
@@ -297,6 +333,7 @@ void AppStore::clearSession() {
   setGuildChannels(QVariantList());
   setChannelThreadsByParentId(QVariantMap());
   m_memberRoleIdsByGuildId.clear();
+  m_memberNicksByGuildId.clear();
   clearChatCache();
   selectHome();
 }
