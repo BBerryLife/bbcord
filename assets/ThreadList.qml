@@ -1,4 +1,5 @@
 import bb.cascades 1.4
+import QtQuick 1.0
 
 // Active thread list for a channel. Loads discordClient.threadsForChannel()
 // straight into an ArrayDataModel; no dedicated C++ controller needed.
@@ -31,6 +32,26 @@ Page {
 	property bool searchLoadedOnce: false
 	property int searchOffset: 0
 
+	// Auto-fill: Discord reports the real number of threads ("total_results"). After
+	// every page the list keeps requesting more (and retries after failures/stalls)
+	// until it holds that many, both streams are exhausted, or nothing new arrives for
+	// maxStallRounds rounds in a row.
+	//  - searchTotal: largest total_results seen (0 = unknown);
+	//  - creationOffset/creationHasMore: paging of the "creation_time" stream, which also
+	//    lists posts nobody replied to yet (the "last_message_time" stream skips them);
+	//  - pendingRequests: REST pages in flight (searchLoading is derived from it).
+	property int searchTotal: 0
+	property int creationOffset: 0
+	property bool creationHasMore: false
+	property int pendingRequests: 0
+	property bool autoFill: false
+	property int stallRounds: 0
+	property int lastCount: -1
+	property int requestsSent: 0
+	property bool incomplete: false
+	property int maxStallRounds: 3
+	property int maxRequests: 60
+
 	signal backRequested()
 	signal threadSelected(string threadId, string threadName)
 
@@ -53,6 +74,29 @@ Page {
 	attachedObjects: [
 		ArrayDataModel {
 			id: threadDataModel
+		},
+		// Pause between auto-fill rounds; grows with stallRounds so retries back off.
+		Timer {
+			id: autoFillTimer
+			interval: 800
+			repeat: false
+			onTriggered: {
+				threadListPage.autoStep()
+			}
+		},
+		// A page that never answers (REST error: no signal is emitted) must not freeze
+		// auto-fill; after the timeout it is counted as a failed round and retried.
+		Timer {
+			id: pendingWatchdog
+			interval: 12000
+			repeat: false
+			onTriggered: {
+				if (threadListPage.pendingRequests > 0) {
+					threadListPage.pendingRequests = 0
+					threadListPage.searchLoading = false
+					threadListPage.afterRound()
+				}
+			}
 		}
 	]
 
@@ -93,6 +137,7 @@ Page {
 			threadDataModel.append(merged[k])
 		}
 		threadListPage.threadCount = threadDataModel.size()
+		threadListPage.incomplete = threadListPage.searchTotal > 0 && threadListPage.threadCount < threadListPage.searchTotal
 	}
 
 	// Most recent activity of a thread: last message, else its creation (the thread id).
@@ -128,6 +173,9 @@ Page {
 	// threadSearchLoaded does not hit a destroyed object.
 	function cleanup() {
 		threadListPage._isActive = false
+		threadListPage.autoFill = false
+		autoFillTimer.running = false
+		pendingWatchdog.running = false
 		appStore.channelThreadsChanged.disconnect(threadListPage.reload)
 		discordClient.threadSearchLoaded.disconnect(threadListPage.onThreadSearchResult)
 	}
@@ -144,32 +192,123 @@ Page {
 		threadListPage.searchOffset = 0
 		threadListPage.searchHasMore = false
 		threadListPage.searchLoadedOnce = false
-		threadListPage.searchLoading = true
-		discordClient.requestThreadSearch(threadListPage.channelId, 0, "last_message_time")
-		discordClient.requestThreadSearch(threadListPage.channelId, 0, "creation_time")
+		threadListPage.searchTotal = 0
+		threadListPage.creationOffset = 0
+		threadListPage.creationHasMore = false
+		threadListPage.pendingRequests = 0
+		threadListPage.stallRounds = 0
+		threadListPage.lastCount = -1
+		threadListPage.requestsSent = 0
+		threadListPage.autoFill = true
+		threadListPage.sendSearch(0, "last_message_time")
+		threadListPage.sendSearch(0, "creation_time")
 	}
 
-	// Next page of /threads/search ("last_message_time" order), by offset.
+	function sendSearch(offset, sortBy) {
+		threadListPage.pendingRequests = threadListPage.pendingRequests + 1
+		threadListPage.requestsSent = threadListPage.requestsSent + 1
+		threadListPage.searchLoading = true
+		pendingWatchdog.running = false
+		pendingWatchdog.running = true
+		discordClient.requestThreadSearch(threadListPage.channelId, offset, sortBy)
+	}
+
+	// Manual "Load more": restarts auto-fill from the current offsets.
 	function loadMoreThreads() {
 		if (threadListPage.searchLoading || threadListPage.channelId === "") {
 			return
 		}
-		threadListPage.searchLoading = true
-		discordClient.requestThreadSearch(threadListPage.channelId, threadListPage.searchOffset, "last_message_time")
+		threadListPage.stallRounds = 0
+		threadListPage.requestsSent = 0
+		threadListPage.autoFill = true
+		threadListPage.autoStep()
 	}
 
-	function onThreadSearchResult(channelId, threads, hasMore, offset, sortBy) {
+	// One auto-fill round: asks for the next page of every stream that still has data,
+	// or (when none reports more but the total is not reached) re-asks the current
+	// page of the main stream as a retry.
+	function autoStep() {
+		if (!threadListPage._isActive || !threadListPage.autoFill || threadListPage.searchLoading || threadListPage.channelId === "") {
+			return
+		}
+		if (threadListPage.requestsSent >= threadListPage.maxRequests) {
+			threadListPage.autoFill = false
+			return
+		}
+		var sent = false
+		if (threadListPage.searchHasMore) {
+			threadListPage.sendSearch(threadListPage.searchOffset, "last_message_time")
+			sent = true
+		}
+		if (threadListPage.creationHasMore) {
+			threadListPage.sendSearch(threadListPage.creationOffset, "creation_time")
+			sent = true
+		}
+		if (!sent) {
+			threadListPage.sendSearch(threadListPage.searchOffset, "last_message_time")
+		}
+	}
+
+	// Runs once no request is in flight: decides whether the list is complete, whether
+	// the last round made progress, and schedules the next round.
+	function afterRound() {
+		reload()
+		if (!threadListPage._isActive || !threadListPage.autoFill) {
+			return
+		}
+		var have = threadListPage.threadCount
+		var total = threadListPage.searchTotal
+		var more = threadListPage.searchHasMore || threadListPage.creationHasMore
+
+		// Complete: we hold as many threads as Discord says exist.
+		if (total > 0 && have >= total) {
+			threadListPage.autoFill = false
+			return
+		}
+		// Total unknown (or not reached) and nothing more to page: only retries remain.
+		if (total <= 0 && !more) {
+			threadListPage.autoFill = false
+			return
+		}
+
+		if (have > threadListPage.lastCount) {
+			threadListPage.stallRounds = 0
+		} else {
+			threadListPage.stallRounds = threadListPage.stallRounds + 1
+		}
+		threadListPage.lastCount = have
+		if (threadListPage.stallRounds >= threadListPage.maxStallRounds) {
+			threadListPage.autoFill = false
+			return
+		}
+		autoFillTimer.interval = 800 * (1 + threadListPage.stallRounds)
+		autoFillTimer.running = false
+		autoFillTimer.running = true
+	}
+
+	function onThreadSearchResult(channelId, threads, hasMore, offset, sortBy, totalResults) {
 		if (!threadListPage._isActive || channelId !== threadListPage.channelId) {
 			return
 		}
 		threadListPage.searchLoadedOnce = true
-		threadListPage.searchLoading = false
+		if (threadListPage.pendingRequests > 0) {
+			threadListPage.pendingRequests = threadListPage.pendingRequests - 1
+		}
+		threadListPage.searchLoading = threadListPage.pendingRequests > 0
+		if (!threadListPage.searchLoading) {
+			pendingWatchdog.running = false
+		}
+		if (totalResults > threadListPage.searchTotal) {
+			threadListPage.searchTotal = totalResults
+		}
 
-		// Only the "last_message_time" stream drives paging; the creation_time first page
-		// is just merged in.
+		// Each sort order is its own paged stream with its own offset.
 		if (sortBy === "last_message_time") {
 			threadListPage.searchHasMore = hasMore
 			threadListPage.searchOffset = offset + threads.length
+		} else {
+			threadListPage.creationHasMore = hasMore
+			threadListPage.creationOffset = offset + threads.length
 		}
 
 		var all = threadListPage.searchThreads.slice(0)
@@ -188,6 +327,9 @@ Page {
 		}
 		threadListPage.searchThreads = all
 		reload()
+		if (threadListPage.pendingRequests === 0) {
+			threadListPage.afterRound()
+		}
 	}
 
 	Container {
@@ -207,6 +349,15 @@ Page {
 			verticalAlignment: VerticalAlignment.Center
 			textStyle.color: Color.create("#88ffffff")
 			visible: threadListPage.threadCount === 0
+		}
+
+		// Shown while auto-fill keeps loading toward Discord's reported thread count.
+		Label {
+			text: threadListPage.searchTotal > 0 ? qsTr("Loading threads... ") + threadListPage.threadCount + " / " + threadListPage.searchTotal : qsTr("Loading threads...")
+			horizontalAlignment: HorizontalAlignment.Center
+			textStyle.fontSize: FontSize.XSmall
+			textStyle.color: Color.create("#88ffffff")
+			visible: threadListPage.autoFill && threadListPage.threadCount > 0
 		}
 
 		ListView {
@@ -260,13 +411,13 @@ Page {
 		// Next page of threads (active + archived), paged by offset. Hidden once the
 		// server says there is nothing more.
 		Button {
-			text: threadListPage.searchLoading ? qsTr("Loading...") : qsTr("Load more threads")
+			text: threadListPage.searchLoading ? qsTr("Loading...") : (threadListPage.incomplete ? qsTr("Load more threads") + " (" + threadListPage.threadCount + " / " + threadListPage.searchTotal + ")" : qsTr("Load more threads"))
 			// Center alignment so the button sizes to its text instead of filling the width.
 			horizontalAlignment: HorizontalAlignment.Center
 			topMargin: ui.du(1.0)
 			bottomMargin: ui.du(1.5)
 			enabled: !threadListPage.searchLoading
-			visible: threadListPage.searchHasMore
+			visible: !threadListPage.autoFill && (threadListPage.searchHasMore || threadListPage.creationHasMore || threadListPage.incomplete)
 
 			onClicked: {
 				threadListPage.loadMoreThreads()

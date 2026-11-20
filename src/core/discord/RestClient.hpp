@@ -159,8 +159,10 @@ Q_SIGNALS:
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
   // threads/search page. offset/sortBy echo the request so the caller can tell pages apart.
+  // totalResults is Discord's "total_results" (all matching threads), 0 if absent.
   void threadSearchLoaded(const QString &channelId, const QVariantList &threads,
-                          bool hasMore, int offset, const QString &sortBy);
+                          bool hasMore, int offset, const QString &sortBy,
+                          int totalResults);
   void channelMessagesLoaded(const QString &channelId,
                              const QString &beforeMessageId,
                              const QVariantList &messages);

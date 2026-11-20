@@ -63,6 +63,9 @@ public:
   // Best-effort channel/DM display name from client-side caches only (no
   // network). Empty if not cached yet (e.g. cold Hub invoke).
   Q_INVOKABLE QString channelNameForId(const QString &channelId) const;
+  // Whether the channel is a Forum/Media channel (cache only; false if unknown). Used to
+  // open ThreadList instead of a chat when a "#channel" mention is tapped.
+  Q_INVOKABLE bool isForumLikeChannel(const QString &channelId) const;
   // Active threads for a channel. Data arrives only via the gateway
   // (THREAD_LIST_SYNC); Discord rejects the REST "active threads" endpoints for
   // user tokens. May be empty until the event arrives.
@@ -102,8 +105,11 @@ Q_SIGNALS:
   void archivedThreadsLoaded(const QString &channelId,
                              const QVariantList &threads, bool hasMore);
   // offset/sortBy echo the request so QML can tell the creation_time first page apart.
+  // totalResults = Discord's "total_results" for the search (the real number of threads
+  // in the channel), so QML can keep loading until it has them all.
   void threadSearchLoaded(const QString &channelId, const QVariantList &threads,
-                          bool hasMore, int offset, const QString &sortBy);
+                          bool hasMore, int offset, const QString &sortBy,
+                          int totalResults);
   // Emitted once fetchChannelInfo() (Hub cold-start fallback) resolves a name.
   // channelName may be empty; main.qml only acts on non-empty names.
   void channelInfoResolved(const QString &channelId, const QString &guildId,
@@ -171,7 +177,8 @@ private Q_SLOTS:
   void flushMemberRoleRequests();
   void onThreadSearchLoaded(const QString &channelId,
                             const QVariantList &threads, bool hasMore,
-                            int offset, const QString &sortBy);
+                            int offset, const QString &sortBy,
+                            int totalResults);
   // Companion to fetchChannelInfo(): selects the guild and emits
   // channelInfoResolved() so the chat page can show the real name.
   void onChannelInfoLoaded(const QString &channelId, const QString &guildId,

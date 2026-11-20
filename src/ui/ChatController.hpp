@@ -173,6 +173,11 @@ private:
   int chatDataModelIndexForNonce(const QString &nonce) const;
   void replaceGroupedMessage(const QVariantMap &message);
   QVariantMap prepareMessageForModel(const QVariantMap &message);
+  // Replaces the escaped "<#id>" channel tokens left in `html` by DiscordMessage with a
+  // highlighted "#name" pill. Names come from the message's own mention_channels, then
+  // from the open guild's channels; an unknown channel shows "#unknown".
+  QString styleChannelMentions(const QString &html,
+                               const QVariantList &mentionChannels) const;
   // Author name color: the author's highest colored role, else the default text color.
   // Asks the client to fetch the member's roles when they are not cached yet.
   QString authorColorFor(const QString &guildId, const QString &authorId);

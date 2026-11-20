@@ -59,14 +59,18 @@ config_pri_assets {
         $$quote($$BASEDIR/assets/images/icons/accent/ic_save_image.png) \
         $$quote($$BASEDIR/assets/images/icons/accent/users.png) \
         $$quote($$BASEDIR/assets/images/icons/action_delete.png) \
+        $$quote($$BASEDIR/assets/images/icons/action_icon_search.png) \
         $$quote($$BASEDIR/assets/images/icons/caret-down.png) \
         $$quote($$BASEDIR/assets/images/icons/first.png) \
         $$quote($$BASEDIR/assets/images/icons/hash.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_chat_multiperson.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_copy.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_edit.png) \
+        $$quote($$BASEDIR/assets/images/icons/ic_emoticon_enabled_white.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_folder_color.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_info.png) \
+        $$quote($$BASEDIR/assets/images/icons/ic_keyboard_disabled.png) \
+        $$quote($$BASEDIR/assets/images/icons/ic_keyboard_enabled.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_open.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_reload.png) \
         $$quote($$BASEDIR/assets/images/icons/ic_reply.png) \

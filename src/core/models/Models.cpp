@@ -129,6 +129,26 @@ qint64 DiscordMessage::timestampMs() const {
   return parsed.toMSecsSinceEpoch();
 }
 
+int DiscordMessage::joinVariant() const {
+  if (!isUserJoin()) {
+    return -1;
+  }
+  const int kJoinPhraseCount = 13;
+  bool ok = false;
+  qulonglong idValue = id.toULongLong(&ok);
+  qint64 ms = 0;
+  if (ok && idValue > 0) {
+    // Snowflake: ms since the Discord epoch (2015-01-01) in the bits above 22.
+    ms = static_cast<qint64>(idValue >> 22) + 1420070400000LL;
+  } else {
+    ms = timestampMs();
+  }
+  if (ms < 0) {
+    ms = -ms;
+  }
+  return static_cast<int>(ms % kJoinPhraseCount);
+}
+
 QString DiscordMessage::displayTime() const {
   QDateTime parsed = parseDiscordTimestamp(timestamp);
   if (!parsed.isValid()) {
@@ -209,6 +229,9 @@ QVariantMap DiscordMessage::toVariantMap() const {
   data["id"] = id;
   data["channelId"] = channelId;
   data["guildId"] = guildId;
+  data["type"] = type;
+  data["messageType"] = type;
+  data["joinVariant"] = joinVariant();
   data["authorId"] = author.id;
   data["author"] = author.displayName();
   data["username"] = author.username;
@@ -219,8 +242,36 @@ QVariantMap DiscordMessage::toVariantMap() const {
   // Resolve mentions before markdown/HTML conversion: toHtml() escapes and wraps
   // text, so resolving afterwards could mangle inserted tags. content stays raw
   // (needed for editing).
+  // Channel mentions "<#id>" become U+E000 id [U+E002 name] U+E001 tokens first (only
+  // for messageHtml; reply previews and notifications keep plain text). MarkdownParser
+  // turns them into a highlighted span and ChatController fills in the cached name and
+  // the tap targets. mention_channels carries names only for crossposted channels.
+  QString contentForHtml = content;
+  {
+    QRegExp channelPattern("<#(\\d+)>");
+    int channelIndex = 0;
+    while ((channelIndex = channelPattern.indexIn(contentForHtml, channelIndex)) !=
+           -1) {
+      QString channelId = channelPattern.cap(1);
+      QString channelName;
+      for (int i = 0; i < mentionChannels.size(); ++i) {
+        QVariantMap channel = mentionChannels.at(i).toMap();
+        if (channel.value("id").toString().trimmed() == channelId) {
+          channelName = channel.value("name").toString();
+          break;
+        }
+      }
+      QString token = QString(QChar(0xE000)) + channelId;
+      if (!channelName.isEmpty()) {
+        token += QString(QChar(0xE002)) + channelName;
+      }
+      token += QChar(0xE001);
+      contentForHtml.replace(channelIndex, channelPattern.matchedLength(), token);
+      channelIndex += token.length();
+    }
+  }
   QString resolvedContent =
-      resolveMentions(content, mentions, mentionRoles, mentionChannels);
+      resolveMentions(contentForHtml, mentions, mentionRoles, mentionChannels);
   data["messageHtml"] = MarkdownParser::toHtml(resolvedContent);
   // Label(TextFormat.Html) has no <img>, so custom emoji get a ":name:" text fallback
   // in messageHtml and are also exposed as ordered segments for MessageBubble.qml to
@@ -329,6 +380,7 @@ DiscordMessage DiscordMessage::fromVariantMap(const QVariantMap &data) {
   message.channelId =
       data.value("channel_id", data.value("channelId")).toString();
   message.guildId = data.value("guild_id", data.value("guildId")).toString();
+  message.type = data.value("type", data.value("messageType")).toInt();
   message.content = data.value("content", data.value("message")).toString();
   // Raw arrays used by resolveMentions(). "mention_roles" is a plain id array, so it
   // is normalized to {"id": ...} like the other two.

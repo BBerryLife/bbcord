@@ -7,16 +7,19 @@ Container {
     // "parent.emojiUrl" did not re-evaluate (non-NOTIFYable parent), so setting it after
     // createObject() in MessageBubble.qml had no effect.
     property alias emojiUrl: image.imageSource
+    // Edge length in du: 6.0 for the jumbo emoji-only row, set smaller by
+    // MessageBubble.qml when the emoji sits inside a line of text.
+    property real sizeDu: 6.0
 
     rightMargin: ui.du(0.6)
     bottomMargin: ui.du(0.6)
-    preferredWidth: ui.du(6.0)
-    preferredHeight: ui.du(6.0)
+    preferredWidth: ui.du(emojiItem.sizeDu)
+    preferredHeight: ui.du(emojiItem.sizeDu)
 
     ImageView {
         id: image
-        preferredWidth: ui.du(6.0)
-        preferredHeight: ui.du(6.0)
+        preferredWidth: ui.du(emojiItem.sizeDu)
+        preferredHeight: ui.du(emojiItem.sizeDu)
         scalingMethod: ScalingMethod.AspectFit
     }
 }

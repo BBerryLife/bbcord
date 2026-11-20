@@ -6,6 +6,7 @@
 #include "../core/HubIntegration.hpp"
 #include "../core/models/Models.hpp"
 #include "../utils/EmojiUtils.hpp"
+#include "../utils/MarkdownParser.hpp"
 
 #include <QDebug>
 #include <bb/system/Clipboard>
@@ -1407,6 +1408,70 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
   item["showAvatar"] = item.value("showAvatar", true).toBool();
   item["showUsername"] = item.value("showUsername", true).toBool();
   item["showTimestamp"] = item.value("showTimestamp", true).toBool();
+  // Resolve the channel-mention tokens left by MarkdownParser (U+E003 id U+E002
+  // fallbackName U+E003) to the cached channel name, and expose the distinct channels
+  // as "channelMentions" ([{id, name}], max 3) so MessageBubble can offer tap targets.
+  {
+    QString html = item.value("messageHtml").toString();
+    const QChar marker(0xE003);
+    if (html.contains(marker)) {
+      QVariantList channelMentions;
+      QString resolved;
+      int pos = 0;
+      while (pos < html.length()) {
+        int start = html.indexOf(marker, pos);
+        if (start < 0) {
+          resolved += html.mid(pos);
+          break;
+        }
+        int end = html.indexOf(marker, start + 1);
+        if (end < 0) {
+          resolved += html.mid(pos);
+          break;
+        }
+        resolved += html.mid(pos, start - pos);
+        QString inner = html.mid(start + 1, end - start - 1);
+        QString channelId = inner.section(QChar(0xE002), 0, 0);
+        // rawName feeds the chip Label (plain text); htmlName feeds messageHtml.
+        // MarkdownParser already HTML-escaped the fallback name; the cache name is not.
+        QString rawName = m_client->channelNameForId(channelId);
+        QString htmlName;
+        if (!rawName.isEmpty()) {
+          htmlName = MarkdownParser::escapeHtml(rawName);
+        } else {
+          rawName = inner.section(QChar(0xE002), 1);
+          htmlName = rawName;
+          if (rawName.isEmpty()) {
+            rawName = QString("unknown");
+            htmlName = rawName;
+          }
+        }
+        resolved += htmlName;
+
+        bool known = false;
+        for (int i = 0; i < channelMentions.size(); ++i) {
+          if (channelMentions.at(i).toMap().value("id").toString() == channelId) {
+            known = true;
+            break;
+          }
+        }
+        if (!known && channelMentions.size() < 3) {
+          QVariantMap mention;
+          mention["id"] = channelId;
+          mention["name"] = rawName;
+          mention["isForum"] = m_client->isForumLikeChannel(channelId);
+          channelMentions.append(mention);
+        }
+        pos = end + 1;
+      }
+      item["messageHtml"] = resolved;
+      item["channelMentions"] = channelMentions;
+    }
+  }
+
+  // 7 = member join: ChatCard.qml draws it as a system line (see itemType()).
+  item["messageType"] = item.value("messageType", item.value("type")).toInt();
+  item["joinVariant"] = item.value("joinVariant", -1).toInt();
 
   // Whether this message pings the current user (@everyone/@here, direct mention or
   // a held role); mirrors GatewayHandler::gatewayMessageMentionsCurrentUser().

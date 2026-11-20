@@ -367,6 +367,15 @@ Page {
             settingsController.compactMessageEnabledChanged.connect(function (enabled) {
                 page.compactMessageEnabled = enabled;
             });
+            page.channelMentionRequested.connect(function (mentionedChannelId, mentionedChannelName, isForum) {
+                // "#channel" mentions live in the same guild as the message. Forum/Media
+                // channels have no messages: open their thread list like ServerList does.
+                if (isForum) {
+                    mainPage.openThreadList(mentionedChannelId, guildId, mentionedChannelName);
+                } else {
+                    mainPage.openChat(mentionedChannelId, guildId, mentionedChannelName);
+                }
+            });
             page.backRequested.connect(function () {
                 // Tell the C++ side the user left the channel (ChatController::closeChannel()/
                 // AppStore::clearChannelSelection()), or later messages count as read live.

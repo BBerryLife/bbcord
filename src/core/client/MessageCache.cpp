@@ -483,7 +483,10 @@ void MessageCache::recalculateGrouping(ChannelState &state) {
       timestampDistance = -timestampDistance;
     }
 
-    if (!previous.author.id.isEmpty() &&
+    // System lines (member join) are never grouped with the author's other messages:
+    // a join followed by a chat message must still show avatar and name on the latter.
+    if (!previous.isUserJoin() && !current.isUserJoin() &&
+        !previous.author.id.isEmpty() &&
         previous.author.id == current.author.id && previousTimestamp > 0 &&
         currentTimestamp > 0 && timestampDistance < kMessageGroupWindowMs) {
       previous.isGroupEnd = false;

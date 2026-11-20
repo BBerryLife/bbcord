@@ -37,9 +37,9 @@ DiscordNetworkWorker::DiscordNetworkWorker(QObject *parent)
           SIGNAL(archivedThreadsLoaded(QString, QVariantList, bool)), this,
           SIGNAL(archivedThreadsLoaded(QString, QVariantList, bool)));
   connect(&m_dataClient,
-          SIGNAL(threadSearchLoaded(QString, QVariantList, bool, int, QString)),
+          SIGNAL(threadSearchLoaded(QString, QVariantList, bool, int, QString, int)),
           this,
-          SIGNAL(threadSearchLoaded(QString, QVariantList, bool, int, QString)));
+          SIGNAL(threadSearchLoaded(QString, QVariantList, bool, int, QString, int)));
   connect(&m_dataClient, SIGNAL(channelInfoLoaded(QString, QString, QString)),
           this, SIGNAL(channelInfoLoaded(QString, QString, QString)));
   connect(&m_dataClient, SIGNAL(channelInfoLoadFailed(QString, QString)),

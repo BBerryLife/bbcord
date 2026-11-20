@@ -117,6 +117,9 @@ struct DiscordMessage {
   QString id;
   QString channelId;
   QString guildId;
+  // Discord message "type": 0 = normal, 7 = GUILD_MEMBER_JOIN (empty content; the
+  // client renders a "<name> hopped into the server." style line from it).
+  int type;
   DiscordUser author;
   QString content;
   // Raw "content" has unresolved mention syntax ("<@id>"). The raw mentions/
@@ -149,12 +152,16 @@ struct DiscordMessage {
   bool showTimestamp;
 
   DiscordMessage()
-      : mentionEveryone(false), pending(false), failed(false),
+      : type(0), mentionEveryone(false), pending(false), failed(false),
         isGroupStart(true), isGroupEnd(true), showAvatar(true),
         showUsername(true), showTimestamp(true) {}
 
+  bool isUserJoin() const { return type == 7; }
   bool isEdited() const;
   qint64 timestampMs() const;
+  // Index (0..12) of the join phrase Discord picks for this message: the message's
+  // snowflake creation time in ms modulo the number of phrases. -1 if not a join.
+  int joinVariant() const;
   QString displayTime() const;
   QString authorInitials() const;
   QVariantMap toVariantMap() const;

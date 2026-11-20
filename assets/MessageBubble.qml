@@ -67,6 +67,24 @@ Container {
     signal attachmentOpenRequested(string url)
     signal imagePreviewRequested(string url, int imageWidth, int imageHeight)
     signal attachmentImageLoadRequested(string url)
+    signal channelMentionRequested(string channelId, string channelName, bool isForum)
+
+    // [{id, name}] of the distinct "#channel" mentions in the message (max 3), filled by
+    // ChatController. A Label cannot hit-test inline text, so each mention also gets a
+    // tappable chip below the text; tapping it opens that channel.
+    property variant channelMentions: []
+
+    function mentionId(index) {
+        return (root.channelMentions && root.channelMentions.length > index) ? root.channelMentions[index].id : "";
+    }
+
+    function mentionIsForum(index) {
+        return (root.channelMentions && root.channelMentions.length > index) ? root.channelMentions[index].isForum === true : false;
+    }
+
+    function mentionName(index) {
+        return (root.channelMentions && root.channelMentions.length > index) ? root.channelMentions[index].name : "";
+    }
 
     horizontalAlignment: HorizontalAlignment.Fill
     preferredWidth: ui.du(100.0)
@@ -351,6 +369,87 @@ Container {
             textFormat: TextFormat.Html
             textStyle.fontSize: FontSize.XSmall
             textStyle.color: Color.create("#DCDDDE")
+        }
+
+        // Tap targets for "#channel" mentions (see channelMentions above).
+        Container {
+            visible: root.mentionId(0) !== ""
+            horizontalAlignment: HorizontalAlignment.Left
+            topMargin: ui.du(0.4)
+
+            layout: StackLayout {
+                orientation: LayoutOrientation.LeftToRight
+            }
+
+            Container {
+                visible: root.mentionId(0) !== ""
+                rightMargin: ui.du(0.8)
+                leftPadding: ui.du(1.0)
+                rightPadding: ui.du(1.0)
+                topPadding: ui.du(0.3)
+                bottomPadding: ui.du(0.3)
+                background: Color.create("#3C4270")
+
+                Label {
+                    text: "#" + root.mentionName(0)
+                    textStyle.fontSize: FontSize.XSmall
+                    textStyle.color: Color.create("#C9CDFB")
+                    touchPropagationMode: TouchPropagationMode.None
+                }
+
+                gestureHandlers: TapHandler {
+                    onTapped: {
+                        root.channelMentionRequested(root.mentionId(0), root.mentionName(0), root.mentionIsForum(0));
+                    }
+                }
+            }
+
+            Container {
+                visible: root.mentionId(1) !== ""
+                rightMargin: ui.du(0.8)
+                leftPadding: ui.du(1.0)
+                rightPadding: ui.du(1.0)
+                topPadding: ui.du(0.3)
+                bottomPadding: ui.du(0.3)
+                background: Color.create("#3C4270")
+
+                Label {
+                    text: "#" + root.mentionName(1)
+                    textStyle.fontSize: FontSize.XSmall
+                    textStyle.color: Color.create("#C9CDFB")
+                    touchPropagationMode: TouchPropagationMode.None
+                }
+
+                gestureHandlers: TapHandler {
+                    onTapped: {
+                        root.channelMentionRequested(root.mentionId(1), root.mentionName(1), root.mentionIsForum(1));
+                    }
+                }
+            }
+
+            Container {
+                visible: root.mentionId(2) !== ""
+                rightMargin: ui.du(0.8)
+                leftPadding: ui.du(1.0)
+                rightPadding: ui.du(1.0)
+                topPadding: ui.du(0.3)
+                bottomPadding: ui.du(0.3)
+                background: Color.create("#3C4270")
+
+                Label {
+                    text: "#" + root.mentionName(2)
+                    textStyle.fontSize: FontSize.XSmall
+                    textStyle.color: Color.create("#C9CDFB")
+                    touchPropagationMode: TouchPropagationMode.None
+                }
+
+                gestureHandlers: TapHandler {
+                    onTapped: {
+                        root.channelMentionRequested(root.mentionId(2), root.mentionName(2), root.mentionIsForum(2));
+                    }
+                }
+            }
+
         }
 
         // Emoji-only messages (EmojiUtils::isEmojiOnly()) render as a row of large

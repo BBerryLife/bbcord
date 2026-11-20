@@ -109,6 +109,35 @@ QString MarkdownParser::parseInline(const QString &text) {
       }
     }
 
+    // Channel mention token built by DiscordMessage::toVariantMap(): U+E000 id
+    // [U+E002 name] U+E001. Emitted as a Discord-style highlighted "#name" span that
+    // still holds U+E003 id U+E002 fallbackName U+E003 for ChatController to resolve
+    // against the channel cache (and to collect the tap targets). Private-use
+    // characters cannot clash with user text we keep (they are escaped nowhere else).
+    if (text.at(index) == QChar(0xE000)) {
+      int tokenEnd = text.indexOf(QChar(0xE001), index + 1);
+      if (tokenEnd > index) {
+        QString inner = text.mid(index + 1, tokenEnd - index - 1);
+        QString channelId = inner.section(QChar(0xE002), 0, 0);
+        QString channelName = inner.section(QChar(0xE002), 1);
+        bool idOk = !channelId.isEmpty();
+        for (int i = 0; i < channelId.length() && idOk; ++i) {
+          idOk = channelId.at(i).isDigit();
+        }
+        if (idOk) {
+          html += "<span style=\"background-color: #3C4270; color: #C9CDFB;\">&nbsp;#";
+          html += QChar(0xE003);
+          html += channelId;
+          html += QChar(0xE002);
+          html += escapeHtml(channelName);
+          html += QChar(0xE003);
+          html += "&nbsp;</span>";
+          index = tokenEnd + 1;
+          continue;
+        }
+      }
+    }
+
     if (text.at(index) == '`') {
       int codeEnd = text.indexOf('`', index + 1);
       if (codeEnd >= 0) {

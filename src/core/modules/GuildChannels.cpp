@@ -6,6 +6,7 @@
 #include "../client/AvatarManager.hpp"
 #include "../client/CacheManager.hpp"
 #include "../client/ItemMapper.hpp"
+#include "../models/Models.hpp"
 #include "../client/PermissionUtils.hpp"
 #include "../client/SortUtils.hpp"
 #include "../discord/GatewayWorker.hpp"
@@ -427,10 +428,34 @@ void DiscordClient::requestThreadSearch(const QString &channelId, int offset,
   }
 }
 
+bool DiscordClient::isForumLikeChannel(const QString &channelId) const {
+  QString safeChannelId = channelId.trimmed();
+  if (safeChannelId.isEmpty()) {
+    return false;
+  }
+  for (int i = 0; i < m_allGuildChannels.size(); ++i) {
+    QVariantMap channel = m_allGuildChannels.at(i).toMap();
+    if (channel.value("id").toString() == safeChannelId) {
+      return channel.value("isForumLike").toBool();
+    }
+  }
+  // Raw Discord channels: type 15 = forum, 16 = media.
+  for (int i = 0; i < m_rawSelectedGuildChannels.size(); ++i) {
+    QVariantMap channel = m_rawSelectedGuildChannels.at(i).toMap();
+    if (channel.value("id").toString() == safeChannelId) {
+      int type = channel.value("type").toInt();
+      return type == DiscordChannel::GuildForum ||
+             type == DiscordChannel::GuildMedia;
+    }
+  }
+  return false;
+}
+
 void DiscordClient::onThreadSearchLoaded(const QString &channelId,
                                          const QVariantList &threads,
                                          bool hasMore, int offset,
-                                         const QString &sortBy) {
+                                         const QString &sortBy,
+                                         int totalResults) {
   QVariantList mappedThreads;
   for (int i = 0; i < threads.size(); ++i) {
     QVariantMap item = m_itemMapper->guildChannelToItem(threads.at(i).toMap());
@@ -445,7 +470,8 @@ void DiscordClient::onThreadSearchLoaded(const QString &channelId,
 
   // Kept out of m_channelThreadsByParentId (which mirrors the gateway); ThreadList.qml
   // merges both sources by thread id.
-  emit threadSearchLoaded(channelId, mappedThreads, hasMore, offset, sortBy);
+  emit threadSearchLoaded(channelId, mappedThreads, hasMore, offset, sortBy,
+                          totalResults);
 }
 
 bool DiscordClient::updateGuildChannelUnread(const QString &channelId,

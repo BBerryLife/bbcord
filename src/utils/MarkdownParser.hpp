@@ -5,7 +5,14 @@
 
 class MarkdownParser {
 public:
-  static QString toHtml(const QString &markdown);
+  // With `emojiMarkers`, custom-emoji tokens become private-use marker sequences
+  // (see EmojiUtils::inlineTokens()) instead of the ":name:" text fallback, so the
+  // caller can lay text and emoji images out in one line.
+  static QString toHtml(const QString &markdown, bool emojiMarkers = false);
+
+  // Discord-style highlighted mention/channel pill ("#general", "@name"): light
+  // blurple background with light text. `label` is plain text (escaped here).
+  static QString mentionHtml(const QString &label);
 
   // Text-only ":name:" fallback for a custom emoji (as the desktop client shows when the
   // image fails to load), since Label(TextFormat.Html) cannot display <img>. The real
@@ -13,7 +20,7 @@ public:
   static QString escapeHtml(const QString &text);
 
 private:
-  static QString parseInline(const QString &text);
+  static QString parseInline(const QString &text, bool emojiMarkers);
   static bool isSafeLink(const QString &url);
   static int markdownLinkEndIndex(const QString &text, int urlStart);
   static int linkEndIndex(const QString &text, int start);

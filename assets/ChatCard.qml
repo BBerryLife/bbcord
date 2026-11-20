@@ -26,6 +26,7 @@ Page {
 
     signal backRequested
     signal memberListRequested
+    signal channelMentionRequested(string channelId, string channelName, bool isForum)
 
     // Threads is no longer an action-bar entry; ServerList.qml opens ThreadList.qml
     // directly for Forum/Media channels.
@@ -81,6 +82,84 @@ Page {
                 property string highlightedMessageId: chatPage.highlightedMessageId
 
                 listItemComponents: [
+                    // Member-join system line ("-> name hopped into the server."): Discord
+                    // sends these as type 7 with empty content, which rendered as a blank
+                    // bubble with only an avatar. No avatar, no "Wave to say hi" button.
+                    ListItemComponent {
+                        type: "join"
+
+                        Container {
+                            id: joinRow
+                            horizontalAlignment: HorizontalAlignment.Fill
+                            leftPadding: ui.du(2.0)
+                            rightPadding: ui.du(2.0)
+                            topPadding: ui.du(1.2)
+                            bottomPadding: ui.du(0.8)
+
+                            layout: StackLayout {
+                                orientation: LayoutOrientation.LeftToRight
+                            }
+
+                            // Same 13 phrases as the official client; %1 is the member name.
+                            // The phrase is chosen by ListItemData.joinVariant (message time
+                            // modulo 13, like Discord) so a message always reads the same.
+                            function escapeHtml(text) {
+                                return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                            }
+
+                            function joinHtml(name, variant) {
+                                var phrases = [
+                                    "%1 joined the party.",
+                                    "%1 is here.",
+                                    "Welcome, %1. We hope you've brought pizza.",
+                                    "A wild %1 appeared.",
+                                    "%1 just landed.",
+                                    "%1 just slid into the server.",
+                                    "%1 just showed up!",
+                                    "Welcome %1. Say hi!",
+                                    "%1 hopped into the server.",
+                                    "Everyone welcome %1!",
+                                    "Glad you're here, %1.",
+                                    "Good to see you, %1.",
+                                    "Yay you made it, %1!"
+                                ];
+                                var index = (variant >= 0 && variant < phrases.length) ? variant : 0;
+                                var boldName = "<b><font color=\"#F2F3F5\">" + escapeHtml(name) + "</font></b>";
+                                return phrases[index].split("%1").map(function(part) {
+                                    return escapeHtml(part);
+                                }).join(boldName);
+                            }
+
+                            Label {
+                                text: "\u2192"
+                                verticalAlignment: VerticalAlignment.Top
+                                rightMargin: ui.du(1.0)
+                                textStyle.fontSize: FontSize.Small
+                                textStyle.color: Color.create("#23A55A")
+                            }
+
+                            Label {
+                                layoutProperties: StackLayoutProperties {
+                                    spaceQuota: 1.0
+                                }
+                                multiline: true
+                                textFormat: TextFormat.Html
+                                text: joinRow.joinHtml(ListItemData.author, ListItemData.joinVariant)
+                                textStyle.fontSize: FontSize.XSmall
+                                textStyle.color: Color.create("#949BA4")
+                            }
+
+                            Label {
+                                text: ListItemData.time
+                                verticalAlignment: VerticalAlignment.Top
+                                leftMargin: ui.du(0.8)
+                                opacity: 0.5
+                                textStyle.fontSize: FontSize.XXSmall
+                                textStyle.color: Color.create("#C9CDD3")
+                            }
+                        }
+                    },
+
                     ListItemComponent {
                         type: ""
 
@@ -125,6 +204,7 @@ Page {
                             edited: ListItemData.edited
                             ownMessage: ListItemData.ownMessage === true
                             deleteAllowed: ListItemData.deleteAllowed === true
+                            channelMentions: ListItemData.channelMentions
 
                             // A binding, not a signal handler: the target delegate often does not
                             // exist yet when the jump starts (the list is virtualized and scrolls
@@ -154,6 +234,10 @@ Page {
                                 ListItem.view.copyMessage(text);
                             }
 
+                            onChannelMentionRequested: {
+                                ListItem.view.openChannelMention(channelId, channelName, isForum);
+                            }
+
                             onAttachmentOpenRequested: {
                                 ListItem.view.openAttachment(url);
                             }
@@ -170,7 +254,7 @@ Page {
                 ]
 
                 function itemType(data, indexPath) {
-                    return "";
+                    return data.messageType === 7 ? "join" : "";
                 }
 
                 function startEdit(messageId, message) {
@@ -195,6 +279,10 @@ Page {
 
                 function copyMessage(text) {
                     chatController.copyText(text);
+                }
+
+                function openChannelMention(channelId, channelName, isForum) {
+                    chatPage.channelMentionRequested(channelId, channelName, isForum);
                 }
 
                 function openAttachment(url) {

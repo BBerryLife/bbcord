@@ -944,11 +944,13 @@ void DiscordRestClient::handleEvent(struct mg_connection *connection, int event,
 
         QVariantList threads = responseObject.value("threads").toList();
         bool hasMore = responseObject.value("has_more").toBool();
+        int totalResults = responseObject.value("total_results").toInt();
         QString channelId = m_channelId;
         int offset = m_threadOffset;
         QString sortBy = m_threadSortBy;
         finishRequest(keepConnectionAlive);
-        emit threadSearchLoaded(channelId, threads, hasMore, offset, sortBy);
+        emit threadSearchLoaded(channelId, threads, hasMore, offset, sortBy,
+                                totalResults);
         processNextRequest();
         break;
       }
