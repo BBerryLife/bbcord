@@ -25,7 +25,7 @@ QString highlightedLink(const QString &html) {
 }
 } // namespace
 
-QString MarkdownParser::toHtml(const QString &markdown) {
+QString MarkdownParser::toHtml(const QString &markdown, bool emojiMarkers) {
   QString html;
   int index = 0;
 
@@ -51,15 +51,20 @@ QString MarkdownParser::toHtml(const QString &markdown) {
 
     int nextBlock = markdown.indexOf("```", index);
     if (nextBlock < 0) {
-      html += parseInline(markdown.mid(index));
+      html += parseInline(markdown.mid(index), emojiMarkers);
       break;
     }
 
-    html += parseInline(markdown.mid(index, nextBlock - index));
+    html += parseInline(markdown.mid(index, nextBlock - index), emojiMarkers);
     index = nextBlock;
   }
 
   return html;
+}
+
+QString MarkdownParser::mentionHtml(const QString &label) {
+  return "<span style=\"background-color: #3C4270; color: #C9CDFB;\">&nbsp;" +
+         escapeHtml(label) + "&nbsp;</span>";
 }
 
 QString MarkdownParser::escapeHtml(const QString &text) {
@@ -86,7 +91,7 @@ QString MarkdownParser::escapeHtml(const QString &text) {
   return escaped;
 }
 
-QString MarkdownParser::parseInline(const QString &text) {
+QString MarkdownParser::parseInline(const QString &text, bool emojiMarkers) {
   QString html;
   int index = 0;
 
@@ -101,37 +106,37 @@ QString MarkdownParser::parseInline(const QString &text) {
           EmojiUtils::findTokens(text.mid(index, 56));
       if (!tokens.isEmpty() && tokens.first().start == 0) {
         const EmojiUtils::EmojiToken &token = tokens.first();
-        html += "<span style=\"color: #949BA4;\">:";
-        html += escapeHtml(token.name);
-        html += ":</span>";
+        if (emojiMarkers) {
+          html += EmojiUtils::marker(token.id, token.animated);
+        } else {
+          html += "<span style=\"color: #949BA4;\">:";
+          html += escapeHtml(token.name);
+          html += ":</span>";
+        }
         index += token.length;
         continue;
       }
     }
 
-    // Channel mention token built by DiscordMessage::toVariantMap(): U+E000 id
-    // [U+E002 name] U+E001. Emitted as a Discord-style highlighted "#name" span that
-    // still holds U+E003 id U+E002 fallbackName U+E003 for ChatController to resolve
-    // against the channel cache (and to collect the tap targets). Private-use
-    // characters cannot clash with user text we keep (they are escaped nowhere else).
-    if (text.at(index) == QChar(0xE000)) {
-      int tokenEnd = text.indexOf(QChar(0xE001), index + 1);
+    // Channel mention token built by DiscordMessage::toVariantMap(): U+E010 id
+    // [U+E012 name] U+E011. Emitted as a Discord-style highlighted "#name" pill that
+    // still holds U+E013 id U+E012 fallbackName U+E013 for ChatController to resolve
+    // against the channel cache (and to collect the tap targets). U+E002/U+E003 are
+    // EmojiUtils' emoji markers, hence the separate U+E010.. range.
+    if (text.at(index) == QChar(0xE010)) {
+      int tokenEnd = text.indexOf(QChar(0xE011), index + 1);
       if (tokenEnd > index) {
         QString inner = text.mid(index + 1, tokenEnd - index - 1);
-        QString channelId = inner.section(QChar(0xE002), 0, 0);
-        QString channelName = inner.section(QChar(0xE002), 1);
+        QString channelId = inner.section(QChar(0xE012), 0, 0);
+        QString channelName = inner.section(QChar(0xE012), 1);
         bool idOk = !channelId.isEmpty();
         for (int i = 0; i < channelId.length() && idOk; ++i) {
           idOk = channelId.at(i).isDigit();
         }
         if (idOk) {
-          html += "<span style=\"background-color: #3C4270; color: #C9CDFB;\">&nbsp;#";
-          html += QChar(0xE003);
-          html += channelId;
-          html += QChar(0xE002);
-          html += escapeHtml(channelName);
-          html += QChar(0xE003);
-          html += "&nbsp;</span>";
+          QString placeholder = QString(QChar(0xE013)) + channelId +
+                                QChar(0xE012) + channelName + QChar(0xE013);
+          html += mentionHtml(QString("#") + placeholder);
           index = tokenEnd + 1;
           continue;
         }
@@ -164,7 +169,7 @@ QString MarkdownParser::parseInline(const QString &text) {
           html += escapeHtml(url);
           html += "\">";
           html += highlightedLink(
-              parseInline(text.mid(index + 1, labelEnd - index - 1)));
+              parseInline(text.mid(index + 1, labelEnd - index - 1), emojiMarkers));
           html += "</a>";
           index = urlEnd + 1;
           continue;
@@ -214,7 +219,8 @@ QString MarkdownParser::parseInline(const QString &text) {
       if (end >= 0) {
         html += QString::fromLatin1(kDelimiters[i].openTag);
         html += parseInline(text.mid(index + delimiter.length(),
-                                     end - index - delimiter.length()));
+                                     end - index - delimiter.length()),
+                           emojiMarkers);
         html += QString::fromLatin1(kDelimiters[i].closeTag);
         index = end + delimiter.length();
         matched = true;

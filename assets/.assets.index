@@ -1,5 +1,5 @@
 1
-53
+57
 About.qml
 CaptchaSheet.qml
 ChannelMemberList.qml
@@ -15,14 +15,18 @@ images/icons/accent/caret-left.png
 images/icons/accent/ic_save_image.png
 images/icons/accent/users.png
 images/icons/action_delete.png
+images/icons/action_icon_search.png
 images/icons/caret-down.png
 images/icons/first.png
 images/icons/hash.png
 images/icons/ic_chat_multiperson.png
 images/icons/ic_copy.png
 images/icons/ic_edit.png
+images/icons/ic_emoticon_enabled_white.png
 images/icons/ic_folder_color.png
 images/icons/ic_info.png
+images/icons/ic_keyboard_disabled.png
+images/icons/ic_keyboard_enabled.png
 images/icons/ic_open.png
 images/icons/ic_reload.png
 images/icons/ic_reply.png

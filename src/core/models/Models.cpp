@@ -242,7 +242,7 @@ QVariantMap DiscordMessage::toVariantMap() const {
   // Resolve mentions before markdown/HTML conversion: toHtml() escapes and wraps
   // text, so resolving afterwards could mangle inserted tags. content stays raw
   // (needed for editing).
-  // Channel mentions "<#id>" become U+E000 id [U+E002 name] U+E001 tokens first (only
+  // Channel mentions "<#id>" become U+E010 id [U+E012 name] U+E011 tokens first (only
   // for messageHtml; reply previews and notifications keep plain text). MarkdownParser
   // turns them into a highlighted span and ChatController fills in the cached name and
   // the tap targets. mention_channels carries names only for crossposted channels.
@@ -261,11 +261,11 @@ QVariantMap DiscordMessage::toVariantMap() const {
           break;
         }
       }
-      QString token = QString(QChar(0xE000)) + channelId;
+      QString token = QString(QChar(0xE010)) + channelId;
       if (!channelName.isEmpty()) {
-        token += QString(QChar(0xE002)) + channelName;
+        token += QString(QChar(0xE012)) + channelName;
       }
-      token += QChar(0xE001);
+      token += QChar(0xE011);
       contentForHtml.replace(channelIndex, channelPattern.matchedLength(), token);
       channelIndex += token.length();
     }

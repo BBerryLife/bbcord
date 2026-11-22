@@ -1408,12 +1408,12 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
   item["showAvatar"] = item.value("showAvatar", true).toBool();
   item["showUsername"] = item.value("showUsername", true).toBool();
   item["showTimestamp"] = item.value("showTimestamp", true).toBool();
-  // Resolve the channel-mention tokens left by MarkdownParser (U+E003 id U+E002
-  // fallbackName U+E003) to the cached channel name, and expose the distinct channels
+  // Resolve the channel-mention tokens left by MarkdownParser (U+E013 id U+E012
+  // fallbackName U+E013) to the cached channel name, and expose the distinct channels
   // as "channelMentions" ([{id, name}], max 3) so MessageBubble can offer tap targets.
   {
     QString html = item.value("messageHtml").toString();
-    const QChar marker(0xE003);
+    const QChar marker(0xE013);
     if (html.contains(marker)) {
       QVariantList channelMentions;
       QString resolved;
@@ -1431,7 +1431,7 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
         }
         resolved += html.mid(pos, start - pos);
         QString inner = html.mid(start + 1, end - start - 1);
-        QString channelId = inner.section(QChar(0xE002), 0, 0);
+        QString channelId = inner.section(QChar(0xE012), 0, 0);
         // rawName feeds the chip Label (plain text); htmlName feeds messageHtml.
         // MarkdownParser already HTML-escaped the fallback name; the cache name is not.
         QString rawName = m_client->channelNameForId(channelId);
@@ -1439,7 +1439,7 @@ QVariantMap ChatController::prepareMessageForModel(const QVariantMap &message) {
         if (!rawName.isEmpty()) {
           htmlName = MarkdownParser::escapeHtml(rawName);
         } else {
-          rawName = inner.section(QChar(0xE002), 1);
+          rawName = inner.section(QChar(0xE012), 1);
           htmlName = rawName;
           if (rawName.isEmpty()) {
             rawName = QString("unknown");
